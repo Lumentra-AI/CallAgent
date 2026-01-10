@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx|js|jsx|json|md|css|scss|yaml|yml)$' || true)
+if [ -n "$FILES" ]; then
+  npx --yes prettier@3.3.3 --write $FILES
+  git add $FILES
+fi

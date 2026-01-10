@@ -1,0 +1,195 @@
+// Database Types for Supabase
+
+export interface Tenant {
+  id: string;
+  created_at: string;
+  updated_at: string;
+
+  // Identity
+  business_name: string;
+  industry: string;
+  phone_number: string; // Vapi phone number assigned to this tenant
+
+  // Agent configuration
+  agent_name: string;
+  agent_personality: AgentPersonality;
+  voice_config: VoiceConfig;
+
+  // Greetings
+  greeting_standard: string;
+  greeting_after_hours: string;
+  greeting_returning: string;
+
+  // Operating hours
+  timezone: string;
+  operating_hours: OperatingHours;
+
+  // Escalation
+  escalation_enabled: boolean;
+  escalation_phone?: string;
+  escalation_triggers: string[];
+
+  // Feature flags
+  features: FeatureFlags;
+
+  // Status
+  is_active: boolean;
+  subscription_tier: "starter" | "professional" | "enterprise";
+}
+
+export interface AgentPersonality {
+  tone: "professional" | "friendly" | "casual" | "formal";
+  verbosity: "concise" | "balanced" | "detailed";
+  empathy: "low" | "medium" | "high";
+  humor: boolean;
+}
+
+export interface VoiceConfig {
+  provider: "cartesia" | "openai" | "elevenlabs";
+  voice_id: string;
+  voice_name: string;
+  speaking_rate: number;
+  pitch: number;
+}
+
+export interface OperatingHours {
+  schedule: DaySchedule[];
+  holidays: string[];
+}
+
+export interface DaySchedule {
+  day: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  enabled: boolean;
+  open_time: string;
+  close_time: string;
+}
+
+export interface FeatureFlags {
+  sms_confirmations: boolean;
+  email_notifications: boolean;
+  live_transfer: boolean;
+  voicemail_fallback: boolean;
+  sentiment_analysis: boolean;
+  recording_enabled: boolean;
+  transcription_enabled: boolean;
+}
+
+export interface Call {
+  id: string;
+  created_at: string;
+  updated_at: string;
+
+  // References
+  tenant_id: string;
+  vapi_call_id: string;
+
+  // Call details
+  caller_phone?: string;
+  caller_name?: string;
+  direction: "inbound" | "outbound";
+  status: "ringing" | "connected" | "completed" | "failed" | "missed";
+
+  // Timing
+  started_at: string;
+  ended_at?: string;
+  duration_seconds?: number;
+
+  // Outcome
+  ended_reason?: string;
+  outcome_type?: "booking" | "inquiry" | "support" | "escalation" | "hangup";
+  outcome_success?: boolean;
+
+  // AI analysis
+  transcript?: string;
+  summary?: string;
+  sentiment_score?: number;
+  intents_detected?: string[];
+
+  // Recording
+  recording_url?: string;
+
+  // Cost tracking
+  cost_cents?: number;
+}
+
+export interface Booking {
+  id: string;
+  created_at: string;
+  updated_at: string;
+
+  // References
+  tenant_id: string;
+  call_id?: string;
+
+  // Customer
+  customer_name: string;
+  customer_phone: string;
+  customer_email?: string;
+
+  // Booking details
+  booking_type: string;
+  booking_date: string;
+  booking_time: string;
+  duration_minutes?: number;
+  notes?: string;
+
+  // Status
+  status: "pending" | "confirmed" | "cancelled" | "completed" | "no_show";
+  confirmation_code: string;
+
+  // Pricing
+  amount_cents?: number;
+
+  // Reminders
+  reminder_sent: boolean;
+  reminder_sent_at?: string;
+}
+
+export interface CallbackQueue {
+  id: string;
+  created_at: string;
+
+  // References
+  tenant_id: string;
+  original_call_id?: string;
+
+  // Callback details
+  phone_number: string;
+  reason: string;
+  priority: "low" | "medium" | "high";
+
+  // Status
+  status: "pending" | "in_progress" | "completed" | "failed";
+  attempts: number;
+  last_attempt_at?: string;
+  completed_at?: string;
+  notes?: string;
+}
+
+export interface SmsMessage {
+  id: string;
+  created_at: string;
+
+  // References
+  tenant_id: string;
+  booking_id?: string;
+  call_id?: string;
+
+  // Message details
+  to_phone: string;
+  from_phone: string;
+  message_type: "confirmation" | "reminder" | "missed_call" | "custom";
+  body: string;
+
+  // Twilio tracking
+  twilio_sid?: string;
+  status: "pending" | "sent" | "delivered" | "failed";
+  error_message?: string;
+}
+
+// View/query types
+export interface TenantWithStats extends Tenant {
+  calls_today: number;
+  calls_this_week: number;
+  revenue_this_month: number;
+}
