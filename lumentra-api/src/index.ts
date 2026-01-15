@@ -14,6 +14,10 @@ import { callsRoutes } from "./routes/calls.js";
 import { bookingsRoutes } from "./routes/bookings.js";
 import { tenantsRoutes } from "./routes/tenants.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
+import { contactsRoutes } from "./routes/contacts.js";
+import { availabilityRoutes } from "./routes/availability.js";
+import { notificationsRoutes } from "./routes/notifications.js";
+import { resourcesRoutes } from "./routes/resources.js";
 import signalwireVoice from "./routes/signalwire-voice.js";
 import {
   handleSignalWireStream,
@@ -32,7 +36,13 @@ app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
     allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Tenant-ID",
+      "X-User-ID",
+      "X-User-Name",
+    ],
   }),
 );
 
@@ -44,6 +54,10 @@ app.route("/api/calls", callsRoutes);
 app.route("/api/bookings", bookingsRoutes);
 app.route("/api/tenants", tenantsRoutes);
 app.route("/api/dashboard", dashboardRoutes);
+app.route("/api/contacts", contactsRoutes);
+app.route("/api/availability", availabilityRoutes);
+app.route("/api/notifications", notificationsRoutes);
+app.route("/api/resources", resourcesRoutes);
 
 // Root
 app.get("/", (c) => {

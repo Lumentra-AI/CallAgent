@@ -67,3 +67,121 @@ export function generateTransferXml(phoneNumber: string): string {
   <Dial>${phoneNumber}</Dial>
 </Response>`;
 }
+
+// Get SignalWire REST API auth header
+function getAuthHeader(): string {
+  if (!SIGNALWIRE_PROJECT_ID || !SIGNALWIRE_API_TOKEN) {
+    throw new Error("SignalWire credentials not configured");
+  }
+  const credentials = Buffer.from(
+    `${SIGNALWIRE_PROJECT_ID}:${SIGNALWIRE_API_TOKEN}`,
+  ).toString("base64");
+  return `Basic ${credentials}`;
+}
+
+// Get phone number SID from SignalWire
+export async function getPhoneNumberSid(
+  phoneNumber: string,
+): Promise<string | null> {
+  if (!signalwireApiUrl) {
+    throw new Error("SignalWire not configured");
+  }
+
+  const response = await fetch(
+    `${signalwireApiUrl}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`,
+    {
+      headers: {
+        Authorization: getAuthHeader(),
+      },
+    },
+  );
+
+  if (!response.ok) {
+    console.error(
+      "[SIGNALWIRE] Failed to get phone numbers:",
+      await response.text(),
+    );
+    return null;
+  }
+
+  const data = (await response.json()) as {
+    incoming_phone_numbers?: { sid: string }[];
+  };
+  if (data.incoming_phone_numbers && data.incoming_phone_numbers.length > 0) {
+    return data.incoming_phone_numbers[0].sid;
+  }
+  return null;
+}
+
+// Configure phone number webhook via SignalWire REST API
+export async function configurePhoneNumberWebhook(
+  phoneNumberSid: string,
+  voiceUrl: string,
+  statusCallbackUrl?: string,
+): Promise<boolean> {
+  if (!signalwireApiUrl) {
+    throw new Error("SignalWire not configured");
+  }
+
+  const params = new URLSearchParams();
+  params.append("VoiceUrl", voiceUrl);
+  params.append("VoiceMethod", "POST");
+  if (statusCallbackUrl) {
+    params.append("StatusCallback", statusCallbackUrl);
+    params.append("StatusCallbackMethod", "POST");
+  }
+
+  const response = await fetch(
+    `${signalwireApiUrl}/IncomingPhoneNumbers/${phoneNumberSid}.json`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: getAuthHeader(),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    },
+  );
+
+  if (!response.ok) {
+    console.error(
+      "[SIGNALWIRE] Failed to configure webhook:",
+      await response.text(),
+    );
+    return false;
+  }
+
+  console.log("[SIGNALWIRE] Phone number webhook configured successfully");
+  return true;
+}
+
+// Setup SignalWire phone number with webhooks
+export async function setupSignalWirePhone(backendUrl: string): Promise<void> {
+  const phoneNumber = SIGNALWIRE_PHONE_NUMBER;
+  if (!phoneNumber) {
+    throw new Error("SIGNALWIRE_PHONE_NUMBER not set");
+  }
+
+  console.log(`[SIGNALWIRE] Setting up phone number: ${phoneNumber}`);
+
+  // Get phone number SID
+  const sid = await getPhoneNumberSid(phoneNumber);
+  if (!sid) {
+    throw new Error(
+      `Phone number ${phoneNumber} not found in SignalWire account`,
+    );
+  }
+
+  console.log(`[SIGNALWIRE] Found phone SID: ${sid}`);
+
+  // Configure webhooks
+  const voiceUrl = `${backendUrl}/signalwire/voice`;
+  const statusUrl = `${backendUrl}/signalwire/status`;
+
+  const success = await configurePhoneNumberWebhook(sid, voiceUrl, statusUrl);
+  if (!success) {
+    throw new Error("Failed to configure phone number webhook");
+  }
+
+  console.log(`[SIGNALWIRE] Webhook configured: ${voiceUrl}`);
+}

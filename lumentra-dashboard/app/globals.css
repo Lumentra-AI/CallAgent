@@ -54,10 +54,90 @@
 
 /* ============================================================================
    UNIVERSAL ENTERPRISE COLOR PALETTE
-   Deep Zinc/Charcoal - Professional on any display
+   Light Mode - Clean, professional appearance
    ============================================================================ */
 
 :root {
+  --radius: 0.5rem;
+
+  /* Background Hierarchy (Light) */
+  --background: #ffffff; /* white - Main background */
+  --background-elevated: #f4f4f5; /* zinc-100 - Cards, panels */
+  --background-subtle: #e4e4e7; /* zinc-200 - Hover states */
+
+  /* Foreground Hierarchy */
+  --foreground: #18181b; /* zinc-900 - Primary text */
+  --foreground-muted: #71717a; /* zinc-500 - Secondary text */
+  --foreground-subtle: #a1a1aa; /* zinc-400 - Tertiary text */
+
+  /* Component Colors */
+  --card: #ffffff; /* white */
+  --card-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+
+  /* Primary Action (Indigo - Enterprise feel) */
+  --primary: #6366f1; /* indigo-500 */
+  --primary-foreground: #ffffff;
+  --primary-hover: #4f46e5; /* indigo-600 */
+  --primary-muted: #818cf8; /* indigo-400 */
+
+  /* Secondary */
+  --secondary: #f4f4f5; /* zinc-100 */
+  --secondary-foreground: #18181b;
+
+  /* Muted */
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+
+  /* Accent */
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+
+  /* Status Colors - High Contrast for any monitor */
+  --success: #22c55e; /* green-500 */
+  --success-muted: #16a34a; /* green-600 */
+  --warning: #f59e0b; /* amber-500 */
+  --warning-muted: #d97706; /* amber-600 */
+  --destructive: #ef4444; /* red-500 */
+  --destructive-muted: #dc2626; /* red-600 */
+  --info: #3b82f6; /* blue-500 */
+
+  /* Borders */
+  --border: #e4e4e7; /* zinc-200 */
+  --border-muted: #d4d4d8; /* zinc-300 */
+  --input: #e4e4e7;
+  --ring: #6366f1;
+
+  /* Charts */
+  --chart-1: #6366f1; /* indigo */
+  --chart-2: #22c55e; /* green */
+  --chart-3: #f59e0b; /* amber */
+  --chart-4: #ec4899; /* pink */
+  --chart-5: #8b5cf6; /* violet */
+
+  /* Sidebar */
+  --sidebar: #fafafa;
+  --sidebar-foreground: #18181b;
+  --sidebar-primary: #6366f1;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f4f4f5;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e4e4e7;
+  --sidebar-ring: #6366f1;
+
+  /* Waveform Colors */
+  --waveform-user: #22c55e; /* green-500 - User speaking */
+  --waveform-ai: #6366f1; /* indigo-500 - AI speaking */
+  --waveform-idle: #d4d4d8; /* zinc-300 - Idle */
+  --waveform-processing: #f59e0b; /* amber-500 - Processing */
+}
+
+/* ============================================================================
+   DARK MODE - Deep Zinc/Charcoal
+   ============================================================================ */
+
+.dark {
   --radius: 0.5rem;
 
   /* Background Hierarchy (Deep Zinc) */
@@ -76,14 +156,14 @@
   --popover: #18181b;
   --popover-foreground: #fafafa;
 
-  /* Primary Action (Indigo - Enterprise feel) */
-  --primary: #6366f1; /* indigo-500 */
+  /* Primary Action */
+  --primary: #6366f1;
   --primary-foreground: #ffffff;
-  --primary-hover: #818cf8; /* indigo-400 */
-  --primary-muted: #4f46e5; /* indigo-600 */
+  --primary-hover: #818cf8;
+  --primary-muted: #4f46e5;
 
   /* Secondary */
-  --secondary: #27272a; /* zinc-800 */
+  --secondary: #27272a;
   --secondary-foreground: #fafafa;
 
   /* Muted */
@@ -94,27 +174,27 @@
   --accent: #27272a;
   --accent-foreground: #fafafa;
 
-  /* Status Colors - High Contrast for any monitor */
-  --success: #22c55e; /* green-500 */
-  --success-muted: #16a34a; /* green-600 */
-  --warning: #f59e0b; /* amber-500 */
-  --warning-muted: #d97706; /* amber-600 */
-  --destructive: #ef4444; /* red-500 */
-  --destructive-muted: #dc2626; /* red-600 */
-  --info: #3b82f6; /* blue-500 */
+  /* Status Colors */
+  --success: #22c55e;
+  --success-muted: #16a34a;
+  --warning: #f59e0b;
+  --warning-muted: #d97706;
+  --destructive: #ef4444;
+  --destructive-muted: #dc2626;
+  --info: #3b82f6;
 
   /* Borders */
-  --border: #27272a; /* zinc-800 */
-  --border-muted: #3f3f46; /* zinc-700 */
+  --border: #27272a;
+  --border-muted: #3f3f46;
   --input: #27272a;
   --ring: #6366f1;
 
   /* Charts */
-  --chart-1: #6366f1; /* indigo */
-  --chart-2: #22c55e; /* green */
-  --chart-3: #f59e0b; /* amber */
-  --chart-4: #ec4899; /* pink */
-  --chart-5: #8b5cf6; /* violet */
+  --chart-1: #6366f1;
+  --chart-2: #22c55e;
+  --chart-3: #f59e0b;
+  --chart-4: #ec4899;
+  --chart-5: #8b5cf6;
 
   /* Sidebar */
   --sidebar: #0f0f11;
@@ -127,50 +207,10 @@
   --sidebar-ring: #6366f1;
 
   /* Waveform Colors */
-  --waveform-user: #22c55e; /* green-500 - User speaking */
-  --waveform-ai: #6366f1; /* indigo-500 - AI speaking */
-  --waveform-idle: #3f3f46; /* zinc-700 - Idle */
-  --waveform-processing: #f59e0b; /* amber-500 - Processing */
-}
-
-/* Dark mode (same as root for this theme) */
-.dark {
-  --radius: 0.5rem;
-  --background: #09090b;
-  --background-elevated: #18181b;
-  --background-subtle: #27272a;
-  --foreground: #fafafa;
-  --foreground-muted: #a1a1aa;
-  --foreground-subtle: #71717a;
-  --card: #18181b;
-  --card-foreground: #fafafa;
-  --popover: #18181b;
-  --popover-foreground: #fafafa;
-  --primary: #6366f1;
-  --primary-foreground: #ffffff;
-  --secondary: #27272a;
-  --secondary-foreground: #fafafa;
-  --muted: #27272a;
-  --muted-foreground: #a1a1aa;
-  --accent: #27272a;
-  --accent-foreground: #fafafa;
-  --destructive: #ef4444;
-  --border: #27272a;
-  --input: #27272a;
-  --ring: #6366f1;
-  --chart-1: #6366f1;
-  --chart-2: #22c55e;
-  --chart-3: #f59e0b;
-  --chart-4: #ec4899;
-  --chart-5: #8b5cf6;
-  --sidebar: #0f0f11;
-  --sidebar-foreground: #fafafa;
-  --sidebar-primary: #6366f1;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #27272a;
-  --sidebar-accent-foreground: #fafafa;
-  --sidebar-border: #27272a;
-  --sidebar-ring: #6366f1;
+  --waveform-user: #22c55e;
+  --waveform-ai: #6366f1;
+  --waveform-idle: #3f3f46;
+  --waveform-processing: #f59e0b;
 }
 
 /* ============================================================================
@@ -233,15 +273,15 @@
 
   /* Metric cards */
   .metric-card {
-    @apply rounded-lg border border-zinc-800 bg-zinc-900 p-4;
+    @apply rounded-lg border border-border bg-card p-4;
   }
 
   .metric-label {
-    @apply text-[10px] font-medium uppercase tracking-wider text-zinc-500;
+    @apply text-[10px] font-medium uppercase tracking-wider text-muted-foreground;
   }
 
   .metric-value {
-    @apply text-2xl font-semibold tabular-nums text-white;
+    @apply text-2xl font-semibold tabular-nums text-foreground;
   }
 
   /* Log styling */
@@ -250,40 +290,40 @@
   }
 
   .log-timestamp {
-    @apply text-zinc-600;
+    @apply text-muted-foreground;
   }
 
   .log-level-info {
-    @apply text-blue-400;
+    @apply text-blue-500 dark:text-blue-400;
   }
 
   .log-level-warn {
-    @apply text-amber-400;
+    @apply text-amber-500 dark:text-amber-400;
   }
 
   .log-level-error {
-    @apply text-red-400;
+    @apply text-red-500 dark:text-red-400;
   }
 
   .log-level-debug {
-    @apply text-zinc-500;
+    @apply text-muted-foreground;
   }
 
   .log-category {
-    @apply text-indigo-400;
+    @apply text-indigo-600 dark:text-indigo-400;
   }
 
   .log-message {
-    @apply text-zinc-300;
+    @apply text-foreground/80;
   }
 
   /* Sidebar */
   .sidebar-item {
-    @apply flex items-center gap-3 rounded-md px-3 py-2 text-sm text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white;
+    @apply flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground;
   }
 
   .sidebar-item-active {
-    @apply bg-zinc-800 text-white;
+    @apply bg-accent text-foreground;
   }
 
   /* Dense data display */
@@ -304,17 +344,21 @@
 
   /* Card hover effect */
   .card-interactive {
-    @apply transition-all duration-200 hover:border-zinc-700 hover:bg-zinc-800/50;
+    @apply transition-all duration-200 hover:bg-muted/50;
+  }
+
+  .card-interactive:hover {
+    border-color: var(--border-muted);
   }
 
   /* Crisp borders for Mission Control feel */
   .border-crisp {
-    @apply border border-zinc-800;
+    @apply border border-border;
   }
 
   /* Panel sections */
   .panel-section {
-    @apply border-b border-zinc-800 py-4;
+    @apply border-b border-border py-4;
   }
 
   .panel-section:last-child {
@@ -324,7 +368,7 @@
   /* Scrollbar styling */
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: #3f3f46 transparent;
+    scrollbar-color: var(--border-muted) transparent;
   }
 
   .scrollbar-thin::-webkit-scrollbar {
@@ -337,12 +381,12 @@
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: #3f3f46;
+    background-color: var(--border-muted);
     border-radius: 3px;
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background-color: #52525b;
+    background-color: var(--muted-foreground);
   }
 
   /* Hide scrollbar but keep functionality */

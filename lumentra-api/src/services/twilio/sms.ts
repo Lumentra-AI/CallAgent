@@ -150,6 +150,33 @@ export async function sendReminder(bookingId: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Send an SMS directly (used by notification service)
+ */
+export async function sendSMS(toPhone: string, body: string): Promise<void> {
+  const fromPhone = process.env.TWILIO_PHONE_NUMBER;
+
+  if (!fromPhone) {
+    console.warn("[SMS] No TWILIO_PHONE_NUMBER configured, skipping SMS");
+    return;
+  }
+
+  const client = getTwilioClient();
+
+  if (!client) {
+    console.warn("[SMS] Twilio client not configured");
+    return;
+  }
+
+  const message = await client.messages.create({
+    body,
+    from: fromPhone,
+    to: toPhone,
+  });
+
+  console.log(`[SMS] Sent to ${toPhone}, SID: ${message.sid}`);
+}
+
 function formatDate(date: string): string {
   const d = new Date(date);
   return d.toLocaleDateString("en-US", {

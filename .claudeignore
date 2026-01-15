@@ -1,0 +1,63 @@
+# Dependencies - never need to read these
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Lock files - too large, not useful
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Caches
+.cache/
+.turbo/
+*.tsbuildinfo
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
+
+# Environment files with secrets (user configures these)
+.env
+.env.local
+.env.*.local
+
+# Keep .env.example readable for Claude to edit
+!.env.example
+!lumentra-api/.env.example
+!lumentra-dashboard/.env.example
+
+# Large generated files
+*.min.js
+*.min.css
+*.map
+
+# Documentation that's not code-relevant
+docs/*.pdf
+
+# Frontend files Claude rarely needs
+lumentra-dashboard/public/
+lumentra-dashboard/.next/
+lumentra-dashboard/node_modules/
+
+# Backend files Claude rarely needs
+lumentra-api/node_modules/
+lumentra-api/dist/

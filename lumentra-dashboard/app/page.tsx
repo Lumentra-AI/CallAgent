@@ -2,6 +2,7 @@
 
 import React from "react";
 import { ConfigProvider, useConfig } from "@/context/ConfigContext";
+import { ThemeProvider } from "@/context/ThemeContext";
 import SetupWizard from "@/components/SetupWizard";
 import Dashboard from "@/components/dashboard";
 import SettingsPanel from "@/components/settings";
@@ -15,27 +16,31 @@ import { Loader2, Zap, AlertTriangle } from "lucide-react";
 
 function LoadingScreen() {
   return (
-    <div className="flex h-screen w-full flex-col items-center justify-center bg-zinc-950">
+    <div className="flex h-screen w-full flex-col items-center justify-center bg-background">
       {/* Animated Logo */}
       <div className="relative mb-6">
-        <div className="absolute inset-0 animate-ping rounded-full bg-indigo-500/20" />
-        <div className="relative flex h-16 w-16 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900">
-          <Zap className="h-8 w-8 text-indigo-500" />
+        <div className="absolute inset-0 animate-ping rounded-full bg-primary/20" />
+        <div className="relative flex h-16 w-16 items-center justify-center rounded-full border border-border bg-card">
+          <Zap className="h-8 w-8 text-primary" />
         </div>
       </div>
 
       {/* Loading Text */}
       <div className="text-center">
-        <h1 className="mb-2 text-lg font-semibold text-white">Lumentra Core</h1>
+        <h1 className="mb-2 text-lg font-semibold text-foreground">
+          Lumentra Core
+        </h1>
         <div className="flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
-          <span className="text-sm text-zinc-500">Initializing system...</span>
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">
+            Initializing system...
+          </span>
         </div>
       </div>
 
       {/* Loading Bar */}
-      <div className="mt-8 h-1 w-48 overflow-hidden rounded-full bg-zinc-800">
-        <div className="h-full w-1/2 animate-pulse bg-indigo-500" />
+      <div className="mt-8 h-1 w-48 overflow-hidden rounded-full bg-muted">
+        <div className="h-full w-1/2 animate-pulse bg-primary" />
       </div>
     </div>
   );
@@ -70,23 +75,23 @@ class ErrorBoundary extends React.Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex h-screen w-full flex-col items-center justify-center bg-zinc-950 p-8">
+        <div className="flex h-screen w-full flex-col items-center justify-center bg-background p-8">
           <div className="max-w-md text-center">
-            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-red-500/30 bg-red-500/10">
-              <AlertTriangle className="h-8 w-8 text-red-500" />
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-destructive/30 bg-destructive/10">
+              <AlertTriangle className="h-8 w-8 text-destructive" />
             </div>
-            <h1 className="mb-2 text-xl font-semibold text-white">
+            <h1 className="mb-2 text-xl font-semibold text-foreground">
               Something went wrong
             </h1>
-            <p className="mb-6 text-sm text-zinc-400">
+            <p className="mb-6 text-sm text-muted-foreground">
               An unexpected error occurred. Please try refreshing the page.
             </p>
             {this.state.error && (
-              <div className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-left">
-                <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+              <div className="mb-6 rounded-lg border border-border bg-card p-4 text-left">
+                <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                   Error Details
                 </div>
-                <code className="font-mono text-xs text-red-400">
+                <code className="font-mono text-xs text-destructive">
                   {this.state.error.message}
                 </code>
               </div>
@@ -96,7 +101,7 @@ class ErrorBoundary extends React.Component<
                 localStorage.removeItem("lumentra_config_v2");
                 window.location.reload();
               }}
-              className="rounded-md bg-zinc-800 px-4 py-2 text-sm text-white hover:bg-zinc-700"
+              className="rounded-md bg-secondary px-4 py-2 text-sm text-secondary-foreground hover:bg-accent"
             >
               Reset & Reload
             </button>
@@ -129,7 +134,7 @@ function AppContent() {
 
   // Configured - show dashboard or settings
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-zinc-950">
+    <div className="flex h-screen w-screen overflow-hidden bg-background">
       {/* Sidebar */}
       <Sidebar />
 
@@ -143,6 +148,10 @@ function AppContent() {
           {currentView === "dashboard" && <DashboardView />}
           {currentView === "calls" && <CallsView />}
           {currentView === "analytics" && <AnalyticsView />}
+          {currentView === "contacts" && <ContactsView />}
+          {currentView === "calendar" && <CalendarView />}
+          {currentView === "notifications" && <NotificationsView />}
+          {currentView === "resources" && <ResourcesView />}
           {currentView === "settings" && <SettingsPanel />}
         </main>
       </div>
@@ -164,7 +173,7 @@ function DashboardView() {
   return (
     <div className="grid h-full grid-cols-[240px_1fr_300px] overflow-hidden">
       {/* Left: System Health */}
-      <div className="overflow-hidden border-r border-zinc-800">
+      <div className="overflow-hidden border-r border-border">
         <SystemHealth />
       </div>
 
@@ -185,11 +194,13 @@ function CallsView() {
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900">
-          <span className="text-2xl">...</span>
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-border bg-card">
+          <span className="text-2xl text-muted-foreground">...</span>
         </div>
-        <h2 className="mb-2 text-lg font-semibold text-white">Call History</h2>
-        <p className="text-sm text-zinc-500">
+        <h2 className="mb-2 text-lg font-semibold text-foreground">
+          Call History
+        </h2>
+        <p className="text-sm text-muted-foreground">
           Call logs and recordings coming soon
         </p>
       </div>
@@ -201,11 +212,13 @@ function AnalyticsView() {
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900">
-          <span className="text-2xl">...</span>
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-border bg-card">
+          <span className="text-2xl text-muted-foreground">...</span>
         </div>
-        <h2 className="mb-2 text-lg font-semibold text-white">Analytics</h2>
-        <p className="text-sm text-zinc-500">
+        <h2 className="mb-2 text-lg font-semibold text-foreground">
+          Analytics
+        </h2>
+        <p className="text-sm text-muted-foreground">
           Detailed reports and charts coming soon
         </p>
       </div>
@@ -214,15 +227,45 @@ function AnalyticsView() {
 }
 
 // ============================================================================
+// CRM VIEW COMPONENTS
+// ============================================================================
+
+function ContactsView() {
+  const ContactsPage =
+    require("@/components/crm/contacts/ContactsPage").default;
+  return <ContactsPage />;
+}
+
+function CalendarView() {
+  const CalendarPage =
+    require("@/components/crm/calendar/CalendarPage").default;
+  return <CalendarPage />;
+}
+
+function NotificationsView() {
+  const NotificationsPage =
+    require("@/components/crm/notifications/NotificationsPage").default;
+  return <NotificationsPage />;
+}
+
+function ResourcesView() {
+  const ResourcesPage =
+    require("@/components/crm/resources/ResourcesPage").default;
+  return <ResourcesPage />;
+}
+
+// ============================================================================
 // ROOT COMPONENT
 // ============================================================================
 
 export default function Home() {
   return (
-    <ErrorBoundary>
-      <ConfigProvider>
-        <AppContent />
-      </ConfigProvider>
-    </ErrorBoundary>
+    <ThemeProvider>
+      <ErrorBoundary>
+        <ConfigProvider>
+          <AppContent />
+        </ConfigProvider>
+      </ErrorBoundary>
+    </ThemeProvider>
   );
 }

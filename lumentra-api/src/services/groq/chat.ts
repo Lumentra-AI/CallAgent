@@ -1,5 +1,5 @@
 // Groq Chat Service
-// Handles LLM conversations with hybrid model routing
+// Handles LLM conversations with FunctionGemma routing + Llama 3.1 8B
 
 import { groqClient, chatConfig, toolConfig } from "./client.js";
 import { voiceAgentTools, executeTool } from "./tools.js";
@@ -9,6 +9,13 @@ import type {
   ToolExecutionContext,
 } from "../../types/voice.js";
 import { needsToolCall } from "../voice/intent-detector.js";
+import {
+  executeChain,
+  createChainContext,
+  cleanupRetryState,
+  type ChainContext,
+} from "../fallback/chain.js";
+import type { EscalationState } from "../escalation/escalation-manager.js";
 
 interface ChatResponse {
   text: string;
@@ -247,4 +254,86 @@ export async function quickResponse(
   });
 
   return response.choices[0].message.content || "";
+}
+
+// Extended response type with chain metadata
+export interface ChainChatResponse extends ChatResponse {
+  action: "response" | "escalate" | "retry";
+  escalationReason?: string;
+  metrics: {
+    functionGemmaUsed: boolean;
+    llmUsed: boolean;
+    retryCount: number;
+    totalLatencyMs: number;
+  };
+}
+
+// Chat with FunctionGemma routing + Llama 3.1 8B fallback chain
+// This is the preferred method for voice conversations
+export async function chatWithFallback(
+  userMessage: string,
+  conversationHistory: ConversationMessage[],
+  systemPrompt: string,
+  context: ToolExecutionContext,
+  escalationState: EscalationState,
+): Promise<ChainChatResponse> {
+  const chainContext: ChainContext = {
+    tenantId: context.tenantId,
+    callSid: context.callSid,
+    callerPhone: context.callerPhone,
+    conversationHistory,
+    systemPrompt,
+    escalationState,
+  };
+
+  // Execute the fallback chain
+  const result = await executeChain(
+    userMessage,
+    chainContext,
+    // LLM chat function (used when FunctionGemma routes to LLM)
+    async (msg, history, prompt, toolCtx) => {
+      return chat(msg, history, prompt, toolCtx);
+    },
+    // Tool execution function
+    async (toolName, args, toolCtx) => {
+      return executeTool(toolName, args, toolCtx);
+    },
+  );
+
+  console.log(
+    `[CHAT] Chain result: action=${result.action}, ` +
+      `fg=${result.metrics.functionGemmaUsed}, ` +
+      `llm=${result.metrics.llmUsed}, ` +
+      `latency=${result.metrics.totalLatencyMs}ms`,
+  );
+
+  return {
+    text: result.text,
+    toolCalls: result.toolCalls,
+    action: result.action,
+    escalationReason: result.escalationReason,
+    metrics: result.metrics,
+  };
+}
+
+// Create a chain context for a new call
+export function initializeChainContext(
+  tenantId: string,
+  callSid: string,
+  callerPhone: string | undefined,
+  conversationHistory: ConversationMessage[],
+  systemPrompt: string,
+): ChainContext {
+  return createChainContext(
+    tenantId,
+    callSid,
+    callerPhone,
+    conversationHistory,
+    systemPrompt,
+  );
+}
+
+// Cleanup when call ends
+export function cleanupCall(callSid: string): void {
+  cleanupRetryState(callSid);
 }

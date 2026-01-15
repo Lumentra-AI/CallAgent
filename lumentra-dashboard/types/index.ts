@@ -537,7 +537,16 @@ export type LogCategory =
 // UI STATE
 // ============================================================================
 
-export type ViewType = "dashboard" | "calls" | "analytics" | "settings";
+export type ViewType =
+  | "dashboard"
+  | "calls"
+  | "analytics"
+  | "settings"
+  // CRM views
+  | "contacts"
+  | "calendar"
+  | "notifications"
+  | "resources";
 
 export type SettingsTab =
   | "general"

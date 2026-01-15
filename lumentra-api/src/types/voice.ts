@@ -140,8 +140,8 @@ export interface DeepgramTranscript {
 export interface GroqConfig {
   model:
     | "llama-3.1-8b-instant"
-    | "llama-3-groq-8b-tool-use"
-    | "llama-3-groq-70b-tool-use";
+    | "llama-3.1-70b-versatile"
+    | "llama-3.3-70b-versatile";
   temperature: number;
   maxTokens: number;
   stream: boolean;

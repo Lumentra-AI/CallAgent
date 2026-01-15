@@ -10,7 +10,12 @@ import {
   clearAudioQueue,
 } from "./conversation-state.js";
 import * as sessionManager from "./session-manager.js";
-import { chat, buildSystemPrompt } from "../groq/chat.js";
+import {
+  chat,
+  chatWithFallback,
+  buildSystemPrompt,
+  cleanupCall,
+} from "../groq/chat.js";
 import {
   createTranscriber,
   type DeepgramTranscriber,
@@ -20,8 +25,15 @@ import {
   createMediaStreamHandler,
   type MediaStreamHandler,
 } from "../signalwire/media-stream.js";
+import {
+  createEscalationState,
+  type EscalationState,
+} from "../escalation/escalation-manager.js";
 import type { Tenant } from "../../types/database.js";
 import type WebSocket from "ws";
+
+// Feature flag: use FunctionGemma routing (set to false to use legacy chat)
+const USE_FALLBACK_CHAIN = process.env.USE_FALLBACK_CHAIN !== "false";
 
 // Configuration
 const SILENCE_THRESHOLD_MS = 1200; // Wait for user to stop speaking
@@ -46,6 +58,7 @@ export class TurnManager {
   private systemPrompt: string;
   private silenceTimer: NodeJS.Timeout | null = null;
   private isProcessing = false;
+  private escalationState: EscalationState;
 
   constructor(
     callSid: string,
@@ -60,12 +73,19 @@ export class TurnManager {
     // Create session
     sessionManager.createSession(callSid, tenant, callerPhone);
 
+    // Initialize escalation state for smart transfer handling
+    this.escalationState = createEscalationState();
+
     // Build system prompt from tenant config
     this.systemPrompt = buildSystemPrompt(
       tenant.agent_name,
       tenant.business_name,
       tenant.industry,
       tenant.agent_personality,
+    );
+
+    console.log(
+      `[TURN] Initialized for ${callSid}, fallback chain: ${USE_FALLBACK_CHAIN}`,
     );
   }
 
@@ -215,36 +235,77 @@ export class TurnManager {
         this.callSid,
       );
 
-      const response = await chat(
-        transcript,
-        conversationHistory,
-        this.systemPrompt,
-        {
-          tenantId: this.tenant.id,
-          callSid: this.callSid,
-          callerPhone: sessionManager.getSession(this.callSid)?.callerPhone,
-        },
-      );
+      const toolContext = {
+        tenantId: this.tenant.id,
+        callSid: this.callSid,
+        callerPhone: sessionManager.getSession(this.callSid)?.callerPhone,
+      };
 
-      console.log(
-        `[TURN] Generated response: "${response.text.substring(0, 100)}..."`,
-      );
+      if (USE_FALLBACK_CHAIN) {
+        // Use FunctionGemma routing + Llama 3.1 8B fallback chain
+        const response = await chatWithFallback(
+          transcript,
+          conversationHistory,
+          this.systemPrompt,
+          toolContext,
+          this.escalationState,
+        );
 
-      // Add assistant response to history
-      sessionManager.addMessage(this.callSid, "assistant", response.text);
+        console.log(
+          `[TURN] Chain response: "${response.text.substring(0, 100)}..." ` +
+            `(action: ${response.action}, latency: ${response.metrics.totalLatencyMs}ms)`,
+        );
 
-      // Check for transfer
-      if (response.toolCalls?.some((tc) => tc.name === "transfer_to_human")) {
-        if (this.tenant.escalation_phone) {
-          this.callbacks.onTransferRequested(this.tenant.escalation_phone);
+        // Add assistant response to history
+        sessionManager.addMessage(this.callSid, "assistant", response.text);
+
+        // Handle escalation
+        if (response.action === "escalate") {
+          console.log(
+            `[TURN] Escalation triggered: ${response.escalationReason}`,
+          );
+          if (this.tenant.escalation_phone) {
+            this.callbacks.onTransferRequested(this.tenant.escalation_phone);
+          }
         }
+
+        // Check for transfer tool call (legacy behavior)
+        if (response.toolCalls?.some((tc) => tc.name === "transfer_to_human")) {
+          if (this.tenant.escalation_phone) {
+            this.callbacks.onTransferRequested(this.tenant.escalation_phone);
+          }
+        }
+
+        // Speak response
+        await this.speak(response.text);
+        this.callbacks.onResponse(response.text);
+      } else {
+        // Legacy: direct LLM chat without FunctionGemma routing
+        const response = await chat(
+          transcript,
+          conversationHistory,
+          this.systemPrompt,
+          toolContext,
+        );
+
+        console.log(
+          `[TURN] Generated response: "${response.text.substring(0, 100)}..."`,
+        );
+
+        // Add assistant response to history
+        sessionManager.addMessage(this.callSid, "assistant", response.text);
+
+        // Check for transfer
+        if (response.toolCalls?.some((tc) => tc.name === "transfer_to_human")) {
+          if (this.tenant.escalation_phone) {
+            this.callbacks.onTransferRequested(this.tenant.escalation_phone);
+          }
+        }
+
+        // Speak response
+        await this.speak(response.text);
+        this.callbacks.onResponse(response.text);
       }
-
-      // Speak response
-      await this.speak(response.text);
-
-      // Notify callback
-      this.callbacks.onResponse(response.text);
     } catch (error) {
       console.error(`[TURN] Error processing turn:`, error);
 
@@ -292,6 +353,8 @@ export class TurnManager {
 
     await Promise.all([this.transcriber?.stop(), this.tts?.disconnect()]);
 
+    // Cleanup call state (retry counters, etc.)
+    cleanupCall(this.callSid);
     sessionManager.endSession(this.callSid);
     this.callbacks.onCallEnd("cleanup");
   }

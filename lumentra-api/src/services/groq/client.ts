@@ -24,8 +24,10 @@ export const chatConfig: GroqConfig = {
 };
 
 // Configuration for tool calling
+// Note: llama-3.1-8b-instant has native tool calling support
+// The deprecated llama-3-groq-8b-tool-use model has been removed
 export const toolConfig: GroqConfig = {
-  model: "llama-3-groq-8b-tool-use",
+  model: "llama-3.1-8b-instant",
   temperature: 0.3,
   maxTokens: 500,
   stream: false,

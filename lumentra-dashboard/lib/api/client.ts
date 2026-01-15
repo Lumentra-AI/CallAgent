@@ -5,6 +5,26 @@
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
+// Default tenant ID for development - set via env or use default
+const DEFAULT_TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || "dev-tenant";
+
+// Current tenant ID - can be set dynamically
+let currentTenantId: string = DEFAULT_TENANT_ID;
+
+/**
+ * Set the current tenant ID for API requests
+ */
+export function setTenantId(tenantId: string): void {
+  currentTenantId = tenantId;
+}
+
+/**
+ * Get the current tenant ID
+ */
+export function getTenantId(): string {
+  return currentTenantId;
+}
+
 export interface ApiError {
   message: string;
   status: number;
@@ -33,6 +53,7 @@ export async function apiClient<T>(
     ...options,
     headers: {
       "Content-Type": "application/json",
+      "X-Tenant-ID": currentTenantId,
       ...options?.headers,
     },
   });

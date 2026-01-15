@@ -82,6 +82,7 @@ export interface Call {
   // References
   tenant_id: string;
   vapi_call_id: string;
+  contact_id?: string; // CRM contact reference
 
   // Call details
   caller_phone?: string;
@@ -120,6 +121,9 @@ export interface Booking {
   // References
   tenant_id: string;
   call_id?: string;
+  contact_id?: string; // CRM contact reference
+  resource_id?: string; // CRM resource reference
+  slot_id?: string; // Availability slot reference
 
   // Customer
   customer_name: string;
@@ -143,6 +147,11 @@ export interface Booking {
   // Reminders
   reminder_sent: boolean;
   reminder_sent_at?: string;
+
+  // CRM fields
+  source?: "call" | "web" | "manual" | "api";
+  rescheduled_from?: string;
+  rescheduled_count?: number;
 }
 
 export interface CallbackQueue {
@@ -152,6 +161,7 @@ export interface CallbackQueue {
   // References
   tenant_id: string;
   original_call_id?: string;
+  contact_id?: string; // CRM contact reference
 
   // Callback details
   phone_number: string;
@@ -174,6 +184,7 @@ export interface SmsMessage {
   tenant_id: string;
   booking_id?: string;
   call_id?: string;
+  contact_id?: string; // CRM contact reference
 
   // Message details
   to_phone: string;

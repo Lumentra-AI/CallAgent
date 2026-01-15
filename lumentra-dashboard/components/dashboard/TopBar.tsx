@@ -4,6 +4,7 @@ import React from "react";
 import { useConfig } from "@/context/ConfigContext";
 import { Circle, Wifi, WifiOff, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 // ============================================================================
 // TOP BAR COMPONENT - Dense Status Strip
@@ -24,7 +25,7 @@ export default function TopBar() {
   const activeCalls = metrics?.system.activeCalls || 0;
 
   return (
-    <header className="flex h-10 items-center justify-between border-b border-zinc-800 bg-zinc-950 px-4">
+    <header className="flex h-10 items-center justify-between border-b border-border bg-background px-4">
       {/* Left: System Status */}
       <div className="flex items-center gap-4">
         {/* Online Status */}
@@ -44,7 +45,7 @@ export default function TopBar() {
               <Circle className="absolute inset-0 h-2 w-2 animate-ping fill-current text-green-500 opacity-75" />
             )}
           </div>
-          <span className="font-mono text-[10px] uppercase text-zinc-500">
+          <span className="font-mono text-[10px] uppercase text-muted-foreground">
             SYS:{" "}
             <span
               className={cn(
@@ -60,10 +61,10 @@ export default function TopBar() {
           </span>
         </div>
 
-        <span className="text-zinc-700">|</span>
+        <span className="text-border">|</span>
 
         {/* Latency */}
-        <span className="font-mono text-[10px] text-zinc-500">
+        <span className="font-mono text-[10px] text-muted-foreground">
           RTT:{" "}
           <span
             className={cn(
@@ -78,13 +79,15 @@ export default function TopBar() {
           </span>
         </span>
 
-        <span className="text-zinc-700">|</span>
+        <span className="text-border">|</span>
 
         {/* Active Calls */}
-        <span className="font-mono text-[10px] text-zinc-500">
+        <span className="font-mono text-[10px] text-muted-foreground">
           ACTIVE:{" "}
           <span
-            className={activeCalls > 0 ? "text-indigo-400" : "text-zinc-400"}
+            className={
+              activeCalls > 0 ? "text-primary" : "text-muted-foreground"
+            }
           >
             {activeCalls}
           </span>
@@ -93,7 +96,7 @@ export default function TopBar() {
 
       {/* Center: Business Name */}
       <div className="absolute left-1/2 -translate-x-1/2">
-        <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           {config?.businessName || "Lumentra Core"}
         </span>
       </div>
@@ -101,16 +104,21 @@ export default function TopBar() {
       {/* Right: Time & Version */}
       <div className="flex items-center gap-4">
         {/* Industry Tag */}
-        <span className="rounded border border-zinc-800 bg-zinc-900 px-2 py-0.5 font-mono text-[10px] uppercase text-zinc-500">
+        <span className="rounded border border-border bg-muted px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
           {config?.industry || "---"}
         </span>
 
-        <span className="text-zinc-700">|</span>
+        <span className="text-border">|</span>
+
+        {/* Theme Toggle */}
+        <ThemeToggle size="sm" />
+
+        <span className="text-border">|</span>
 
         {/* Time */}
         <div className="flex items-center gap-1.5">
-          <Clock className="h-3 w-3 text-zinc-600" />
-          <span className="font-mono text-[10px] tabular-nums text-zinc-400">
+          <Clock className="h-3 w-3 text-muted-foreground" />
+          <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
             {currentTime.toLocaleTimeString("en-US", {
               hour12: false,
               hour: "2-digit",
@@ -120,10 +128,12 @@ export default function TopBar() {
           </span>
         </div>
 
-        <span className="text-zinc-700">|</span>
+        <span className="text-border">|</span>
 
         {/* Version */}
-        <span className="font-mono text-[10px] text-zinc-600">v0.1.0</span>
+        <span className="font-mono text-[10px] text-muted-foreground">
+          v0.1.0
+        </span>
       </div>
     </header>
   );
