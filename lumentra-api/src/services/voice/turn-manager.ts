@@ -11,11 +11,10 @@ import {
 } from "./conversation-state.js";
 import * as sessionManager from "./session-manager.js";
 import {
-  chat,
   chatWithFallback,
   buildSystemPrompt,
   cleanupCall,
-} from "../groq/chat.js";
+} from "../gemini/chat.js";
 import {
   createTranscriber,
   type DeepgramTranscriber,
@@ -29,14 +28,20 @@ import {
   createEscalationState,
   type EscalationState,
 } from "../escalation/escalation-manager.js";
+import {
+  conversationLogger,
+  startConversationLog,
+  addUserTurn,
+  addAssistantTurn,
+  endConversationLog,
+} from "../training/conversation-logger.js";
+import { checkUtteranceCompleteness } from "../gemini/intent-check.js";
 import type { Tenant } from "../../types/database.js";
 import type WebSocket from "ws";
 
-// Feature flag: use FunctionGemma routing (set to false to use legacy chat)
-const USE_FALLBACK_CHAIN = process.env.USE_FALLBACK_CHAIN !== "false";
-
 // Configuration
-const SILENCE_THRESHOLD_MS = 1200; // Wait for user to stop speaking
+const SILENCE_THRESHOLD_MS = 300; // Small buffer after Deepgram's utterance end
+const INCOMPLETE_WAIT_MS = 1200; // Wait longer when LLM detects incomplete thought
 const MIN_TRANSCRIPT_LENGTH = 3; // Minimum characters before processing
 
 export interface TurnManagerCallbacks {
@@ -84,9 +89,33 @@ export class TurnManager {
       tenant.agent_personality,
     );
 
-    console.log(
-      `[TURN] Initialized for ${callSid}, fallback chain: ${USE_FALLBACK_CHAIN}`,
-    );
+    // Start conversation logging for training data
+    this.initializeTrainingLog(callerPhone);
+
+    console.log(`[TURN] Initialized for ${callSid}`);
+  }
+
+  private async initializeTrainingLog(
+    _callerPhone: string | undefined,
+  ): Promise<void> {
+    try {
+      await startConversationLog({
+        tenantId: this.tenant.id,
+        sessionId: this.callSid,
+        industry: this.tenant.industry,
+        scenarioType: "general", // Will be updated based on conversation
+      });
+
+      // Log the system prompt
+      await conversationLogger.addSystemMessage(
+        this.callSid,
+        this.systemPrompt,
+      );
+
+      console.log(`[TRAINING] Started logging for call ${this.callSid}`);
+    } catch (error) {
+      console.error(`[TRAINING] Failed to start logging:`, error);
+    }
   }
 
   async initialize(ws: WebSocket): Promise<void> {
@@ -152,8 +181,11 @@ export class TurnManager {
     // Connect services
     await Promise.all([this.tts.connect(), this.transcriber.start()]);
 
-    // Speak greeting
+    // Speak greeting and log it
     await this.speak(this.tenant.greeting_standard);
+    addAssistantTurn(this.callSid, this.tenant.greeting_standard).catch((err) =>
+      console.error("[TRAINING] Failed to log greeting:", err),
+    );
   }
 
   private handleIncomingAudio(audioBuffer: Buffer): void {
@@ -173,7 +205,7 @@ export class TurnManager {
     if (isFinal) {
       console.log(`[TURN] Final transcript: "${text}"`);
 
-      // Start silence timer to detect end of turn
+      // Start silence timer - the actual completeness check happens in processUserTurn
       this.silenceTimer = setTimeout(() => {
         this.processUserTurn();
       }, SILENCE_THRESHOLD_MS);
@@ -200,7 +232,7 @@ export class TurnManager {
     sessionManager.setSpeaking(this.callSid, false);
     this.state = startSilence(this.state);
 
-    // Process turn after silence
+    // Process turn after short silence buffer
     if (!this.silenceTimer) {
       this.silenceTimer = setTimeout(() => {
         this.processUserTurn();
@@ -220,8 +252,23 @@ export class TurnManager {
       return;
     }
 
+    // Use LLM to check if user's utterance is complete
+    // This catches things like "I want to book for..." where user is still thinking
+    const completeness = await checkUtteranceCompleteness(transcript);
+
+    if (!completeness.isComplete) {
+      console.log(
+        `[TURN] Utterance incomplete, waiting for more: "${transcript}"`,
+      );
+      // Wait longer for user to finish their thought
+      this.silenceTimer = setTimeout(() => {
+        this.processUserTurn();
+      }, INCOMPLETE_WAIT_MS);
+      return;
+    }
+
     this.isProcessing = true;
-    console.log(`[TURN] Processing user turn: "${transcript}"`);
+    console.log(`[TURN] Processing complete utterance: "${transcript}"`);
 
     // Clear transcript buffer
     this.state = clearTranscript(this.state);
@@ -229,8 +276,13 @@ export class TurnManager {
     // Add to conversation history
     sessionManager.addMessage(this.callSid, "user", transcript);
 
+    // Log user turn for training data
+    addUserTurn(this.callSid, transcript).catch((err) =>
+      console.error("[TRAINING] Failed to log user turn:", err),
+    );
+
     try {
-      // Generate response
+      // Generate response using Groq LLM with native tool calling
       const conversationHistory = sessionManager.getConversationHistory(
         this.callSid,
       );
@@ -241,71 +293,40 @@ export class TurnManager {
         callerPhone: sessionManager.getSession(this.callSid)?.callerPhone,
       };
 
-      if (USE_FALLBACK_CHAIN) {
-        // Use FunctionGemma routing + Llama 3.1 8B fallback chain
-        const response = await chatWithFallback(
-          transcript,
-          conversationHistory,
-          this.systemPrompt,
-          toolContext,
-          this.escalationState,
-        );
+      const response = await chatWithFallback(
+        transcript,
+        conversationHistory,
+        this.systemPrompt,
+        toolContext,
+        this.escalationState,
+      );
 
+      console.log(
+        `[TURN] Response: "${response.text.substring(0, 100)}..." ` +
+          `(action: ${response.action}, latency: ${response.metrics.totalLatencyMs}ms)`,
+      );
+
+      // Add assistant response to history
+      sessionManager.addMessage(this.callSid, "assistant", response.text);
+
+      // Log assistant turn for training data
+      addAssistantTurn(this.callSid, response.text).catch((err) =>
+        console.error("[TRAINING] Failed to log assistant turn:", err),
+      );
+
+      // Handle escalation/transfer
+      if (response.action === "escalate") {
         console.log(
-          `[TURN] Chain response: "${response.text.substring(0, 100)}..." ` +
-            `(action: ${response.action}, latency: ${response.metrics.totalLatencyMs}ms)`,
+          `[TURN] Escalation triggered: ${response.escalationReason}`,
         );
-
-        // Add assistant response to history
-        sessionManager.addMessage(this.callSid, "assistant", response.text);
-
-        // Handle escalation
-        if (response.action === "escalate") {
-          console.log(
-            `[TURN] Escalation triggered: ${response.escalationReason}`,
-          );
-          if (this.tenant.escalation_phone) {
-            this.callbacks.onTransferRequested(this.tenant.escalation_phone);
-          }
+        if (this.tenant.escalation_phone) {
+          this.callbacks.onTransferRequested(this.tenant.escalation_phone);
         }
-
-        // Check for transfer tool call (legacy behavior)
-        if (response.toolCalls?.some((tc) => tc.name === "transfer_to_human")) {
-          if (this.tenant.escalation_phone) {
-            this.callbacks.onTransferRequested(this.tenant.escalation_phone);
-          }
-        }
-
-        // Speak response
-        await this.speak(response.text);
-        this.callbacks.onResponse(response.text);
-      } else {
-        // Legacy: direct LLM chat without FunctionGemma routing
-        const response = await chat(
-          transcript,
-          conversationHistory,
-          this.systemPrompt,
-          toolContext,
-        );
-
-        console.log(
-          `[TURN] Generated response: "${response.text.substring(0, 100)}..."`,
-        );
-
-        // Add assistant response to history
-        sessionManager.addMessage(this.callSid, "assistant", response.text);
-
-        // Check for transfer
-        if (response.toolCalls?.some((tc) => tc.name === "transfer_to_human")) {
-          if (this.tenant.escalation_phone) {
-            this.callbacks.onTransferRequested(this.tenant.escalation_phone);
-          }
-        }
-
-        // Speak response
-        await this.speak(response.text);
-        this.callbacks.onResponse(response.text);
       }
+
+      // Speak response
+      await this.speak(response.text);
+      this.callbacks.onResponse(response.text);
     } catch (error) {
       console.error(`[TURN] Error processing turn:`, error);
 
@@ -352,6 +373,19 @@ export class TurnManager {
     }
 
     await Promise.all([this.transcriber?.stop(), this.tts?.disconnect()]);
+
+    // End conversation logging with final metadata
+    const session = sessionManager.getSession(this.callSid);
+    const duration = session
+      ? Math.floor((Date.now() - session.startTime.getTime()) / 1000)
+      : 0;
+
+    endConversationLog(this.callSid, {
+      durationSeconds: duration,
+      outcomeSuccess: true, // Can be updated based on call outcome
+    }).catch((err) =>
+      console.error("[TRAINING] Failed to end conversation log:", err),
+    );
 
     // Cleanup call state (retry counters, etc.)
     cleanupCall(this.callSid);

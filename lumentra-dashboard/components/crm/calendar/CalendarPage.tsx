@@ -8,7 +8,7 @@ import {
   Calendar as CalendarIcon,
   Clock,
   User,
-  MoreHorizontal,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyBookings } from "@/components/crm/shared/EmptyState";
@@ -18,8 +18,17 @@ import {
   navigateCalendar,
   getDaySummary,
 } from "@/lib/api";
-import type { CalendarEvent, CalendarView, DaySummary } from "@/types/crm";
+import { BookingForm } from "./BookingForm";
+import type {
+  CalendarEvent,
+  CalendarView,
+  DaySummary,
+  Booking,
+} from "@/types/crm";
 import { cn } from "@/lib/utils";
+
+// Auto-refresh interval in milliseconds (5 seconds for real-time feel)
+const REFRESH_INTERVAL = 5000;
 
 // ============================================================================
 // CONSTANTS
@@ -232,11 +241,13 @@ function DaySummaryPanel({
   summary,
   events,
   onClose,
+  onAddBooking,
 }: {
   date: Date;
   summary: DaySummary | null;
   events: CalendarEvent[];
   onClose: () => void;
+  onAddBooking: () => void;
 }) {
   return (
     <div className="w-80 border-l border-zinc-800 flex flex-col">
@@ -322,7 +333,7 @@ function DaySummaryPanel({
 
       {/* Add Button */}
       <div className="border-t border-zinc-800 p-4">
-        <Button className="w-full">
+        <Button className="w-full" onClick={onAddBooking}>
           <Plus className="mr-2 h-4 w-4" />
           Add Booking
         </Button>
@@ -340,27 +351,47 @@ export default function CalendarPage() {
   const [view, setView] = React.useState<CalendarView>("month");
   const [events, setEvents] = React.useState<CalendarEvent[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [selectedDate, setSelectedDate] = React.useState<Date | null>(null);
   const [daySummary, setDaySummary] = React.useState<DaySummary | null>(null);
+  const [isFormOpen, setIsFormOpen] = React.useState(false);
+  const [lastRefresh, setLastRefresh] = React.useState<Date>(new Date());
 
-  // Load events
-  React.useEffect(() => {
-    const loadEvents = async () => {
-      setIsLoading(true);
+  // Load events function (reusable for initial load and refresh)
+  const loadEvents = React.useCallback(
+    async (showLoading = true) => {
+      if (showLoading) setIsLoading(true);
+      else setIsRefreshing(true);
+
       try {
         const { startDate, endDate } = getDateRangeForView(currentDate, view);
         const result = await getCalendarEvents(startDate, endDate);
         setEvents(result.events);
+        setLastRefresh(new Date());
       } catch (err) {
         console.error("Failed to load events:", err);
-        setEvents([]);
+        if (showLoading) setEvents([]);
       } finally {
         setIsLoading(false);
+        setIsRefreshing(false);
       }
-    };
+    },
+    [currentDate, view],
+  );
 
-    loadEvents();
-  }, [currentDate, view]);
+  // Initial load and when date/view changes
+  React.useEffect(() => {
+    loadEvents(true);
+  }, [loadEvents]);
+
+  // Auto-refresh every 15 seconds
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      loadEvents(false);
+    }, REFRESH_INTERVAL);
+
+    return () => clearInterval(interval);
+  }, [loadEvents]);
 
   // Load day summary when a date is selected
   React.useEffect(() => {
@@ -389,6 +420,19 @@ export default function CalendarPage() {
 
   const handleDayClick = (date: Date) => {
     setSelectedDate(date);
+  };
+
+  const handleManualRefresh = () => {
+    loadEvents(false);
+  };
+
+  const handleBookingSuccess = (booking: Booking) => {
+    loadEvents(false);
+    // If we have a selected date, reload summary too
+    if (selectedDate) {
+      const dateStr = selectedDate.toISOString().split("T")[0];
+      getDaySummary(dateStr).then(setDaySummary).catch(console.error);
+    }
   };
 
   const selectedDateEvents = selectedDate
@@ -435,6 +479,17 @@ export default function CalendarPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={handleManualRefresh}
+              disabled={isRefreshing}
+              title={`Last updated: ${lastRefresh.toLocaleTimeString()}`}
+            >
+              <RefreshCw
+                className={cn("h-4 w-4", isRefreshing && "animate-spin")}
+              />
+            </Button>
             <div className="flex rounded-md border border-zinc-800">
               {(["month", "week", "day"] as CalendarView[]).map((v) => (
                 <Button
@@ -452,7 +507,7 @@ export default function CalendarPage() {
                 </Button>
               ))}
             </div>
-            <Button>
+            <Button onClick={() => setIsFormOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
               New Booking
             </Button>
@@ -480,8 +535,17 @@ export default function CalendarPage() {
           summary={daySummary}
           events={selectedDateEvents}
           onClose={() => setSelectedDate(null)}
+          onAddBooking={() => setIsFormOpen(true)}
         />
       )}
+
+      {/* Booking Form Modal */}
+      <BookingForm
+        open={isFormOpen}
+        onOpenChange={setIsFormOpen}
+        initialDate={selectedDate?.toISOString().split("T")[0]}
+        onSuccess={handleBookingSuccess}
+      />
     </div>
   );
 }
