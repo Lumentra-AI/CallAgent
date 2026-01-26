@@ -142,7 +142,7 @@ dashboardRoutes.get("/metrics", async (c) => {
       today: bookingsToday || 0,
     },
     voice: {
-      provider: process.env.VOICE_PROVIDER || "vapi",
+      stack: "signalwire+deepgram+gemini+cartesia",
       sttStatus: "connected",
       llmStatus: "connected",
       ttsStatus: "connected",

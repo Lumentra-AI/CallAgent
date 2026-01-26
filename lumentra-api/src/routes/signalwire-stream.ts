@@ -6,9 +6,6 @@ import type WebSocket from "ws";
 import { createTurnManager } from "../services/voice/turn-manager.js";
 import { getTenantById } from "../services/database/tenant-cache.js";
 
-// Feature flag
-const VOICE_PROVIDER = process.env.VOICE_PROVIDER || "vapi";
-
 interface StreamParams {
   callSid: string;
   tenantId: string;
@@ -42,13 +39,6 @@ export async function handleSignalWireStream(
   ws: WebSocket,
   request: IncomingMessage,
 ): Promise<void> {
-  // Check feature flag
-  if (VOICE_PROVIDER !== "custom") {
-    console.log("[STREAM] Custom voice disabled, closing connection");
-    ws.close(1000, "Custom voice disabled");
-    return;
-  }
-
   const url = request.url || "";
   console.log(`[STREAM] New connection: ${url}`);
 

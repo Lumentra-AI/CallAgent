@@ -10,8 +10,6 @@ import { getTenantByPhoneWithFallback } from "../services/database/tenant-cache.
 
 const signalwireVoice = new Hono();
 
-// Feature flag check
-const VOICE_PROVIDER = process.env.VOICE_PROVIDER || "vapi";
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
 
 /**
@@ -19,18 +17,6 @@ const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
  * POST /signalwire/voice
  */
 signalwireVoice.post("/voice", async (c) => {
-  // Check feature flag
-  if (VOICE_PROVIDER !== "custom") {
-    console.log("[SIGNALWIRE] Custom voice disabled, returning empty response");
-    return c.text(
-      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-      200,
-      {
-        "Content-Type": "application/xml",
-      },
-    );
-  }
-
   try {
     // Get call parameters from SignalWire
     const formData = await c.req.parseBody();
@@ -89,10 +75,6 @@ signalwireVoice.post("/voice", async (c) => {
  * POST /signalwire/status
  */
 signalwireVoice.post("/status", async (c) => {
-  if (VOICE_PROVIDER !== "custom") {
-    return c.json({ status: "ignored" });
-  }
-
   try {
     const formData = await c.req.parseBody();
     const callSid = formData.CallSid as string;
@@ -113,26 +95,42 @@ signalwireVoice.post("/status", async (c) => {
 });
 
 /**
- * Transfer endpoint
- * POST /signalwire/transfer
+ * Transfer endpoint - returns TwiML to dial the destination
+ * GET/POST /signalwire/transfer?to=+1234567890
+ * SignalWire redirects calls here when transfer is initiated
  */
-signalwireVoice.post("/transfer", async (c) => {
-  if (VOICE_PROVIDER !== "custom") {
-    return c.json({ error: "Custom voice disabled" }, 400);
-  }
-
+signalwireVoice.all("/transfer", async (c) => {
   try {
-    const { phoneNumber } = await c.req.json();
+    // Get destination from query params (from redirect URL)
+    const to = c.req.query("to");
 
-    if (!phoneNumber) {
-      return c.json({ error: "Phone number required" }, 400);
+    if (!to) {
+      console.error("[SIGNALWIRE] Transfer missing destination");
+      return c.text(
+        `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Unable to complete transfer. Goodbye.</Say>
+  <Hangup/>
+</Response>`,
+        200,
+        { "Content-Type": "application/xml" },
+      );
     }
 
-    const xml = generateTransferXml(phoneNumber);
+    console.log(`[SIGNALWIRE] Transferring call to: ${to}`);
+    const xml = generateTransferXml(to);
     return c.text(xml, 200, { "Content-Type": "application/xml" });
   } catch (error) {
     console.error("[SIGNALWIRE] Error handling transfer:", error);
-    return c.json({ error: "Internal error" }, 500);
+    return c.text(
+      `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Transfer failed. Goodbye.</Say>
+  <Hangup/>
+</Response>`,
+      200,
+      { "Content-Type": "application/xml" },
+    );
   }
 });
 
@@ -143,8 +141,7 @@ signalwireVoice.post("/transfer", async (c) => {
 signalwireVoice.get("/health", (c) => {
   return c.json({
     provider: "signalwire",
-    enabled: VOICE_PROVIDER === "custom",
-    featureFlag: VOICE_PROVIDER,
+    enabled: true,
   });
 });
 

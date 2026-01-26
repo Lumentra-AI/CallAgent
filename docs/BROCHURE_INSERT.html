@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lumentra AI</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+    @page {
+      size: letter;
+      margin: 0;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      color: #1e293b;
+      background: #fff;
+      width: 8.5in;
+      height: 11in;
+      padding: 0.4in;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #4f46e5;
+      margin-bottom: 16px;
+    }
+
+    .logo {
+      font-size: 26px;
+      font-weight: 800;
+      color: #4f46e5;
+    }
+
+    .header-tagline {
+      font-size: 11px;
+      color: #64748b;
+    }
+
+    /* Hero */
+    .hero {
+      background: #4f46e5;
+      color: white;
+      padding: 20px 24px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      display: flex;
+      gap: 30px;
+    }
+
+    .hero-left {
+      flex: 1;
+    }
+
+    .hero h1 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      line-height: 1.2;
+    }
+
+    .hero-list {
+      list-style: none;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .hero-list li {
+      padding-left: 16px;
+      position: relative;
+      margin-bottom: 2px;
+    }
+
+    .hero-list li::before {
+      content: "\2713";
+      position: absolute;
+      left: 0;
+      color: #a5b4fc;
+    }
+
+    .hero-right {
+      background: white;
+      color: #4f46e5;
+      padding: 16px 20px;
+      border-radius: 6px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-width: 200px;
+    }
+
+    .hero-right p {
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+
+    /* Stats Row */
+    .stats {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .stat {
+      flex: 1;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 6px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 18px;
+      font-weight: 800;
+      color: #059669;
+    }
+
+    .stat-label {
+      font-size: 8px;
+      color: #64748b;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    /* Main Content Grid */
+    .content {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 16px;
+      flex: 1;
+    }
+
+    .column {
+      flex: 1;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #4f46e5;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      padding-bottom: 4px;
+      border-bottom: 2px solid #4f46e5;
+    }
+
+    /* Channels Table */
+    .channels-table {
+      width: 100%;
+      font-size: 10px;
+      border-collapse: collapse;
+    }
+
+    .channels-table th {
+      background: #4f46e5;
+      color: white;
+      padding: 6px 8px;
+      text-align: left;
+      font-weight: 600;
+    }
+
+    .channels-table td {
+      padding: 5px 8px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .channels-table tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+
+    /* Features List */
+    .features-list {
+      list-style: none;
+      font-size: 10px;
+    }
+
+    .features-list li {
+      padding: 6px 0;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+    }
+
+    .features-list li:last-child {
+      border-bottom: none;
+    }
+
+    .features-list strong {
+      min-width: 65px;
+      color: #1e293b;
+    }
+
+    .features-list span {
+      color: #64748b;
+    }
+
+    /* Industries */
+    .industries {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+
+    .industries-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 8px;
+    }
+
+    .industries-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 4px;
+      font-size: 9px;
+    }
+
+    .industry-item {
+      background: white;
+      border: 1px solid #e2e8f0;
+      padding: 4px 6px;
+      border-radius: 3px;
+      text-align: center;
+      color: #475569;
+    }
+
+    /* Why Section */
+    .why-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .why-item {
+      font-size: 9px;
+    }
+
+    .why-item strong {
+      display: block;
+      color: #4f46e5;
+      font-size: 10px;
+      margin-bottom: 2px;
+    }
+
+    .why-item span {
+      color: #64748b;
+    }
+
+    /* CTA */
+    .cta {
+      background: #1e293b;
+      color: white;
+      padding: 14px 20px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .cta-left h2 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+
+    .cta-left p {
+      font-size: 10px;
+      color: #94a3b8;
+    }
+
+    .cta-right {
+      text-align: right;
+    }
+
+    .cta-btn {
+      background: #4f46e5;
+      color: white;
+      padding: 8px 18px;
+      border-radius: 5px;
+      font-weight: 600;
+      font-size: 11px;
+      display: inline-block;
+      margin-bottom: 6px;
+    }
+
+    .cta-contact {
+      font-size: 10px;
+      color: #94a3b8;
+    }
+
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">LUMENTRA AI</div>
+    <div class="header-tagline">AI Voice Agents + Website Chatbots</div>
+  </div>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-left">
+      <h1>What If You Had an Employee Who...</h1>
+      <ul class="hero-list">
+        <li>Answered every call on the first ring</li>
+        <li>Never took a sick day or vacation</li>
+        <li>Worked nights, weekends, and holidays</li>
+        <li>Never put anyone on hold</li>
+        <li>Remembered every customer's preferences</li>
+        <li>Cost a fraction of minimum wage</li>
+      </ul>
+    </div>
+    <div class="hero-right">
+      <p>That employee exists.<br><strong style="font-size: 16px;">It's Lumentra AI.</strong></p>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-value">100%</div>
+      <div class="stat-label">Calls Answered</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value">+47%</div>
+      <div class="stat-label">After-Hours Bookings</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value">+35%</div>
+      <div class="stat-label">Website Leads</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value">4.8/5</div>
+      <div class="stat-label">Customer Rating</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value">-70%</div>
+      <div class="stat-label">Staff Interrupts</div>
+    </div>
+  </div>
+
+  <!-- Two Column Content -->
+  <div class="content">
+    <div class="column">
+      <div class="section-title">Two Channels. One AI.</div>
+      <table class="channels-table">
+        <tr>
+          <th>Voice Agent</th>
+          <th>Website Chatbot</th>
+        </tr>
+        <tr>
+          <td>Answers calls 24/7</td>
+          <td>Engages visitors instantly</td>
+        </tr>
+        <tr>
+          <td>Books appointments by phone</td>
+          <td>Books appointments via chat</td>
+        </tr>
+        <tr>
+          <td>Takes orders verbally</td>
+          <td>Takes orders online</td>
+        </tr>
+        <tr>
+          <td>Transfers urgent calls</td>
+          <td>Escalates to live chat</td>
+        </tr>
+        <tr>
+          <td>SMS confirmations</td>
+          <td>Email confirmations</td>
+        </tr>
+      </table>
+      <p style="font-size: 9px; color: #4f46e5; font-weight: 600; margin-top: 8px; text-align: center;">Same knowledge base. Seamless experience.</p>
+    </div>
+    <div class="column">
+      <div class="section-title">What Your AI Handles</div>
+      <ul class="features-list">
+        <li><strong>Appointments</strong> <span>Books, reschedules, confirms</span></li>
+        <li><strong>Orders</strong> <span>Accurate capture + upsells</span></li>
+        <li><strong>Questions</strong> <span>Hours, pricing, services</span></li>
+        <li><strong>Lead Capture</strong> <span>Qualifies & routes to you</span></li>
+        <li><strong>Escalations</strong> <span>Transfers with full context</span></li>
+        <li><strong>Follow-Ups</strong> <span>SMS & email reminders</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Industries -->
+  <div class="industries">
+    <div class="industries-title">27 Pre-Built Industry Configurations - Go Live in Hours</div>
+    <div class="industries-grid">
+      <div class="industry-item">Hotels</div>
+      <div class="industry-item">Restaurants</div>
+      <div class="industry-item">Medical</div>
+      <div class="industry-item">Dental</div>
+      <div class="industry-item">Veterinary</div>
+      <div class="industry-item">Auto Sales</div>
+      <div class="industry-item">Auto Service</div>
+      <div class="industry-item">Legal</div>
+      <div class="industry-item">Accounting</div>
+      <div class="industry-item">Real Estate</div>
+      <div class="industry-item">Salons</div>
+      <div class="industry-item">Spas</div>
+      <div class="industry-item">Gyms</div>
+      <div class="industry-item">Contractors</div>
+      <div class="industry-item">Cleaning</div>
+      <div class="industry-item">Landscaping</div>
+      <div class="industry-item">Chiropractic</div>
+      <div class="industry-item">+ 10 More</div>
+    </div>
+  </div>
+
+  <!-- Why Choose -->
+  <div class="why-grid">
+    <div class="why-item"><strong>No HR Headaches</strong><span>No interviews, training, or turnover</span></div>
+    <div class="why-item"><strong>Truly 24/7</strong><span>Capture leads at 2 AM</span></div>
+    <div class="why-item"><strong>Sounds Human</strong><span>Sub-500ms natural responses</span></div>
+    <div class="why-item"><strong>Full Transparency</strong><span>Every call logged & searchable</span></div>
+    <div class="why-item"><strong>One-Day Setup</strong><span>Just forward your calls</span></div>
+    <div class="why-item"><strong>Easy Integration</strong><span>One line of code for chat</span></div>
+  </div>
+
+  <!-- CTA -->
+  <div class="cta">
+    <div class="cta-left">
+      <h2>Get Your AI Employee Today</h2>
+      <p>No interviews. No training. No turnover. Just results.</p>
+    </div>
+    <div class="cta-right">
+      <div class="cta-btn">Get Your Free Demo</div>
+      <div class="cta-contact">www.lumentraai.com | sales@lumentraai.com</div>
+    </div>
+  </div>
+
+</body>
+</html>

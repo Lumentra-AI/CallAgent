@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { ContactForm } from "./ContactForm";
 import { ContactDetail } from "./ContactDetail";
 import { useContacts } from "@/hooks/useContacts";
+import { useIndustry } from "@/context/IndustryContext";
 import type { Contact, ContactStatus } from "@/types/crm";
 import { cn } from "@/lib/utils";
 
@@ -63,93 +64,97 @@ function StatusBadge({ status }: { status: ContactStatus }) {
 }
 
 // ============================================================================
-// TABLE COLUMNS
+// TABLE COLUMNS - Factory function with terminology
 // ============================================================================
 
-const columns: Column<Contact>[] = [
-  {
-    key: "name",
-    header: "Name",
-    sortable: true,
-    render: (contact) => (
-      <div className="flex items-center gap-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-sm font-medium text-zinc-300">
-          {contact.name?.charAt(0) || contact.phone.charAt(0)}
-        </div>
-        <div>
-          <div className="font-medium text-zinc-100">
-            {contact.name || contact.first_name || "Unknown"}
+function createColumns(transactionPluralLabel: string): Column<Contact>[] {
+  return [
+    {
+      key: "name",
+      header: "Name",
+      sortable: true,
+      render: (contact) => (
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-sm font-medium text-zinc-300">
+            {contact.name?.charAt(0) || contact.phone.charAt(0)}
           </div>
-          <div className="text-xs text-zinc-500">{contact.phone}</div>
+          <div>
+            <div className="font-medium text-zinc-100">
+              {contact.name || contact.first_name || "Unknown"}
+            </div>
+            <div className="text-xs text-zinc-500">{contact.phone}</div>
+          </div>
         </div>
-      </div>
-    ),
-  },
-  {
-    key: "email",
-    header: "Email",
-    render: (contact) => (
-      <span className="text-zinc-400">{contact.email || "-"}</span>
-    ),
-  },
-  {
-    key: "status",
-    header: "Status",
-    render: (contact) => <StatusBadge status={contact.status} />,
-  },
-  {
-    key: "total_bookings",
-    header: "Bookings",
-    align: "center",
-    sortable: true,
-    render: (contact) => (
-      <span className="text-zinc-300">{contact.total_bookings}</span>
-    ),
-  },
-  {
-    key: "total_calls",
-    header: "Calls",
-    align: "center",
-    sortable: true,
-    render: (contact) => (
-      <span className="text-zinc-300">{contact.total_calls}</span>
-    ),
-  },
-  {
-    key: "engagement_score",
-    header: "Score",
-    align: "center",
-    sortable: true,
-    render: (contact) => (
-      <div className="flex items-center justify-center">
-        <div
-          className={cn(
-            "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
-            contact.engagement_score >= 80 &&
-              "bg-emerald-500/20 text-emerald-400",
-            contact.engagement_score >= 50 &&
-              contact.engagement_score < 80 &&
-              "bg-amber-500/20 text-amber-400",
-            contact.engagement_score < 50 && "bg-zinc-500/20 text-zinc-400",
-          )}
-        >
-          {contact.engagement_score}
-        </div>
-      </div>
-    ),
-  },
-  {
-    key: "last_contact_at",
-    header: "Last Contact",
-    sortable: true,
-    render: (contact) => {
-      if (!contact.last_contact_at)
-        return <span className="text-zinc-500">Never</span>;
-      const date = new Date(contact.last_contact_at);
-      return <span className="text-zinc-400">{date.toLocaleDateString()}</span>;
+      ),
     },
-  },
-];
+    {
+      key: "email",
+      header: "Email",
+      render: (contact) => (
+        <span className="text-zinc-400">{contact.email || "-"}</span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (contact) => <StatusBadge status={contact.status} />,
+    },
+    {
+      key: "total_bookings",
+      header: transactionPluralLabel,
+      align: "center",
+      sortable: true,
+      render: (contact) => (
+        <span className="text-zinc-300">{contact.total_bookings}</span>
+      ),
+    },
+    {
+      key: "total_calls",
+      header: "Calls",
+      align: "center",
+      sortable: true,
+      render: (contact) => (
+        <span className="text-zinc-300">{contact.total_calls}</span>
+      ),
+    },
+    {
+      key: "engagement_score",
+      header: "Score",
+      align: "center",
+      sortable: true,
+      render: (contact) => (
+        <div className="flex items-center justify-center">
+          <div
+            className={cn(
+              "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
+              contact.engagement_score >= 80 &&
+                "bg-emerald-500/20 text-emerald-400",
+              contact.engagement_score >= 50 &&
+                contact.engagement_score < 80 &&
+                "bg-amber-500/20 text-amber-400",
+              contact.engagement_score < 50 && "bg-zinc-500/20 text-zinc-400",
+            )}
+          >
+            {contact.engagement_score}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "last_contact_at",
+      header: "Last Contact",
+      sortable: true,
+      render: (contact) => {
+        if (!contact.last_contact_at)
+          return <span className="text-zinc-500">Never</span>;
+        const date = new Date(contact.last_contact_at);
+        return (
+          <span className="text-zinc-400">{date.toLocaleDateString()}</span>
+        );
+      },
+    },
+  ];
+}
 
 // ============================================================================
 // CONTACTS PAGE
@@ -168,12 +173,20 @@ export default function ContactsPage() {
     refresh,
   } = useContacts();
 
+  const { customerPluralLabel, transactionPluralLabel } = useIndustry();
+
   const [searchQuery, setSearchQuery] = React.useState("");
   const [selectedContact, setSelectedContact] = React.useState<Contact | null>(
     null,
   );
   const [isFormOpen, setIsFormOpen] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+
+  // Create columns with industry terminology
+  const columns = React.useMemo(
+    () => createColumns(transactionPluralLabel),
+    [transactionPluralLabel],
+  );
 
   // Debounced search
   React.useEffect(() => {

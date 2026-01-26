@@ -14,6 +14,7 @@ import {
   searchContacts,
   getContactHistory,
   recalculateEngagementScore,
+  calculateEngagementDetails,
   getContactNotes,
   addNote,
   addTag,
@@ -896,6 +897,24 @@ contactsRoutes.post("/:id/recalculate-score", async (c) => {
     const score = await recalculateEngagementScore(tenantId, id);
 
     return c.json({ engagement_score: score });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
+/**
+ * GET /api/contacts/:id/engagement
+ * Get detailed engagement score with factor breakdown
+ */
+contactsRoutes.get("/:id/engagement", async (c) => {
+  try {
+    const tenantId = getTenantId(c);
+    const id = c.req.param("id");
+
+    const result = await calculateEngagementDetails(tenantId, id);
+
+    return c.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return c.json({ error: message }, 500);

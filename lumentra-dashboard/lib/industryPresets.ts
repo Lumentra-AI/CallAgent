@@ -500,6 +500,135 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
     ],
   },
 
+  pizza: {
+    id: "pizza",
+    category: "hospitality",
+    label: "Pizza Restaurant",
+    description: "Pizza shops and delivery restaurants",
+    icon: "Pizza",
+    popular: true,
+    terminology: {
+      transaction: "Order",
+      transactionPlural: "Orders",
+      customer: "Customer",
+      customerPlural: "Customers",
+      availability: "Delivery/Pickup Status",
+      revenue: "Sales",
+    },
+    metrics: [
+      {
+        id: "orders",
+        label: "Orders Today",
+        shortLabel: "ORD",
+        format: "number",
+      },
+      {
+        id: "deliveries",
+        label: "Deliveries",
+        shortLabel: "DEL",
+        format: "number",
+      },
+      {
+        id: "pickups",
+        label: "Pickups",
+        shortLabel: "PICK",
+        format: "number",
+      },
+      {
+        id: "avgOrder",
+        label: "Avg Order",
+        shortLabel: "AVG",
+        format: "currency",
+      },
+    ],
+    intents: [
+      {
+        id: "place_order",
+        name: "Place Order",
+        description: "Customer wants to place a food order",
+        examples: ["I want to order", "Large pepperoni", "Order for delivery"],
+        action: "book",
+        requiresConfirmation: true,
+      },
+      {
+        id: "delivery_pickup",
+        name: "Delivery/Pickup",
+        description: "Customer asking about order fulfillment",
+        examples: ["Is this for delivery", "Pickup available", "Delivery time"],
+        action: "inquire",
+        requiresConfirmation: false,
+      },
+      {
+        id: "menu_info",
+        name: "Menu Info",
+        description: "Menu and pricing questions",
+        examples: ["What toppings", "Gluten free options", "Specials today"],
+        action: "inquire",
+        requiresConfirmation: false,
+      },
+      {
+        id: "hours",
+        name: "Hours",
+        description: "Operating hours",
+        examples: ["What time do you close", "Open on Sunday"],
+        action: "inquire",
+        requiresConfirmation: false,
+      },
+      {
+        id: "order_status",
+        name: "Order Status",
+        description: "Checking on existing order",
+        examples: ["Where is my order", "How long", "Is it ready"],
+        action: "inquire",
+        requiresConfirmation: false,
+      },
+    ],
+    defaultPricing: {
+      baseRate: 0,
+      currency: "USD",
+      taxRate: 0.08,
+      fees: [
+        {
+          id: "delivery",
+          label: "Delivery Fee",
+          amount: 3,
+          type: "fixed",
+          conditional: "orderType === delivery",
+        },
+      ],
+    },
+    greetingTemplates: [
+      "Thanks for calling {businessName}! Are you calling to place an order?",
+      "Hi, thanks for calling {businessName}. This is {agentName}. What can I get for you today?",
+    ],
+    faqTemplates: [
+      {
+        question: "What are your hours?",
+        answer:
+          "We're open Sunday 12-9 PM, Monday-Thursday 11 AM-10 PM, and Friday-Saturday 11 AM-11 PM.",
+        category: "hours",
+      },
+      {
+        question: "Do you deliver?",
+        answer:
+          "Yes! We deliver within 5 miles. Orders over $30 get free delivery, otherwise there's a $3 delivery fee.",
+        category: "delivery",
+      },
+      {
+        question: "Do you have gluten-free options?",
+        answer:
+          "Yes, we offer gluten-free crust for an additional $3, available in medium size.",
+        category: "menu",
+      },
+      {
+        question: "What's the wait time?",
+        answer:
+          "Pickup orders are ready in about 15-25 minutes. Delivery takes about 30-45 minutes.",
+        category: "timing",
+      },
+    ],
+  },
+
   catering: {
     id: "catering",
     category: "hospitality",

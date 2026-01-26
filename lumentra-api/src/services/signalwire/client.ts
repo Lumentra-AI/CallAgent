@@ -22,13 +22,25 @@ export const signalwireApiUrl = SIGNALWIRE_SPACE_URL
   ? `https://${SIGNALWIRE_SPACE_URL}/api/laml/2010-04-01/Accounts/${SIGNALWIRE_PROJECT_ID}`
   : null;
 
+// Escape special characters for XML attribute values
+function escapeXmlAttr(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 // Generate SWML (SignalWire Markup Language) for incoming calls
 export function generateStreamXml(websocketUrl: string): string {
   // SignalWire uses TwiML-compatible XML
+  // URL must be XML-escaped since & is used in query params
+  const escapedUrl = escapeXmlAttr(websocketUrl);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
-    <Stream url="${websocketUrl}">
+    <Stream url="${escapedUrl}">
       <Parameter name="source" value="lumentra"/>
     </Stream>
   </Connect>
@@ -40,6 +52,7 @@ export function generateConnectingXml(
   websocketUrl: string,
   greeting?: string,
 ): string {
+  const escapedUrl = escapeXmlAttr(websocketUrl);
   let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>`;
 
@@ -50,7 +63,7 @@ export function generateConnectingXml(
 
   xml += `
   <Connect>
-    <Stream url="${websocketUrl}">
+    <Stream url="${escapedUrl}">
       <Parameter name="source" value="lumentra"/>
     </Stream>
   </Connect>
@@ -153,6 +166,53 @@ export async function configurePhoneNumberWebhook(
 
   console.log("[SIGNALWIRE] Phone number webhook configured successfully");
   return true;
+}
+
+// Transfer an active call to another phone number
+export async function transferCall(
+  callSid: string,
+  destinationPhone: string,
+  backendUrl: string,
+): Promise<{ success: boolean; error?: string }> {
+  if (!signalwireApiUrl) {
+    return { success: false, error: "SignalWire not configured" };
+  }
+
+  try {
+    const credentials = Buffer.from(
+      `${SIGNALWIRE_PROJECT_ID}:${SIGNALWIRE_API_TOKEN}`,
+    ).toString("base64");
+
+    // Create a TwiML URL that will dial the destination
+    // SignalWire will fetch this URL and execute the transfer
+    const twimlUrl = `${backendUrl}/signalwire/transfer?to=${encodeURIComponent(destinationPhone)}`;
+
+    const response = await fetch(`${signalwireApiUrl}/Calls/${callSid}.json`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: `Url=${encodeURIComponent(twimlUrl)}&Method=POST`,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[SIGNALWIRE] Transfer failed:", errorText);
+      return { success: false, error: errorText };
+    }
+
+    console.log(
+      `[SIGNALWIRE] Call ${callSid} transfer initiated to ${destinationPhone}`,
+    );
+    return { success: true };
+  } catch (error) {
+    console.error("[SIGNALWIRE] Transfer error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
 }
 
 // Setup SignalWire phone number with webhooks
