@@ -51,7 +51,7 @@ npm run start
 Frontend:
 
 ```bash
-cd lumentra-dashboard
+cd lumentra-dashboard 
 npm run build
 npm run start
 ```
