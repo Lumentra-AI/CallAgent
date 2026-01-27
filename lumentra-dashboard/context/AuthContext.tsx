@@ -31,14 +31,14 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const supabase = createClient();
   const isConfigured = isSupabaseConfigured();
+  // Initialize loading state based on whether auth needs to be checked
+  const [isLoading, setIsLoading] = useState(() => isSupabaseConfigured());
 
   useEffect(() => {
-    // Skip if Supabase is not configured
+    // Skip if Supabase is not configured - loading is already false from initial state
     if (!supabase) {
-      setIsLoading(false);
       return;
     }
 

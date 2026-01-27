@@ -21,22 +21,23 @@ const Beam = ({
   x,
   delay,
   duration,
+  hue,
+  aspectRatio,
 }: {
   width: string | number;
   x: string | number;
   delay: number;
   duration: number;
+  hue: number;
+  aspectRatio: number;
 }) => {
-  const hue = Math.floor(Math.random() * 360);
-  const ar = Math.floor(Math.random() * 10) + 1;
-
   return (
     <motion.div
       style={
         {
           "--x": `${x}`,
           "--width": `${width}`,
-          "--aspect-ratio": `${ar}`,
+          "--aspect-ratio": `${aspectRatio}`,
           "--background": `linear-gradient(hsl(${hue} 80% 60%), transparent)`,
         } as React.CSSProperties
       }
@@ -74,7 +75,9 @@ export const WarpBackground: React.FC<WarpBackgroundProps> = ({
       const x = Math.floor(i * step);
       const delay =
         Math.random() * (beamDelayMax - beamDelayMin) + beamDelayMin;
-      beams.push({ x, delay });
+      const hue = Math.floor(Math.random() * 360);
+      const aspectRatio = Math.floor(Math.random() * 10) + 1;
+      beams.push({ x, delay, hue, aspectRatio });
     }
     return beams;
   }, [beamsPerSide, beamSize, beamDelayMax, beamDelayMin]);
@@ -107,6 +110,8 @@ export const WarpBackground: React.FC<WarpBackgroundProps> = ({
               x={`${beam.x * beamSize}%`}
               delay={beam.delay}
               duration={beamDuration}
+              hue={beam.hue}
+              aspectRatio={beam.aspectRatio}
             />
           ))}
         </div>
@@ -119,6 +124,8 @@ export const WarpBackground: React.FC<WarpBackgroundProps> = ({
               x={`${beam.x * beamSize}%`}
               delay={beam.delay}
               duration={beamDuration}
+              hue={beam.hue}
+              aspectRatio={beam.aspectRatio}
             />
           ))}
         </div>
@@ -131,6 +138,8 @@ export const WarpBackground: React.FC<WarpBackgroundProps> = ({
               x={`${beam.x * beamSize}%`}
               delay={beam.delay}
               duration={beamDuration}
+              hue={beam.hue}
+              aspectRatio={beam.aspectRatio}
             />
           ))}
         </div>
@@ -143,6 +152,8 @@ export const WarpBackground: React.FC<WarpBackgroundProps> = ({
               x={`${beam.x * beamSize}%`}
               delay={beam.delay}
               duration={beamDuration}
+              hue={beam.hue}
+              aspectRatio={beam.aspectRatio}
             />
           ))}
         </div>

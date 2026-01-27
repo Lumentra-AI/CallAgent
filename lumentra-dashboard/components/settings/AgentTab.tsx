@@ -75,7 +75,7 @@ export default function AgentTab() {
       <div>
         <h3 className="text-lg font-semibold text-white">Agent Personality</h3>
         <p className="text-sm text-zinc-500">
-          Customize your AI agent's name and communication style
+          Customize your AI agent&apos;s name and communication style
         </p>
       </div>
 
@@ -147,7 +147,7 @@ export default function AgentTab() {
             <h4 className="text-sm font-medium text-white">Response Length</h4>
           </div>
           <p className="text-xs text-zinc-600">
-            How detailed the agent's responses are
+            How detailed the agent&apos;s responses are
           </p>
         </div>
 

@@ -56,24 +56,17 @@ function StatCard({
   );
 }
 
-function ActivityItem({ activity }: { activity: ContactActivity }) {
-  const getActivityIcon = (type: string) => {
-    switch (type) {
-      case "call_received":
-      case "call_made":
-        return Phone;
-      case "sms_sent":
-      case "sms_received":
-        return MessageSquare;
-      case "booking_created":
-      case "booking_completed":
-        return Calendar;
-      default:
-        return Clock;
-    }
-  };
+const ACTIVITY_ICONS: Record<string, React.ElementType> = {
+  call_received: Phone,
+  call_made: Phone,
+  sms_sent: MessageSquare,
+  sms_received: MessageSquare,
+  booking_created: Calendar,
+  booking_completed: Calendar,
+};
 
-  const Icon = getActivityIcon(activity.activity_type);
+function ActivityItem({ activity }: { activity: ContactActivity }) {
+  const Icon = ACTIVITY_ICONS[activity.activity_type] || Clock;
   const date = new Date(activity.created_at);
 
   return (

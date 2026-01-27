@@ -212,7 +212,7 @@ export default function EscalationTab() {
               <div className="flex items-center gap-2 rounded-lg border border-green-500/20 bg-green-500/5 p-3">
                 <Bell className="h-4 w-4 text-green-500" />
                 <span className="text-xs text-green-400">
-                  You'll be notified via email when escalations occur
+                  You&apos;ll be notified via email when escalations occur
                 </span>
               </div>
             )}

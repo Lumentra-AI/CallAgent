@@ -5,28 +5,32 @@ import { useConfig } from "@/context/ConfigContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   CreditCard,
   Check,
-  AlertCircle,
   Download,
   Calendar,
   Zap,
   Shield,
+  Receipt,
+  Mail,
+  RefreshCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SubscriptionTier } from "@/types";
 
 // ============================================================================
-// SUBSCRIPTION TIERS (Display only - pricing controlled by admin)
+// SUBSCRIPTION TIERS
 // ============================================================================
 
 const TIER_FEATURES: Record<
   SubscriptionTier,
-  { name: string; features: string[] }
+  { name: string; price: number; features: string[]; highlight?: boolean }
 > = {
   starter: {
     name: "Starter",
+    price: 99,
     features: [
       "Up to 500 calls/month",
       "Basic AI responses",
@@ -36,6 +40,8 @@ const TIER_FEATURES: Record<
   },
   professional: {
     name: "Professional",
+    price: 299,
+    highlight: true,
     features: [
       "Up to 2,500 calls/month",
       "Advanced AI with sentiment analysis",
@@ -47,6 +53,7 @@ const TIER_FEATURES: Record<
   },
   enterprise: {
     name: "Enterprise",
+    price: 999,
     features: [
       "Unlimited calls",
       "Full AI capabilities",
@@ -57,6 +64,45 @@ const TIER_FEATURES: Record<
       "SLA guarantee",
     ],
   },
+};
+
+// ============================================================================
+// MOCK DATA FOR DEMO (static to avoid Date.now() during render)
+// ============================================================================
+
+const MOCK_SUBSCRIPTION = {
+  id: "sub_demo",
+  tier: "professional" as SubscriptionTier,
+  status: "active" as const,
+  currentPeriodStart: "2026-01-01T00:00:00.000Z",
+  currentPeriodEnd: "2026-02-01T00:00:00.000Z",
+  cancelAtPeriodEnd: false,
+};
+
+const MOCK_BILLING = {
+  customerId: "cus_demo",
+  billingEmail: "billing@example.com",
+  autoPayEnabled: true,
+  paymentMethodBrand: "visa",
+  paymentMethodLast4: "4242",
+  invoices: [
+    {
+      id: "inv_001",
+      amount: 299,
+      currency: "USD",
+      status: "paid" as const,
+      createdAt: "2025-12-27T00:00:00.000Z",
+      paidAt: "2025-12-28T00:00:00.000Z",
+    },
+    {
+      id: "inv_002",
+      amount: 299,
+      currency: "USD",
+      status: "paid" as const,
+      createdAt: "2025-11-27T00:00:00.000Z",
+      paidAt: "2025-11-28T00:00:00.000Z",
+    },
+  ],
 };
 
 // ============================================================================
@@ -71,46 +117,9 @@ export default function BillingTab() {
 
   const { subscription, billing } = config;
 
-  // Mock subscription for demo
-  const currentSubscription = subscription || {
-    id: "sub_demo",
-    tier: "professional" as SubscriptionTier,
-    status: "active" as const,
-    currentPeriodStart: new Date().toISOString(),
-    currentPeriodEnd: new Date(
-      Date.now() + 30 * 24 * 60 * 60 * 1000,
-    ).toISOString(),
-    cancelAtPeriodEnd: false,
-  };
-
-  // Mock billing for demo
-  const currentBilling = billing || {
-    customerId: "cus_demo",
-    billingEmail: "billing@example.com",
-    autoPayEnabled: true,
-    invoices: [
-      {
-        id: "inv_001",
-        amount: 299,
-        currency: "USD",
-        status: "paid" as const,
-        createdAt: new Date(
-          Date.now() - 30 * 24 * 60 * 60 * 1000,
-        ).toISOString(),
-        paidAt: new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: "inv_002",
-        amount: 299,
-        currency: "USD",
-        status: "paid" as const,
-        createdAt: new Date(
-          Date.now() - 60 * 24 * 60 * 60 * 1000,
-        ).toISOString(),
-        paidAt: new Date(Date.now() - 59 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-    ],
-  };
+  // Use actual data or fall back to mock data
+  const currentSubscription = subscription || MOCK_SUBSCRIPTION;
+  const currentBilling = billing || MOCK_BILLING;
 
   const tierInfo = TIER_FEATURES[currentSubscription.tier];
 
@@ -118,114 +127,128 @@ export default function BillingTab() {
     <div className="max-w-2xl space-y-8">
       {/* Header */}
       <div>
-        <h3 className="text-lg font-semibold text-white">
+        <h3 className="text-lg font-semibold text-foreground">
           Billing & Subscription
         </h3>
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-muted-foreground">
           Manage your payment methods and view invoices
         </p>
       </div>
 
       {/* Current Plan */}
-      <section className="space-y-4">
-        <div className="border-b border-zinc-800 pb-2">
-          <h4 className="text-sm font-medium text-white">Current Plan</h4>
+      <section className="space-y-4 rounded-2xl border border-border bg-card p-6">
+        <div className="flex items-center gap-2 border-b border-border pb-3">
+          <Zap className="h-4 w-4 text-primary" />
+          <h4 className="text-sm font-medium text-foreground">Current Plan</h4>
         </div>
 
-        <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-4">
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-5">
           <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-500/20">
-                <Zap className="h-5 w-5 text-indigo-400" />
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                <Zap className="h-6 w-6 text-primary" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-lg font-semibold text-white">
+                  <span className="text-lg font-semibold text-foreground">
                     {tierInfo.name}
                   </span>
                   <span
                     className={cn(
                       "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase",
                       currentSubscription.status === "active"
-                        ? "bg-green-500/20 text-green-400"
+                        ? "bg-green-500/10 text-green-600 dark:text-green-400"
                         : currentSubscription.status === "trialing"
-                          ? "bg-amber-500/20 text-amber-400"
-                          : "bg-red-500/20 text-red-400",
+                          ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                          : "bg-red-500/10 text-red-600 dark:text-red-400",
                     )}
                   >
                     {currentSubscription.status}
                   </span>
                 </div>
-                <div className="text-xs text-zinc-500">
-                  Next billing date:{" "}
-                  {new Date(
-                    currentSubscription.currentPeriodEnd,
-                  ).toLocaleDateString()}
+                <div className="mt-1 flex items-baseline gap-1">
+                  <span className="text-2xl font-bold text-foreground">
+                    ${tierInfo.price}
+                  </span>
+                  <span className="text-sm text-muted-foreground">/month</span>
                 </div>
+              </div>
+            </div>
+
+            <div className="text-right">
+              <div className="text-xs text-muted-foreground">
+                Next billing date
+              </div>
+              <div className="text-sm font-medium text-foreground">
+                {new Date(
+                  currentSubscription.currentPeriodEnd,
+                ).toLocaleDateString()}
               </div>
             </div>
           </div>
 
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <div className="mt-6 grid gap-2 sm:grid-cols-2">
             {tierInfo.features.map((feature, i) => (
               <div
                 key={i}
-                className="flex items-center gap-2 text-xs text-zinc-400"
+                className="flex items-center gap-2 text-sm text-muted-foreground"
               >
-                <Check className="h-3 w-3 text-indigo-400" />
+                <Check className="h-4 w-4 text-primary" />
                 <span>{feature}</span>
               </div>
             ))}
           </div>
         </div>
 
-        <p className="text-xs text-zinc-600">
-          Contact support to change your plan or discuss custom pricing options.
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Contact support to change your plan
+          </p>
+          <Button variant="outline" size="sm">
+            <RefreshCcw className="mr-2 h-4 w-4" />
+            Change Plan
+          </Button>
+        </div>
       </section>
 
       {/* Payment Method */}
-      <section className="space-y-4">
-        <div className="border-b border-zinc-800 pb-2">
-          <h4 className="text-sm font-medium text-white">Payment Method</h4>
+      <section className="space-y-4 rounded-2xl border border-border bg-card p-6">
+        <div className="flex items-center gap-2 border-b border-border pb-3">
+          <CreditCard className="h-4 w-4 text-primary" />
+          <h4 className="text-sm font-medium text-foreground">
+            Payment Method
+          </h4>
         </div>
 
         {currentBilling.paymentMethodLast4 ? (
-          <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
-                <CreditCard className="h-5 w-5 text-zinc-400" />
+          <div className="flex items-center justify-between rounded-xl border border-border bg-background p-4">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
+                <CreditCard className="h-6 w-6 text-muted-foreground" />
               </div>
               <div>
-                <div className="text-sm font-medium text-white">
+                <div className="font-medium text-foreground">
                   {currentBilling.paymentMethodBrand || "Card"} ending in{" "}
                   {currentBilling.paymentMethodLast4}
                 </div>
-                <div className="text-xs text-zinc-500">
+                <div className="text-sm text-muted-foreground">
                   Default payment method
                 </div>
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-white"
-            >
+            <Button variant="outline" size="sm">
               Update
             </Button>
           </div>
         ) : isAddingCard ? (
           <AddPaymentMethodForm onCancel={() => setIsAddingCard(false)} />
         ) : (
-          <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center">
-            <CreditCard className="mx-auto mb-3 h-8 w-8 text-zinc-600" />
-            <p className="mb-4 text-sm text-zinc-400">
+          <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center">
+            <CreditCard className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
+            <p className="mb-4 text-sm text-muted-foreground">
               No payment method on file
             </p>
-            <Button
-              onClick={() => setIsAddingCard(true)}
-              className="bg-indigo-600 text-white hover:bg-indigo-700"
-            >
+            <Button onClick={() => setIsAddingCard(true)}>
               Add Payment Method
             </Button>
           </div>
@@ -233,41 +256,34 @@ export default function BillingTab() {
       </section>
 
       {/* Auto-Pay */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
-          <div>
-            <h4 className="text-sm font-medium text-white">Auto-Pay</h4>
-            <p className="text-xs text-zinc-600">
-              Automatically charge your payment method each billing cycle
-            </p>
+      <section className="space-y-4 rounded-2xl border border-border bg-card p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-primary" />
+            <div>
+              <h4 className="text-sm font-medium text-foreground">Auto-Pay</h4>
+              <p className="text-xs text-muted-foreground">
+                Automatically charge each billing cycle
+              </p>
+            </div>
           </div>
-          <button
-            onClick={() => {
+          <Switch
+            checked={currentBilling.autoPayEnabled}
+            onCheckedChange={(checked) => {
               if (config.billing) {
                 updateConfig("billing", {
                   ...config.billing,
-                  autoPayEnabled: !config.billing.autoPayEnabled,
+                  autoPayEnabled: checked,
                 });
               }
             }}
-            className={cn(
-              "relative h-6 w-11 rounded-full transition-colors",
-              currentBilling.autoPayEnabled ? "bg-indigo-600" : "bg-zinc-700",
-            )}
-          >
-            <div
-              className={cn(
-                "absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform",
-                currentBilling.autoPayEnabled && "translate-x-5",
-              )}
-            />
-          </button>
+          />
         </div>
 
         {currentBilling.autoPayEnabled && (
-          <div className="flex items-center gap-2 rounded-lg border border-green-500/20 bg-green-500/5 p-3">
-            <Shield className="h-4 w-4 text-green-500" />
-            <span className="text-xs text-green-400">
+          <div className="flex items-center gap-2 rounded-xl border border-green-500/20 bg-green-500/5 p-4">
+            <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <span className="text-sm text-green-600 dark:text-green-400">
               Auto-pay is enabled. Your payment will be processed automatically.
             </span>
           </div>
@@ -275,13 +291,14 @@ export default function BillingTab() {
       </section>
 
       {/* Billing Email */}
-      <section className="space-y-4">
-        <div className="border-b border-zinc-800 pb-2">
-          <h4 className="text-sm font-medium text-white">Billing Email</h4>
-          <p className="text-xs text-zinc-600">
-            Invoices and receipts will be sent to this email
-          </p>
+      <section className="space-y-4 rounded-2xl border border-border bg-card p-6">
+        <div className="flex items-center gap-2 border-b border-border pb-3">
+          <Mail className="h-4 w-4 text-primary" />
+          <h4 className="text-sm font-medium text-foreground">Billing Email</h4>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Invoices and receipts will be sent to this email
+        </p>
 
         <div className="flex gap-3">
           <Input
@@ -295,39 +312,37 @@ export default function BillingTab() {
               }
             }}
             type="email"
-            className="max-w-sm border-zinc-800 bg-zinc-950 text-white"
             placeholder="billing@company.com"
+            className="max-w-sm"
           />
-          <Button
-            variant="outline"
-            className="border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-white"
-          >
-            Update
-          </Button>
+          <Button variant="outline">Update</Button>
         </div>
       </section>
 
       {/* Invoice History */}
-      <section className="space-y-4">
-        <div className="border-b border-zinc-800 pb-2">
-          <h4 className="text-sm font-medium text-white">Invoice History</h4>
+      <section className="space-y-4 rounded-2xl border border-border bg-card p-6">
+        <div className="flex items-center gap-2 border-b border-border pb-3">
+          <Receipt className="h-4 w-4 text-primary" />
+          <h4 className="text-sm font-medium text-foreground">
+            Invoice History
+          </h4>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-3">
           {currentBilling.invoices.map((invoice) => (
             <div
               key={invoice.id}
-              className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 p-4"
+              className="flex items-center justify-between rounded-xl border border-border bg-background p-4"
             >
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
-                  <Calendar className="h-5 w-5 text-zinc-400" />
+              <div className="flex items-center gap-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                  <Calendar className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>
-                  <div className="text-sm font-medium text-white">
+                  <div className="font-medium text-foreground">
                     ${invoice.amount.toFixed(2)} {invoice.currency}
                   </div>
-                  <div className="text-xs text-zinc-500">
+                  <div className="text-sm text-muted-foreground">
                     {new Date(invoice.createdAt).toLocaleDateString()}
                   </div>
                 </div>
@@ -336,21 +351,17 @@ export default function BillingTab() {
               <div className="flex items-center gap-3">
                 <span
                   className={cn(
-                    "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase",
+                    "rounded-full px-2.5 py-1 text-[10px] font-medium uppercase",
                     invoice.status === "paid"
-                      ? "bg-green-500/20 text-green-400"
+                      ? "bg-green-500/10 text-green-600 dark:text-green-400"
                       : invoice.status === "open"
-                        ? "bg-amber-500/20 text-amber-400"
-                        : "bg-red-500/20 text-red-400",
+                        ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                        : "bg-red-500/10 text-red-600 dark:text-red-400",
                   )}
                 >
                   {invoice.status}
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-zinc-400 hover:text-white"
-                >
+                <Button variant="ghost" size="icon">
                   <Download className="h-4 w-4" />
                 </Button>
               </div>
@@ -358,8 +369,9 @@ export default function BillingTab() {
           ))}
 
           {currentBilling.invoices.length === 0 && (
-            <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center">
-              <p className="text-sm text-zinc-500">No invoices yet</p>
+            <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center">
+              <Receipt className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">No invoices yet</p>
             </div>
           )}
         </div>
@@ -387,11 +399,7 @@ function AddPaymentMethodForm({ onCancel }: { onCancel: () => void }) {
       parts.push(match.substring(i, i + 4));
     }
 
-    if (parts.length) {
-      return parts.join(" ");
-    } else {
-      return value;
-    }
+    return parts.length ? parts.join(" ") : value;
   };
 
   const formatExpiry = (value: string) => {
@@ -403,37 +411,37 @@ function AddPaymentMethodForm({ onCancel }: { onCancel: () => void }) {
   };
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <div className="mb-4 flex items-center gap-2">
-        <CreditCard className="h-4 w-4 text-zinc-400" />
-        <span className="text-sm font-medium text-white">Add Card</span>
+    <div className="space-y-4 rounded-xl border border-border bg-background p-6">
+      <div className="flex items-center gap-2">
+        <CreditCard className="h-4 w-4 text-primary" />
+        <span className="text-sm font-medium text-foreground">Add Card</span>
       </div>
 
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label className="text-zinc-400">Card Number</Label>
+          <Label className="text-muted-foreground">Card Number</Label>
           <Input
             value={cardNumber}
             onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
             placeholder="1234 5678 9012 3456"
             maxLength={19}
-            className="border-zinc-700 bg-zinc-800 font-mono text-white"
+            className="font-mono"
           />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label className="text-zinc-400">Expiry</Label>
+            <Label className="text-muted-foreground">Expiry</Label>
             <Input
               value={expiry}
               onChange={(e) => setExpiry(formatExpiry(e.target.value))}
               placeholder="MM/YY"
               maxLength={5}
-              className="border-zinc-700 bg-zinc-800 font-mono text-white"
+              className="font-mono"
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-zinc-400">CVC</Label>
+            <Label className="text-muted-foreground">CVC</Label>
             <Input
               value={cvc}
               onChange={(e) =>
@@ -442,27 +450,21 @@ function AddPaymentMethodForm({ onCancel }: { onCancel: () => void }) {
               placeholder="123"
               maxLength={4}
               type="password"
-              className="border-zinc-700 bg-zinc-800 font-mono text-white"
+              className="font-mono"
             />
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Shield className="h-3 w-3" />
           <span>Your payment info is encrypted and secure</span>
         </div>
 
         <div className="flex justify-end gap-3">
-          <Button
-            variant="outline"
-            onClick={onCancel}
-            className="border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-white"
-          >
+          <Button variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button className="bg-indigo-600 text-white hover:bg-indigo-700">
-            Save Card
-          </Button>
+          <Button>Save Card</Button>
         </div>
       </div>
     </div>

@@ -138,8 +138,8 @@ const content: Record<string, { title: string; content: React.ReactNode }> = {
         <div className="rounded-xl border p-6">
           <h3 className="text-lg font-semibold mb-2">Ready to get started?</h3>
           <p className="text-muted-foreground mb-4">
-            Setting up takes less than 5 minutes. Let's get your AI assistant
-            ready to answer calls.
+            Setting up takes less than 5 minutes. Let&apos;s get your AI
+            assistant ready to answer calls.
           </p>
           <Button asChild>
             <Link href="/signup">Start Free Trial</Link>
@@ -153,7 +153,8 @@ const content: Record<string, { title: string; content: React.ReactNode }> = {
     content: (
       <div className="space-y-6">
         <p className="text-lg text-muted-foreground">
-          Let's get your Lumentra account set up. It only takes a few minutes.
+          Let&apos;s get your Lumentra account set up. It only takes a few
+          minutes.
         </p>
 
         <div className="space-y-6">
@@ -323,15 +324,16 @@ const content: Record<string, { title: string; content: React.ReactNode }> = {
           <h3 className="font-semibold mb-3">Example Greetings</h3>
           <div className="space-y-3">
             <div className="rounded-lg bg-muted p-3 text-sm">
-              "Thanks for calling Sunny Dental! How can I help you today?"
+              &quot;Thanks for calling Sunny Dental! How can I help you
+              today?&quot;
             </div>
             <div className="rounded-lg bg-muted p-3 text-sm">
-              "Hello, you've reached Joe's Plumbing. Are you calling about a new
-              service or an existing appointment?"
+              &quot;Hello, you&apos;ve reached Joe&apos;s Plumbing. Are you
+              calling about a new service or an existing appointment?&quot;
             </div>
             <div className="rounded-lg bg-muted p-3 text-sm">
-              "Hi there! Thanks for calling Bella's Salon. Would you like to
-              book an appointment?"
+              &quot;Hi there! Thanks for calling Bella&apos;s Salon. Would you
+              like to book an appointment?&quot;
             </div>
           </div>
         </div>
@@ -364,7 +366,7 @@ const content: Record<string, { title: string; content: React.ReactNode }> = {
     content: (
       <div className="space-y-6">
         <p className="text-lg text-muted-foreground">
-          Your AI assistant can tell callers if you're open or closed, and
+          Your AI assistant can tell callers if you&apos;re open or closed, and
           handle calls differently based on the time.
         </p>
 
@@ -377,7 +379,7 @@ const content: Record<string, { title: string; content: React.ReactNode }> = {
             2. Click <strong>Business Hours</strong>
           </li>
           <li>3. Set your open and close times for each day</li>
-          <li>4. Mark any days you're closed</li>
+          <li>4. Mark any days you&apos;re closed</li>
         </ol>
 
         <div className="rounded-xl border p-6 bg-card">
@@ -524,7 +526,7 @@ const content: Record<string, { title: string; content: React.ReactNode }> = {
           <div className="rounded-xl border p-4">
             <h4 className="font-semibold">Buffer time</h4>
             <p className="text-sm text-muted-foreground mt-1">
-              Add time between appointments so you're never double-booked
+              Add time between appointments so you&apos;re never double-booked
             </p>
           </div>
           <div className="rounded-xl border p-4">
@@ -584,11 +586,13 @@ const content: Record<string, { title: string; content: React.ReactNode }> = {
           See every call your AI has handled, with full details and recordings.
         </p>
 
-        <h3 className="text-lg font-semibold">What you'll see for each call</h3>
+        <h3 className="text-lg font-semibold">
+          What you&apos;ll see for each call
+        </h3>
         <ul className="space-y-2 text-muted-foreground">
           <li className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-primary" />
-            Caller's phone number
+            Caller&apos;s phone number
           </li>
           <li className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-primary" />
@@ -667,7 +671,7 @@ const content: Record<string, { title: string; content: React.ReactNode }> = {
 
         <h3 className="text-lg font-semibold">How it works</h3>
         <ol className="space-y-2 text-muted-foreground">
-          <li>1. You'll get a notification when a call is in progress</li>
+          <li>1. You&apos;ll get a notification when a call is in progress</li>
           <li>
             2. Click <strong>Take Over</strong> if you want to join
           </li>
@@ -707,7 +711,7 @@ const content: Record<string, { title: string; content: React.ReactNode }> = {
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-primary" />
-              Caller's phone number for easy callback
+              Caller&apos;s phone number for easy callback
             </li>
           </ul>
         </div>
@@ -796,7 +800,7 @@ const content: Record<string, { title: string; content: React.ReactNode }> = {
     content: (
       <div className="space-y-6">
         <p className="text-lg text-muted-foreground">
-          Keep track of how many calls you've used this month.
+          Keep track of how many calls you&apos;ve used this month.
         </p>
 
         <h3 className="text-lg font-semibold">Where to check</h3>
@@ -819,7 +823,8 @@ const content: Record<string, { title: string; content: React.ReactNode }> = {
         </ul>
 
         <Tip>
-          We'll email you when you're getting close to your monthly limit.
+          We&apos;ll email you when you&apos;re getting close to your monthly
+          limit.
         </Tip>
       </div>
     ),
@@ -850,8 +855,10 @@ const content: Record<string, { title: string; content: React.ReactNode }> = {
           <h3 className="font-semibold mb-2">What happens when you upgrade?</h3>
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li>Your new features are available immediately</li>
-            <li>You'll be charged the difference for the rest of the month</li>
-            <li>Next month you'll be charged the new plan rate</li>
+            <li>
+              You&apos;ll be charged the difference for the rest of the month
+            </li>
+            <li>Next month you&apos;ll be charged the new plan rate</li>
           </ul>
         </div>
       </div>
@@ -895,14 +902,14 @@ const content: Record<string, { title: string; content: React.ReactNode }> = {
     content: (
       <div className="space-y-6">
         <p className="text-lg text-muted-foreground">
-          Need help? We're here for you.
+          Need help? We&apos;re here for you.
         </p>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-xl border p-5">
             <h4 className="font-semibold mb-2">Email Support</h4>
             <p className="text-sm text-muted-foreground mb-3">
-              Send us an email and we'll get back to you within 24 hours.
+              Send us an email and we&apos;ll get back to you within 24 hours.
             </p>
             <p className="text-primary font-medium">support@lumentra.ai</p>
           </div>

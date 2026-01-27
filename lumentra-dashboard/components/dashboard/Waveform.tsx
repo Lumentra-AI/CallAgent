@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect, useCallback } from "react";
+import React, { useRef, useEffect } from "react";
 import { useCallSimulation } from "@/context/ConfigContext";
 import type { SpeakerState } from "@/types";
 import { Phone, PhoneOff, Mic, Volume2, Loader2 } from "lucide-react";
@@ -91,59 +91,53 @@ export default function Waveform() {
   // CANVAS RENDERING
   // ============================================================================
 
-  const drawWaveform = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  const speakerStateRef = useRef(speakerState);
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+  useEffect(() => {
+    speakerStateRef.current = speakerState;
+  }, [speakerState]);
 
-    const { width, height } = canvas;
-    const centerY = height / 2;
+  useEffect(() => {
+    const drawWaveform = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
 
-    // Clear with dark background
-    ctx.fillStyle = "#09090b";
-    ctx.fillRect(0, 0, width, height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-    // Get waveform parameters based on state
-    const color = WAVEFORM_COLORS[speakerState];
-    const isActive = speakerState !== "idle";
-    const amplitude = isActive ? (speakerState === "processing" ? 20 : 45) : 8;
-    const frequency = speakerState === "user" ? 0.025 : 0.018;
+      const { width, height } = canvas;
+      const centerY = height / 2;
+      const currentState = speakerStateRef.current;
 
-    // Draw main waveform
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.shadowColor = isActive ? color : "transparent";
-    ctx.shadowBlur = isActive ? 15 : 0;
+      // Clear with dark background
+      ctx.fillStyle = "#09090b";
+      ctx.fillRect(0, 0, width, height);
 
-    ctx.beginPath();
-    for (let x = 0; x < width; x++) {
-      const noise = isActive ? (Math.random() - 0.5) * amplitude * 0.4 : 0;
-      const wave1 = Math.sin(x * frequency + phaseRef.current) * amplitude;
-      const wave2 =
-        Math.sin(x * frequency * 2 + phaseRef.current * 1.5) *
-        (amplitude * 0.4);
-      const y = centerY + wave1 + wave2 + noise;
+      // Get waveform parameters based on state
+      const color = WAVEFORM_COLORS[currentState];
+      const isActive = currentState !== "idle";
+      const amplitude = isActive
+        ? currentState === "processing"
+          ? 20
+          : 45
+        : 8;
+      const frequency = currentState === "user" ? 0.025 : 0.018;
 
-      if (x === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        ctx.lineTo(x, y);
-      }
-    }
-    ctx.stroke();
-
-    // Draw secondary wave (echo effect)
-    if (isActive) {
+      // Draw main waveform
       ctx.strokeStyle = color;
-      ctx.globalAlpha = 0.25;
+      ctx.lineWidth = 2;
+      ctx.shadowColor = isActive ? color : "transparent";
+      ctx.shadowBlur = isActive ? 15 : 0;
+
       ctx.beginPath();
       for (let x = 0; x < width; x++) {
-        const y =
-          centerY +
-          Math.sin(x * frequency * 0.6 + phaseRef.current * 0.7) *
-            (amplitude * 0.5);
+        const noise = isActive ? (Math.random() - 0.5) * amplitude * 0.4 : 0;
+        const wave1 = Math.sin(x * frequency + phaseRef.current) * amplitude;
+        const wave2 =
+          Math.sin(x * frequency * 2 + phaseRef.current * 1.5) *
+          (amplitude * 0.4);
+        const y = centerY + wave1 + wave2 + noise;
+
         if (x === 0) {
           ctx.moveTo(x, y);
         } else {
@@ -151,22 +145,39 @@ export default function Waveform() {
         }
       }
       ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
 
-    // Update phase
-    phaseRef.current += isActive ? 0.1 : 0.02;
-    animationRef.current = requestAnimationFrame(drawWaveform);
-  }, [speakerState]);
+      // Draw secondary wave (echo effect)
+      if (isActive) {
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.25;
+        ctx.beginPath();
+        for (let x = 0; x < width; x++) {
+          const y =
+            centerY +
+            Math.sin(x * frequency * 0.6 + phaseRef.current * 0.7) *
+              (amplitude * 0.5);
+          if (x === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
 
-  useEffect(() => {
+      // Update phase
+      phaseRef.current += isActive ? 0.1 : 0.02;
+      animationRef.current = requestAnimationFrame(drawWaveform);
+    };
+
     animationRef.current = requestAnimationFrame(drawWaveform);
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [drawWaveform]);
+  }, []);
 
   // ============================================================================
   // CANVAS RESIZE

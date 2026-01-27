@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 import { motion, stagger, useAnimate } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -16,15 +16,12 @@ export const TextGenerateEffect = ({
   duration?: number;
 }) => {
   const [scope, animate] = useAnimate();
-  const [isVisible, setIsVisible] = useState(false);
   const wordsArray = words.split(" ");
+  const hasAnimated = useRef(false);
 
   useEffect(() => {
-    setIsVisible(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isVisible) return;
+    if (hasAnimated.current) return;
+    hasAnimated.current = true;
     animate(
       "span",
       {
@@ -36,33 +33,27 @@ export const TextGenerateEffect = ({
         delay: stagger(0.1),
       },
     );
-  }, [isVisible, animate, duration, filter]);
-
-  const renderWords = () => {
-    return (
-      <motion.div ref={scope}>
-        {wordsArray.map((word, idx) => {
-          return (
-            <motion.span
-              key={word + idx}
-              className={cn("opacity-0", filter && "blur-sm")}
-              style={{
-                filter: filter ? "blur(10px)" : "none",
-              }}
-            >
-              {word}{" "}
-            </motion.span>
-          );
-        })}
-      </motion.div>
-    );
-  };
+  }, [animate, duration, filter]);
 
   return (
     <div className={cn("font-bold", className)}>
       <div className="mt-4">
         <div className="leading-snug tracking-wide">
-          {isVisible && renderWords()}
+          <motion.div ref={scope}>
+            {wordsArray.map((word, idx) => {
+              return (
+                <motion.span
+                  key={word + idx}
+                  className={cn("opacity-0", filter && "blur-sm")}
+                  style={{
+                    filter: filter ? "blur(10px)" : "none",
+                  }}
+                >
+                  {word}{" "}
+                </motion.span>
+              );
+            })}
+          </motion.div>
         </div>
       </div>
     </div>

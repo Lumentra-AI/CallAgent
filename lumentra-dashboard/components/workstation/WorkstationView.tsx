@@ -3,12 +3,18 @@
 import { useState, useCallback, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useIndustry } from "@/context/IndustryContext";
-import { getTemplateConfig } from "@/lib/templates";
+import { getTemplateConfig, getTemplateCategory } from "@/lib/templates";
 import { TodayPanel, type ScheduleItem } from "./TodayPanel";
 import { QuickActions } from "./QuickActions";
 import { ActivityFeed, type Activity } from "./ActivityFeed";
 import { StatsSummary } from "./StatsSummary";
 import { ContextPanel, InfoRow, Section } from "./ContextPanel";
+import { WaitingRoom } from "./WaitingRoom";
+import { ProviderAvailability } from "./ProviderAvailability";
+import { RoomGrid } from "./RoomGrid";
+import { VIPAlerts } from "./VIPAlerts";
+import { ClinicWorkstation } from "@/components/templates/clinic";
+import { HotelWorkstation } from "@/components/templates/hotel";
 import { Phone, Calendar, FileText, Edit } from "lucide-react";
 
 interface WorkstationViewProps {
@@ -30,31 +36,49 @@ export function WorkstationView({ className }: WorkstationViewProps) {
 
   // Get template configuration based on industry
   const templateConfig = useMemo(() => getTemplateConfig(industry), [industry]);
+  const templateCategory = useMemo(
+    () => getTemplateCategory(industry),
+    [industry],
+  );
 
-  // Handle item selection from schedule
+  // Handle item selection from schedule - must be declared before early returns
   const handleScheduleItemClick = useCallback((item: ScheduleItem) => {
     setSelectedItem(item);
     setContextPanelOpen(true);
   }, []);
 
-  // Handle item selection from activity feed
+  // Handle item selection from activity feed - must be declared before early returns
   const handleActivityClick = useCallback((item: Activity) => {
     setSelectedItem(item);
     setContextPanelOpen(true);
   }, []);
 
-  // Handle call action
+  // Handle call action - must be declared before early returns
   const handleCallClick = useCallback((item: ScheduleItem) => {
     if (item.entityPhone) {
       window.open(`tel:${item.entityPhone}`);
     }
   }, []);
 
-  // Close context panel
+  // Close context panel - must be declared before early returns
   const closeContextPanel = useCallback(() => {
     setContextPanelOpen(false);
     setSelectedItem(null);
   }, []);
+
+  // Render specialized templates for supported industries
+  if (templateCategory === "healthcare") {
+    return <ClinicWorkstation className={className} />;
+  }
+
+  if (
+    templateCategory === "hospitality" &&
+    (industry === "hotel" ||
+      industry === "motel" ||
+      industry === "vacation_rental")
+  ) {
+    return <HotelWorkstation className={className} />;
+  }
 
   // Render widget based on type
   const renderWidget = (widgetConfig: {
@@ -120,12 +144,41 @@ export function WorkstationView({ className }: WorkstationViewProps) {
             className={sizeClass}
           />
         );
-      // Placeholder for specialized widgets
+      // Specialized widgets
       case "room-grid":
-      case "table-map":
+        return (
+          <RoomGrid
+            key={widgetConfig.type}
+            title={widgetConfig.title}
+            className={sizeClass}
+          />
+        );
       case "waitlist":
+        return (
+          <WaitingRoom
+            key={widgetConfig.type}
+            title={widgetConfig.title}
+            className={sizeClass}
+          />
+        );
       case "availability":
+        return (
+          <ProviderAvailability
+            key={widgetConfig.type}
+            title={widgetConfig.title}
+            className={sizeClass}
+          />
+        );
       case "notifications":
+        return (
+          <VIPAlerts
+            key={widgetConfig.type}
+            title={widgetConfig.title}
+            className={sizeClass}
+          />
+        );
+      // Placeholder for widgets still in development
+      case "table-map":
       case "escalation-queue":
         return (
           <div
