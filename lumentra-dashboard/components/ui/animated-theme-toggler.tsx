@@ -14,7 +14,7 @@ export function AnimatedThemeToggler({
   className,
   size = 24,
 }: AnimatedThemeTogglerProps) {
-  const { toggleTheme, isDark, resolvedTheme } = useTheme();
+  const { toggleTheme, isDark } = useTheme();
 
   const center = size / 2;
   const sunRadius = size * 0.25;
@@ -36,7 +36,7 @@ export function AnimatedThemeToggler({
     <button
       type="button"
       onClick={toggleTheme}
-      aria-label={`Switch to ${isDark ? "light" : "dark"} mode. Current: ${resolvedTheme}`}
+      aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
       className={cn(
         "relative inline-flex items-center justify-center rounded-md p-2 transition-colors",
         "hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
