@@ -1,11 +1,10 @@
 // Chat API Routes
 // Text-based chat interface for website widget
-// Uses Gemini 2.5 Flash (same as voice AI)
+// Multi-provider fallback: Gemini -> GPT -> Groq
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { buildSystemPrompt } from "../services/gemini/chat.js";
-import { getModel, modelName } from "../services/gemini/client.js";
 import {
   chatAgentFunctions,
   executeChatTool,
@@ -21,11 +20,13 @@ import {
 } from "../services/chat/conversation-store.js";
 import { getTenantById } from "../services/database/tenant-cache.js";
 import { findOrCreateByPhone } from "../services/contacts/contact-service.js";
-import type {
-  ConversationMessage,
-  ToolExecutionContext,
-} from "../types/voice.js";
-import type { Content, Part } from "@google/generative-ai";
+import type { ToolExecutionContext } from "../types/voice.js";
+import {
+  chatWithFallback,
+  sendToolResults,
+  getProviderStatus,
+  type LLMResponse,
+} from "../services/llm/multi-provider.js";
 
 export const chatRoutes = new Hono();
 
@@ -53,6 +54,7 @@ interface ChatRequest {
 interface ChatResponse {
   response: string;
   session_id: string;
+  provider?: string;
   tool_calls?: Array<{
     name: string;
     result: unknown;
@@ -106,13 +108,13 @@ chatRoutes.post("/", async (c) => {
     // Build context for tool execution
     const context: ToolExecutionContext & { sessionId: string } = {
       tenantId: tenant_id,
-      callSid: session_id, // Reuse for consistency
+      callSid: session_id,
       callerPhone: visitor_info?.phone || getVisitorInfo(session_id)?.phone,
       sessionId: session_id,
     };
 
-    // Call Gemini with tools
-    const chatResponse = await chatWithGemini(
+    // Chat with multi-provider fallback
+    const chatResult = await chatWithMultiProvider(
       message,
       history,
       systemPrompt,
@@ -120,7 +122,7 @@ chatRoutes.post("/", async (c) => {
     );
 
     // Save to history
-    saveToHistory(session_id, message, chatResponse.text);
+    saveToHistory(session_id, message, chatResult.text);
 
     // Create/update contact if we have contact info
     const currentVisitor = getVisitorInfo(session_id);
@@ -141,9 +143,10 @@ chatRoutes.post("/", async (c) => {
     }
 
     const response: ChatResponse = {
-      response: chatResponse.text,
+      response: chatResult.text,
       session_id,
-      tool_calls: chatResponse.toolCalls?.map((tc) => ({
+      provider: chatResult.provider,
+      tool_calls: chatResult.toolCalls?.map((tc) => ({
         name: tc.name,
         result: tc.result,
       })),
@@ -192,7 +195,7 @@ chatRoutes.get("/config/:tenant_id", async (c) => {
           .replace(/{agentName}/g, tenant.agent_name || "Assistant") ||
         `Hi! I'm ${tenant.agent_name || "here"} to help you with ${tenant.business_name}. How can I assist you today?`,
       industry: tenant.industry,
-      theme_color: "#6366f1", // Indigo - can be made configurable
+      theme_color: "#6366f1",
     };
 
     return c.json(config);
@@ -203,24 +206,26 @@ chatRoutes.get("/config/:tenant_id", async (c) => {
 });
 
 // ============================================================================
-// GET /api/chat/health - Health check
+// GET /api/chat/health - Health check with provider status
 // ============================================================================
 
 chatRoutes.get("/health", (c) => {
+  const providers = getProviderStatus();
   return c.json({
     status: "ok",
-    model: modelName,
+    providers,
     sessions: getSessionCount(),
     timestamp: new Date().toISOString(),
   });
 });
 
 // ============================================================================
-// Chat with Gemini - uses same model as voice AI
+// Chat with multi-provider fallback and tool execution
 // ============================================================================
 
 interface ChatResult {
   text: string;
+  provider: string;
   toolCalls?: Array<{
     name: string;
     args: Record<string, unknown>;
@@ -228,118 +233,70 @@ interface ChatResult {
   }>;
 }
 
-// Convert conversation history to Gemini Content format
-function toGeminiContents(messages: ConversationMessage[]): Content[] {
-  const contents: Content[] = [];
-
-  for (const msg of messages) {
-    if (msg.role === "system") continue;
-
-    if (msg.role === "user") {
-      contents.push({
-        role: "user",
-        parts: [{ text: msg.content }],
-      });
-    } else if (msg.role === "assistant") {
-      contents.push({
-        role: "model",
-        parts: [{ text: msg.content }],
-      });
-    } else if (msg.role === "tool") {
-      contents.push({
-        role: "function",
-        parts: [
-          {
-            functionResponse: {
-              name: msg.toolName || "unknown",
-              response: { result: msg.toolResult || msg.content },
-            },
-          },
-        ],
-      });
-    }
-  }
-
-  return contents;
-}
-
-async function chatWithGemini(
+async function chatWithMultiProvider(
   userMessage: string,
-  conversationHistory: ConversationMessage[],
+  conversationHistory: Parameters<
+    typeof chatWithFallback
+  >[0]["conversationHistory"],
   systemPrompt: string,
   context: ToolExecutionContext & { sessionId: string },
 ): Promise<ChatResult> {
-  const model = getModel();
+  console.log(`[CHAT] Processing message with multi-provider fallback`);
 
-  console.log(`[CHAT] Using model: ${modelName}`);
+  const options = {
+    userMessage,
+    conversationHistory,
+    systemPrompt,
+    tools: chatAgentFunctions,
+  };
 
-  // Build contents array
-  const contents = toGeminiContents(conversationHistory);
-  contents.push({
-    role: "user",
-    parts: [{ text: userMessage }],
-  });
+  // First call - may return tool calls
+  let response: LLMResponse = await chatWithFallback(options);
 
-  try {
-    // Start chat with function declarations
-    const chatSession = model.startChat({
-      history: contents.slice(0, -1), // All but the last message
-      systemInstruction: { role: "user", parts: [{ text: systemPrompt }] },
-      tools: [{ functionDeclarations: chatAgentFunctions }],
-    });
+  console.log(`[CHAT] Response from ${response.provider}`);
 
-    // Send the user message
-    const result = await chatSession.sendMessage(userMessage);
-    const response = result.response;
+  // Handle tool calls if present
+  if (response.toolCalls && response.toolCalls.length > 0) {
+    console.log(`[CHAT] Executing ${response.toolCalls.length} tool calls`);
 
-    // Check for function calls
-    const functionCalls = response.functionCalls();
+    const toolResults: Array<{
+      id: string;
+      name: string;
+      args: Record<string, unknown>;
+      result: unknown;
+    }> = [];
 
-    if (functionCalls && functionCalls.length > 0) {
-      console.log(`[CHAT] Function calls requested: ${functionCalls.length}`);
+    for (const tc of response.toolCalls) {
+      console.log(`[CHAT] Executing tool: ${tc.name}`, tc.args);
 
-      const toolResults: ChatResult["toolCalls"] = [];
-      const functionResponses: Part[] = [];
-
-      for (const fc of functionCalls) {
-        const toolName = fc.name;
-        const toolArgs = fc.args as Record<string, unknown>;
-
-        console.log(`[CHAT] Executing tool: ${toolName}`, toolArgs);
-
-        const toolResult = await executeChatTool(toolName, toolArgs, context);
-        toolResults.push({
-          name: toolName,
-          args: toolArgs,
-          result: toolResult,
-        });
-
-        functionResponses.push({
-          functionResponse: {
-            name: toolName,
-            response: { result: toolResult },
-          },
-        });
-      }
-
-      // Send function responses back to get final text
-      const finalResult = await chatSession.sendMessage(functionResponses);
-      const finalText = finalResult.response.text();
-
-      return {
-        text: finalText,
-        toolCalls: toolResults,
-      };
+      const result = await executeChatTool(tc.name, tc.args, context);
+      toolResults.push({
+        id: tc.id,
+        name: tc.name,
+        args: tc.args,
+        result,
+      });
     }
 
-    // No function calls, just return the text
+    // Send tool results back to get final response
+    const finalResponse = await sendToolResults(
+      response.provider,
+      options,
+      toolResults,
+    );
+
     return {
-      text: response.text(),
+      text: finalResponse.text,
+      provider: finalResponse.provider,
+      toolCalls: toolResults,
     };
-  } catch (error) {
-    console.error("[CHAT] Gemini error:", error);
-    throw error;
   }
+
+  // No tool calls, return text response
+  return {
+    text: response.text,
+    provider: response.provider,
+  };
 }
 
 export default chatRoutes;
