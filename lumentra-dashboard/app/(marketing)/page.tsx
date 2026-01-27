@@ -8,10 +8,11 @@ import {
   CTASection,
   Footer,
 } from "@/components/landing";
+import { DemoProvider } from "@/components/demo";
 
 export default function LandingPage() {
   return (
-    <>
+    <DemoProvider>
       <Navbar />
       <main>
         <HeroSection />
@@ -22,6 +23,6 @@ export default function LandingPage() {
         <CTASection />
       </main>
       <Footer />
-    </>
+    </DemoProvider>
   );
 }
