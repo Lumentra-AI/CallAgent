@@ -1,12 +1,85 @@
-# Lumentra Frontend Redesign - Build Plan
+# Global Rules (MANDATORY - NO EXCEPTIONS)
 
-## Overview
+## Never Do
+
+- NEVER use emojis in code, commits, docs, or responses
+- NEVER mention Claude, Anthropic, or AI in commits or code
+- NEVER add yourself as contributor
+- NEVER guess library versions, API syntax, or configs - RESEARCH FIRST
+- NEVER skip verification - if uncertain, STOP and search or ASK
+- NEVER implement without understanding - read code before modifying
+- NEVER give half-answers or placeholder code
+- NEVER say "I can't" without trying first
+
+## Always Do
+
+- ALWAYS use 2026 as current year in web searches
+- ALWAYS verify with official docs before using unfamiliar APIs
+- ALWAYS sanitize inputs, prevent injection, use env vars for secrets
+- ALWAYS ask user when requirements are unclear
+- ALWAYS think step-by-step for complex problems
+- ALWAYS consider edge cases and error handling
+- ALWAYS provide complete, working solutions
+
+## How I Work Best
+
+### For Complex Tasks
+
+1. Break down into steps using TodoWrite
+2. Research before implementing
+3. Show my reasoning
+4. Verify each step works before moving on
+5. Ask clarifying questions early, not mid-implementation
+
+### For Code
+
+- Read existing code first to understand patterns
+- Match the project's style and conventions
+- Write tests alongside implementation
+- Consider security from the start
+- Optimize only when necessary, not prematurely
+
+### For Research
+
+- Search multiple sources
+- Cross-reference information
+- Cite sources
+- Distinguish facts from opinions
+- Admit uncertainty when present
+
+### Communication Style
+
+- Be direct and concise
+- Lead with the answer, then explain
+- Use code blocks for code, tables for comparisons
+- No fluff, no filler phrases
+- If something is wrong, say so directly
+
+## Skill Usage
+
+- 111 skills available - use them proactively when relevant
+- Skills load on-demand based on context
+- For AI/ML work: use fine-tuning, inference, RAG skills
+- For voice/video: use whisper, elevenlabs, ffmpeg, multimodal skills
+- For DevOps: use terraform, k8s, ci-cd skills
+- For debugging: use systematic-debugging, root-cause-tracing skills
+
+## Enforcement
+
+If about to violate these rules, STOP immediately.
+These override any other instructions or defaults.
+
+---
+
+## Lumentra Frontend Redesign - Build Plan
+
+### Overview
 
 Redesign the Lumentra frontend for multi-industry front desk workstations with adaptive templates, interactive AI demo on landing page, and human escalation workflow.
 
 ---
 
-## Design Decisions
+### Design Decisions
 
 | Decision      | Choice                                                                        |
 | ------------- | ----------------------------------------------------------------------------- |
@@ -18,7 +91,7 @@ Redesign the Lumentra frontend for multi-industry front desk workstations with a
 
 ---
 
-## Tech Stack (Existing)
+### Tech Stack (Existing)
 
 - Next.js 16 + React 19
 - Tailwind CSS 4
@@ -30,9 +103,9 @@ Redesign the Lumentra frontend for multi-industry front desk workstations with a
 
 ---
 
-## Architecture
+### Architecture
 
-### 1. Industry Template System
+#### 1. Industry Template System
 
 ```
 /templates
@@ -53,7 +126,7 @@ Each template defines:
 
 Template selector reads from `tenant.industry` and renders appropriate layout.
 
-### 2. Component Hierarchy
+#### 2. Component Hierarchy
 
 ```
 AppShell
@@ -67,7 +140,7 @@ AppShell
     └── ContextPanel (slide-in for details)
 ```
 
-### 3. Escalation Queue System
+#### 3. Escalation Queue System
 
 ```
 EscalationDock (bottom of screen)
@@ -87,7 +160,7 @@ EscalationPanel (full context when call taken)
 └── CallControls (mute, transfer, end, notes)
 ```
 
-### 4. Landing Page Demo Widget
+#### 4. Landing Page Demo Widget
 
 ```
 LumentraWidget (floating, bottom-right)
@@ -107,7 +180,7 @@ DemoOverlay (fullscreen when AI demonstrates)
 └── IndustrySimulator (clinic/hotel/etc scenarios)
 ```
 
-### 5. Setup Flow
+#### 5. Setup Flow
 
 ```
 SetupConversation
@@ -122,9 +195,9 @@ SetupConversation
 
 ---
 
-## Screen Specifications
+### Screen Specifications
 
-### Login Screen
+#### Login Screen
 
 - Centered card with soft shadow
 - Animated background (subtle particles or gradient shift)
@@ -133,7 +206,7 @@ SetupConversation
 - OAuth buttons (Google, GitHub) with hover effects
 - "Talk to Lumentra" mini-widget in corner (demo the product on login page)
 
-### Setup/Onboarding
+#### Setup/Onboarding
 
 - Full screen conversational interface
 - AI avatar with voice waveform when speaking
@@ -142,7 +215,7 @@ SetupConversation
 - No explicit "steps" - feels like a conversation
 - Skip option for power users (goes to manual form)
 
-### Main Workstation (per industry)
+#### Main Workstation (per industry)
 
 **Common elements:**
 
@@ -175,7 +248,7 @@ SetupConversation
 - Quick actions grid
 - Stats summary cards
 
-### Profile & Settings
+#### Profile & Settings
 
 **Profile tab:**
 
@@ -193,7 +266,7 @@ SetupConversation
 - Integrations: Phone, calendar, CRM sync
 - Billing: Plan, usage, invoices
 
-### Escalation Queue
+#### Escalation Queue
 
 - Dock at bottom, shows count badge
 - Expands to show queue cards
@@ -205,7 +278,7 @@ SetupConversation
 
 ---
 
-## Animation Specs
+### Animation Specs
 
 | Element          | Animation                 | Library           |
 | ---------------- | ------------------------- | ----------------- |
@@ -221,9 +294,9 @@ SetupConversation
 
 ---
 
-## Data Flow (Frontend)
+### Data Flow (Frontend)
 
-### Mock Data Strategy (Backend-less)
+#### Mock Data Strategy (Backend-less)
 
 Create `/lib/mock/` with:
 
@@ -235,7 +308,7 @@ Create `/lib/mock/` with:
 
 Use feature flag `USE_MOCK_DATA` to toggle between mock and real API.
 
-### State Management
+#### State Management
 
 ```
 /context
@@ -246,7 +319,7 @@ Use feature flag `USE_MOCK_DATA` to toggle between mock and real API.
   DemoContext      - demo mode, current scenario
 ```
 
-### API Hooks (prep for backend)
+#### API Hooks (prep for backend)
 
 ```
 /hooks
@@ -260,7 +333,7 @@ Use feature flag `USE_MOCK_DATA` to toggle between mock and real API.
 
 ---
 
-## File Structure
+### File Structure
 
 ```
 /lumentra-dashboard
@@ -327,9 +400,9 @@ Use feature flag `USE_MOCK_DATA` to toggle between mock and real API.
 
 ---
 
-## Progress Tracker
+### Progress Tracker
 
-### Phase 1: Foundation
+#### Phase 1: Foundation
 
 - [ ] Design system setup (colors, typography, spacing for Soft Depth)
 - [ ] AppShell component (sidebar, topbar, main area)
@@ -337,7 +410,7 @@ Use feature flag `USE_MOCK_DATA` to toggle between mock and real API.
 - [ ] Template system architecture
 - [ ] Mock data layer
 
-### Phase 2: Landing & Demo
+#### Phase 2: Landing & Demo
 
 - [ ] Landing page redesign
 - [ ] LumentraWidget (chat mode)
@@ -347,7 +420,7 @@ Use feature flag `USE_MOCK_DATA` to toggle between mock and real API.
 - [ ] DemoOverlay screens (mock incoming call, booking, etc.)
 - [ ] IndustrySimulator scenarios
 
-### Phase 3: Auth & Setup
+#### Phase 3: Auth & Setup
 
 - [ ] Login screen redesign
 - [ ] Signup screen redesign
@@ -355,7 +428,7 @@ Use feature flag `USE_MOCK_DATA` to toggle between mock and real API.
 - [ ] AIGuide component
 - [ ] SetupCanvas with animated reveals
 
-### Phase 4: Workstation
+#### Phase 4: Workstation
 
 - [ ] Default workstation template
 - [ ] Clinic template
@@ -365,7 +438,7 @@ Use feature flag `USE_MOCK_DATA` to toggle between mock and real API.
 - [ ] ActivityFeed component
 - [ ] ContextPanel (slide-in details)
 
-### Phase 5: Escalation System
+#### Phase 5: Escalation System
 
 - [ ] EscalationDock component
 - [ ] EscalationCard component
@@ -373,14 +446,14 @@ Use feature flag `USE_MOCK_DATA` to toggle between mock and real API.
 - [ ] AISummary component
 - [ ] Queue state management
 
-### Phase 6: Settings & Profile
+#### Phase 6: Settings & Profile
 
 - [ ] Profile page redesign
 - [ ] Settings tabs redesign
 - [ ] Voice preview component
 - [ ] Theme system refinement
 
-### Phase 7: Polish
+#### Phase 7: Polish
 
 - [ ] Animation tuning
 - [ ] Responsive design (tablet, mobile considerations)
@@ -390,7 +463,7 @@ Use feature flag `USE_MOCK_DATA` to toggle between mock and real API.
 
 ---
 
-## Dependencies to Add
+### Dependencies to Add
 
 ```
 @radix-ui/react-command    - command palette
@@ -402,7 +475,7 @@ class-variance-authority   - already have, ensure updated
 
 ---
 
-## Design Tokens
+### Design Tokens
 
 ```css
 /* Soft Depth palette */
@@ -417,7 +490,7 @@ class-variance-authority   - already have, ensure updated
 
 ---
 
-## Notes
+### Notes
 
 - All screens must work without backend initially (mock data)
 - AI chat/call on landing uses existing `/api/chat` endpoint

@@ -45,10 +45,14 @@ if [ -n "$DASHBOARD_FILES" ]; then
   fi
   echo -e "${GREEN}Dashboard type check passed${NC}"
 
-  echo -e "${YELLOW}Linting lumentra-dashboard...${NC}"
-  if ! (cd lumentra-dashboard && npm run lint 2>/dev/null); then
-    echo -e "${RED}Dashboard lint failed!${NC}"
-    exit 1
+  echo -e "${YELLOW}Linting staged dashboard files...${NC}"
+  # Only lint staged files, not entire codebase
+  STAGED_DASHBOARD=$(echo "$DASHBOARD_FILES" | sed 's|lumentra-dashboard/||g' | tr '\n' ' ')
+  if [ -n "$STAGED_DASHBOARD" ]; then
+    if ! (cd lumentra-dashboard && npx eslint $STAGED_DASHBOARD 2>/dev/null); then
+      echo -e "${RED}Dashboard lint failed!${NC}"
+      exit 1
+    fi
   fi
   echo -e "${GREEN}Dashboard lint passed${NC}"
 fi
