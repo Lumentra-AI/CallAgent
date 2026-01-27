@@ -1,3 +1,4 @@
+// Build: 2026-01-27-v3 - Force fresh build
 import "dotenv/config";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
@@ -27,6 +28,7 @@ import {
 } from "./routes/signalwire-stream.js";
 import { initTenantCache } from "./services/database/tenant-cache.js";
 import { startScheduler } from "./jobs/scheduler.js";
+import { authMiddleware, rateLimit } from "./middleware/index.js";
 
 const app = new Hono();
 
@@ -56,6 +58,9 @@ app.use(
   }),
 );
 
+// Global rate limiting
+app.use("*", rateLimit({ windowMs: 60000, max: 100 }));
+
 // WebSocket stream route - placeholder for upgrade handling
 // The actual WebSocket logic is in the upgrade handler below
 app.get("/signalwire/stream", (c) => {
@@ -64,9 +69,14 @@ app.get("/signalwire/stream", (c) => {
   return c.json({ error: "WebSocket upgrade required" }, 426);
 });
 
-// Routes
+// Public routes (no auth required)
 app.route("/health", healthRoutes);
 app.route("/signalwire", signalwireVoice);
+
+// Auth middleware for all /api/* routes
+app.use("/api/*", authMiddleware());
+
+// Protected API routes
 app.route("/api/calls", callsRoutes);
 app.route("/api/bookings", bookingsRoutes);
 app.route("/api/tenants", tenantsRoutes);
