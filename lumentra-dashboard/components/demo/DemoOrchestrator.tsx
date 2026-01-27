@@ -51,19 +51,19 @@ export function DemoOrchestrator({ children }: DemoOrchestratorProps) {
     setActiveDemo(type);
     setDemoStep(0);
 
-    // Auto-progress demo after delay
+    // Auto-progress demo with slower timing, no auto-close
     if (type) {
       const progressDemo = () => {
         setDemoStep((prev) => {
           if (prev >= 3) {
-            setTimeout(() => setActiveDemo(null), 2000);
+            // Stay on final step - user clicks to dismiss
             return prev;
           }
-          setTimeout(progressDemo, 1500);
+          setTimeout(progressDemo, 3000);
           return prev + 1;
         });
       };
-      setTimeout(progressDemo, 1500);
+      setTimeout(progressDemo, 3000);
     }
   }, []);
 
