@@ -72,8 +72,9 @@ app.get("/signalwire/stream", (c) => {
 // Public routes (no auth required)
 app.route("/health", healthRoutes);
 app.route("/signalwire", signalwireVoice);
+app.route("/api/chat", chatRoutes); // Chat widget is public
 
-// Auth middleware for all /api/* routes
+// Auth middleware for protected /api/* routes
 app.use("/api/*", authMiddleware());
 
 // Protected API routes
@@ -87,7 +88,6 @@ app.route("/api/notifications", notificationsRoutes);
 app.route("/api/resources", resourcesRoutes);
 app.route("/api/voicemails", voicemailRoutes);
 app.route("/api/training", trainingDataRoutes);
-app.route("/api/chat", chatRoutes);
 
 // Root
 app.get("/", (c) => {

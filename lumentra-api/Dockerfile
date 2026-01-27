@@ -16,7 +16,7 @@ FROM base AS builder
 WORKDIR /app
 
 # Cache bust - change this value to force rebuild
-ARG CACHE_BUST=2026-01-27-v2
+ARG CACHE_BUST=2026-01-27-v4
 
 COPY package*.json ./
 RUN npm ci
