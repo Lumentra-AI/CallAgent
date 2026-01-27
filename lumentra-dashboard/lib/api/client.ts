@@ -1,15 +1,14 @@
 /**
  * Base API client for Lumentra Dashboard
- * Handles all HTTP requests to the backend API
+ * Handles all HTTP requests to the backend API with auth
  */
+
+import { createClient } from "@/lib/supabase/client";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-// Default tenant ID for development - set via env or use default
-const DEFAULT_TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || "dev-tenant";
-
 // Current tenant ID - can be set dynamically
-let currentTenantId: string = DEFAULT_TENANT_ID;
+let currentTenantId: string | null = null;
 
 /**
  * Set the current tenant ID for API requests
@@ -21,8 +20,15 @@ export function setTenantId(tenantId: string): void {
 /**
  * Get the current tenant ID
  */
-export function getTenantId(): string {
+export function getTenantId(): string | null {
   return currentTenantId;
+}
+
+/**
+ * Clear the current tenant ID
+ */
+export function clearTenantId(): void {
+  currentTenantId = null;
 }
 
 export interface ApiError {
@@ -41,7 +47,21 @@ export class ApiClientError extends Error {
 }
 
 /**
- * Generic API client function
+ * Get the current auth token from Supabase
+ */
+async function getAuthToken(): Promise<string | null> {
+  const supabase = createClient();
+  if (!supabase) return null;
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  return session?.access_token ?? null;
+}
+
+/**
+ * Generic API client function with auth
  */
 export async function apiClient<T>(
   endpoint: string,
@@ -49,14 +69,56 @@ export async function apiClient<T>(
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
 
+  // Get auth token
+  const token = await getAuthToken();
+
+  // Build headers
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string>),
+  };
+
+  // Add auth token if available
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  // Add tenant ID if set
+  if (currentTenantId) {
+    headers["X-Tenant-ID"] = currentTenantId;
+  }
+
   const response = await fetch(url, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Tenant-ID": currentTenantId,
-      ...options?.headers,
-    },
+    headers,
   });
+
+  // Handle auth errors
+  if (response.status === 401) {
+    // Try to refresh the session
+    const supabase = createClient();
+    if (supabase) {
+      const { error } = await supabase.auth.refreshSession();
+      if (!error) {
+        // Retry the request with new token
+        const newToken = await getAuthToken();
+        if (newToken) {
+          headers["Authorization"] = `Bearer ${newToken}`;
+          const retryResponse = await fetch(url, {
+            ...options,
+            headers,
+          });
+
+          if (retryResponse.ok) {
+            const text = await retryResponse.text();
+            return text ? JSON.parse(text) : ({} as T);
+          }
+        }
+      }
+    }
+
+    throw new ApiClientError("Authentication required", 401);
+  }
 
   if (!response.ok) {
     const errorText = await response.text();

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { getSupabase } from "../services/database/client.js";
+import { getAuthTenantId } from "../middleware/index.js";
 
 export const callsRoutes = new Hono();
 
@@ -8,7 +9,7 @@ export const callsRoutes = new Hono();
  * List calls with filters
  */
 callsRoutes.get("/", async (c) => {
-  const tenantId = c.req.header("X-Tenant-ID") || c.req.query("tenant_id");
+  const tenantId = getAuthTenantId(c);
   const status = c.req.query("status");
   const outcome = c.req.query("outcome");
   const startDate = c.req.query("start_date");
@@ -16,10 +17,6 @@ callsRoutes.get("/", async (c) => {
   const search = c.req.query("search");
   const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
   const offset = parseInt(c.req.query("offset") || "0", 10);
-
-  if (!tenantId) {
-    return c.json({ error: "Tenant ID required" }, 400);
-  }
 
   const db = getSupabase();
 
@@ -92,16 +89,15 @@ callsRoutes.get("/", async (c) => {
  */
 callsRoutes.get("/:id", async (c) => {
   const id = c.req.param("id");
-  const tenantId = c.req.header("X-Tenant-ID");
+  const tenantId = getAuthTenantId(c);
   const db = getSupabase();
 
-  let query = db.from("calls").select("*").eq("id", id);
-
-  if (tenantId) {
-    query = query.eq("tenant_id", tenantId);
-  }
-
-  const { data, error } = await query.single();
+  const { data, error } = await db
+    .from("calls")
+    .select("*")
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .single();
 
   if (error) {
     return c.json({ error: "Call not found" }, 404);
@@ -144,16 +140,15 @@ callsRoutes.get("/:id", async (c) => {
  */
 callsRoutes.get("/:id/transcript", async (c) => {
   const id = c.req.param("id");
-  const tenantId = c.req.header("X-Tenant-ID");
+  const tenantId = getAuthTenantId(c);
   const db = getSupabase();
 
-  let query = db.from("calls").select("id, transcript, summary").eq("id", id);
-
-  if (tenantId) {
-    query = query.eq("tenant_id", tenantId);
-  }
-
-  const { data, error } = await query.single();
+  const { data, error } = await db
+    .from("calls")
+    .select("id, transcript, summary")
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .single();
 
   if (error) {
     return c.json({ error: "Call not found" }, 404);
@@ -177,11 +172,11 @@ callsRoutes.get("/:id/transcript", async (c) => {
 });
 
 /**
- * GET /api/calls/stats/:tenantId
+ * GET /api/calls/stats
  * Get call statistics
  */
-callsRoutes.get("/stats/:tenantId", async (c) => {
-  const tenantId = c.req.param("tenantId");
+callsRoutes.get("/stats", async (c) => {
+  const tenantId = getAuthTenantId(c);
   const db = getSupabase();
 
   // Date ranges
@@ -260,11 +255,11 @@ callsRoutes.get("/stats/:tenantId", async (c) => {
 });
 
 /**
- * GET /api/calls/analytics/:tenantId
+ * GET /api/calls/analytics
  * Get call analytics for charts (time series and breakdown)
  */
-callsRoutes.get("/analytics/:tenantId", async (c) => {
-  const tenantId = c.req.param("tenantId");
+callsRoutes.get("/analytics", async (c) => {
+  const tenantId = getAuthTenantId(c);
   const days = parseInt(c.req.query("days") || "30", 10);
   const db = getSupabase();
 
@@ -384,8 +379,8 @@ callsRoutes.get("/analytics/:tenantId", async (c) => {
  * GET /api/calls/recent
  * Get most recent calls (for dashboard)
  */
-callsRoutes.get("/recent/:tenantId", async (c) => {
-  const tenantId = c.req.param("tenantId");
+callsRoutes.get("/recent", async (c) => {
+  const tenantId = getAuthTenantId(c);
   const limit = Math.min(parseInt(c.req.query("limit") || "10", 10), 50);
   const db = getSupabase();
 

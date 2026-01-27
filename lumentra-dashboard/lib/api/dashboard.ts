@@ -153,32 +153,24 @@ export function transformLogEntry(entry: ApiActivityLogEntry): LogEntry {
 /**
  * Fetch real-time system metrics (raw API response)
  */
-export async function fetchMetricsRaw(
-  tenantId?: string,
-): Promise<ApiMetricsResponse> {
-  const params = tenantId ? { tenant_id: tenantId } : undefined;
-  return get<ApiMetricsResponse>("/api/dashboard/metrics", params);
+export async function fetchMetricsRaw(): Promise<ApiMetricsResponse> {
+  return get<ApiMetricsResponse>("/api/dashboard/metrics");
 }
 
 /**
  * Fetch aggregated statistics (raw API response)
  */
-export async function fetchStatsRaw(
-  tenantId?: string,
-): Promise<ApiDashboardStats> {
-  const params = tenantId ? { tenant_id: tenantId } : undefined;
-  return get<ApiDashboardStats>("/api/dashboard/stats", params);
+export async function fetchStatsRaw(): Promise<ApiDashboardStats> {
+  return get<ApiDashboardStats>("/api/dashboard/stats");
 }
 
 /**
  * Fetch and transform metrics to frontend format
  */
-export async function fetchDashboardMetrics(
-  tenantId?: string,
-): Promise<DashboardMetrics> {
+export async function fetchDashboardMetrics(): Promise<DashboardMetrics> {
   const [metrics, stats] = await Promise.all([
-    fetchMetricsRaw(tenantId),
-    fetchStatsRaw(tenantId),
+    fetchMetricsRaw(),
+    fetchStatsRaw(),
   ]);
 
   return transformMetrics(metrics, stats);
@@ -220,11 +212,8 @@ export async function fetchActivityLog(options?: {
 /**
  * Fetch active voice sessions
  */
-export async function fetchVoiceSessions(
-  tenantId?: string,
-): Promise<ApiVoiceSessionsResponse> {
-  const params = tenantId ? { tenant_id: tenantId } : undefined;
-  return get<ApiVoiceSessionsResponse>("/api/dashboard/sessions", params);
+export async function fetchVoiceSessions(): Promise<ApiVoiceSessionsResponse> {
+  return get<ApiVoiceSessionsResponse>("/api/dashboard/sessions");
 }
 
 /**

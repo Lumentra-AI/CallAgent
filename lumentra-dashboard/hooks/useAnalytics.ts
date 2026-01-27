@@ -64,10 +64,9 @@ export function useAnalytics(days: number = 30) {
     setError(null);
 
     try {
-      const result = await get<AnalyticsData>(
-        `/api/calls/analytics/${tenantId}`,
-        { days: days.toString() },
-      );
+      const result = await get<AnalyticsData>("/api/calls/analytics", {
+        days: days.toString(),
+      });
       setData(result);
     } catch (err) {
       console.error("[Analytics] Fetch error:", err);

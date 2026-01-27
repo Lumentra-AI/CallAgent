@@ -151,7 +151,7 @@ export function useCall(id: string | null) {
   return { call, loading, error };
 }
 
-export function useCallStats(tenantId: string) {
+export function useCallStats() {
   const [stats, setStats] = useState<CallStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -162,7 +162,7 @@ export function useCallStats(tenantId: string) {
       setError(null);
 
       try {
-        const response = await get<CallStats>(`/api/calls/stats/${tenantId}`);
+        const response = await get<CallStats>("/api/calls/stats");
         setStats(response);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch stats");
@@ -172,7 +172,7 @@ export function useCallStats(tenantId: string) {
     };
 
     fetchStats();
-  }, [tenantId]);
+  }, []);
 
   return { stats, loading, error };
 }

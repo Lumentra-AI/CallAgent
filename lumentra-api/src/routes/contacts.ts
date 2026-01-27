@@ -25,6 +25,7 @@ import {
 } from "../services/contacts/contact-service.js";
 import { isValidPhone } from "../services/contacts/phone-utils.js";
 import { ContactFilters, PaginationParams } from "../types/crm.js";
+import { getAuthTenantId, getAuthUserId } from "../middleware/index.js";
 
 export const contactsRoutes = new Hono();
 
@@ -99,16 +100,9 @@ const createNoteSchema = z.object({
   is_private: z.boolean().optional(),
 });
 
-// Helper to get tenant ID
-// In production, this would come from auth middleware
-function getTenantId(c: {
-  req: { header: (name: string) => string | undefined };
-}): string {
-  const tenantId = c.req.header("X-Tenant-ID");
-  if (!tenantId) {
-    throw new Error("X-Tenant-ID header is required");
-  }
-  return tenantId;
+// Helper to get tenant ID from auth context
+function getTenantId(c: Parameters<typeof getAuthTenantId>[0]): string {
+  return getAuthTenantId(c);
 }
 
 // ============================================================================
@@ -544,9 +538,9 @@ contactsRoutes.post("/:id/notes", async (c) => {
       );
     }
 
-    // Get user info from headers (when auth is implemented)
-    const userId = c.req.header("X-User-ID");
-    const userName = c.req.header("X-User-Name");
+    // Get user info from auth context
+    const userId = getAuthUserId(c);
+    const userName = c.get("auth")?.user?.user_metadata?.full_name;
 
     const note = await addNote(
       tenantId,

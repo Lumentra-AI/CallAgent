@@ -10,12 +10,12 @@ import {
   renderTemplate,
 } from "../services/notifications/notification-service.js";
 
+import { getAuthTenantId } from "../middleware/index.js";
+
 export const notificationsRoutes = new Hono();
 
-function getTenantId(c: any): string {
-  const tenantId = c.req.header("X-Tenant-ID");
-  if (!tenantId) throw new Error("X-Tenant-ID header is required");
-  return tenantId;
+function getTenantId(c: Parameters<typeof getAuthTenantId>[0]): string {
+  return getAuthTenantId(c);
 }
 
 // GET /api/notifications

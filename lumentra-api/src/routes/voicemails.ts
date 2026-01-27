@@ -10,6 +10,8 @@ import {
   type VoicemailReason,
 } from "../services/voice/voicemail.js";
 
+import { getAuthTenantId } from "../middleware/index.js";
+
 export const voicemailRoutes = new Hono();
 
 /**
@@ -17,14 +19,10 @@ export const voicemailRoutes = new Hono();
  * List voicemails for a tenant
  */
 voicemailRoutes.get("/", async (c) => {
-  const tenantId = c.req.header("X-Tenant-ID") || c.req.query("tenant_id");
+  const tenantId = getAuthTenantId(c);
   const status = c.req.query("status");
   const limit = parseInt(c.req.query("limit") || "50", 10);
   const offset = parseInt(c.req.query("offset") || "0", 10);
-
-  if (!tenantId) {
-    return c.json({ error: "Tenant ID required" }, 400);
-  }
 
   const result = await getVoicemails(tenantId, { status, limit, offset });
 

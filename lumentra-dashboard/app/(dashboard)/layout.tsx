@@ -3,6 +3,7 @@
 import { ConfigProvider, useConfig } from "@/context/ConfigContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { TenantProvider, useTenant } from "@/context/TenantContext";
 import { IndustryProvider } from "@/context/IndustryContext";
 import { EscalationProvider } from "@/context/EscalationContext";
 import Sidebar from "@/components/dashboard/Sidebar";
@@ -41,6 +42,7 @@ function LoadingScreen() {
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const { isLoading: configLoading } = useConfig();
   const { isLoading: authLoading, user } = useAuth();
+  const { isLoading: tenantLoading, currentTenant, tenants } = useTenant();
   const router = useRouter();
 
   useEffect(() => {
@@ -49,11 +51,22 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     }
   }, [authLoading, user, router]);
 
-  if (authLoading || configLoading) {
+  // Redirect to setup if user has no tenants
+  useEffect(() => {
+    if (!authLoading && !tenantLoading && user && tenants.length === 0) {
+      router.push("/setup");
+    }
+  }, [authLoading, tenantLoading, user, tenants, router]);
+
+  if (authLoading || configLoading || tenantLoading) {
     return <LoadingScreen />;
   }
 
   if (!user) {
+    return <LoadingScreen />;
+  }
+
+  if (!currentTenant) {
     return <LoadingScreen />;
   }
 
@@ -105,13 +118,15 @@ export default function DashboardLayout({
   return (
     <ThemeProvider>
       <AuthProvider>
-        <ConfigProvider>
-          <IndustryProvider>
-            <EscalationProvider>
-              <DashboardContent>{children}</DashboardContent>
-            </EscalationProvider>
-          </IndustryProvider>
-        </ConfigProvider>
+        <TenantProvider>
+          <ConfigProvider>
+            <IndustryProvider>
+              <EscalationProvider>
+                <DashboardContent>{children}</DashboardContent>
+              </EscalationProvider>
+            </IndustryProvider>
+          </ConfigProvider>
+        </TenantProvider>
       </AuthProvider>
     </ThemeProvider>
   );

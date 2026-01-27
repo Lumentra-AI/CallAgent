@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { getSupabase } from "../services/database/client.js";
 import * as sessionManager from "../services/voice/session-manager.js";
+import { getAuthTenantId } from "../middleware/index.js";
 
 export const dashboardRoutes = new Hono();
 
@@ -51,14 +52,14 @@ export function logActivity(
  * System health and real-time metrics
  */
 dashboardRoutes.get("/metrics", async (c) => {
-  const tenantId = c.req.query("tenant_id");
+  const tenantId = getAuthTenantId(c);
   const db = getSupabase();
 
   // Get active calls from session manager
   const activeSessions = sessionManager.getAllSessions();
-  const activeCalls = tenantId
-    ? activeSessions.filter((s) => s.tenantId === tenantId).length
-    : activeSessions.length;
+  const activeCalls = activeSessions.filter(
+    (s) => s.tenantId === tenantId,
+  ).length;
 
   // Calculate uptime
   const uptimeMs = Date.now() - serverStartTime;
@@ -71,43 +72,28 @@ dashboardRoutes.get("/metrics", async (c) => {
   tomorrow.setDate(tomorrow.getDate() + 1);
 
   // Today's calls
-  let callsQuery = db
+  const { count: callsToday } = await db
     .from("calls")
     .select("*", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
     .gte("created_at", today.toISOString())
     .lt("created_at", tomorrow.toISOString());
 
-  if (tenantId) {
-    callsQuery = callsQuery.eq("tenant_id", tenantId);
-  }
-
-  const { count: callsToday } = await callsQuery;
-
   // Today's bookings
-  let bookingsQuery = db
+  const { count: bookingsToday } = await db
     .from("bookings")
     .select("*", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
     .eq("booking_date", today.toISOString().split("T")[0]);
 
-  if (tenantId) {
-    bookingsQuery = bookingsQuery.eq("tenant_id", tenantId);
-  }
-
-  const { count: bookingsToday } = await bookingsQuery;
-
   // Average response latency (from recent calls)
-  let latencyQuery = db
+  const { data: latencyData } = await db
     .from("calls")
     .select("metadata")
+    .eq("tenant_id", tenantId)
     .not("metadata", "is", null)
     .order("created_at", { ascending: false })
     .limit(20);
-
-  if (tenantId) {
-    latencyQuery = latencyQuery.eq("tenant_id", tenantId);
-  }
-
-  const { data: latencyData } = await latencyQuery;
 
   // Calculate average latency from metadata if available
   let avgLatency = 340; // Default estimate in ms
@@ -181,7 +167,7 @@ dashboardRoutes.get("/activity", async (c) => {
  * Aggregated statistics for dashboard cards
  */
 dashboardRoutes.get("/stats", async (c) => {
-  const tenantId = c.req.query("tenant_id");
+  const tenantId = getAuthTenantId(c);
   const db = getSupabase();
 
   // Get date ranges
@@ -193,18 +179,13 @@ dashboardRoutes.get("/stats", async (c) => {
 
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
-  // Build queries with optional tenant filter
+  // Build queries with tenant filter
   const buildQuery = (table: string, dateField: string, startDate: Date) => {
-    let query = db
+    return db
       .from(table)
       .select("*", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
       .gte(dateField, startDate.toISOString());
-
-    if (tenantId) {
-      query = query.eq("tenant_id", tenantId);
-    }
-
-    return query;
   };
 
   // Execute all queries in parallel
@@ -253,13 +234,11 @@ dashboardRoutes.get("/stats", async (c) => {
  * Active voice sessions (for real-time monitoring)
  */
 dashboardRoutes.get("/sessions", async (c) => {
-  const tenantId = c.req.query("tenant_id");
+  const tenantId = getAuthTenantId(c);
 
-  let sessions = sessionManager.getAllSessions();
-
-  if (tenantId) {
-    sessions = sessions.filter((s) => s.tenantId === tenantId);
-  }
+  const sessions = sessionManager
+    .getAllSessions()
+    .filter((s) => s.tenantId === tenantId);
 
   // Return sanitized session data (exclude full conversation history for privacy)
   const sanitized = sessions.map((s) => ({

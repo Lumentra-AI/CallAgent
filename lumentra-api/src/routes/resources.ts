@@ -16,17 +16,13 @@ import {
 } from "../services/resources/resource-service.js";
 import { PaginationParams } from "../types/crm.js";
 
+import { getAuthTenantId } from "../middleware/index.js";
+
 export const resourcesRoutes = new Hono();
 
-// Helper to get tenant ID from header
-function getTenantId(c: {
-  req: { header: (name: string) => string | undefined };
-}): string {
-  const tenantId = c.req.header("X-Tenant-ID");
-  if (!tenantId) {
-    throw new Error("X-Tenant-ID header is required");
-  }
-  return tenantId;
+// Helper to get tenant ID from auth context
+function getTenantId(c: Parameters<typeof getAuthTenantId>[0]): string {
+  return getAuthTenantId(c);
 }
 
 // Helper to transform null to undefined
