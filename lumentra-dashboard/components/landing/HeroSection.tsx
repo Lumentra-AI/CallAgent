@@ -8,8 +8,10 @@ import { NumberTicker } from "@/components/magicui/number-ticker";
 import { Button } from "@/components/ui/button";
 import { RetroGrid } from "@/components/ui/retro-grid";
 import { HeroBeamDemo } from "./HeroBeamDemo";
+import { useDemoOrchestrator } from "@/components/demo/DemoOrchestrator";
 
 export function HeroSection() {
+  const { triggerDemo } = useDemoOrchestrator();
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-slate-950">
       {/* Retro Grid Background - clean professional 3D grid */}
@@ -71,15 +73,14 @@ export function HeroSection() {
                 <ArrowRight className="ml-2 h-4 w-4" />
               </ShimmerButton>
             </Link>
-            <Link href="#demo">
-              <Button
-                variant="outline"
-                size="lg"
-                className="h-12 px-8 bg-white/10 backdrop-blur-sm border-white/20 text-white hover:bg-white/20 hover:text-white"
-              >
-                Watch Demo
-              </Button>
-            </Link>
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => triggerDemo("incoming-call")}
+              className="h-12 px-8 bg-white/10 backdrop-blur-sm border-white/20 text-white hover:bg-white/20 hover:text-white"
+            >
+              Watch Demo
+            </Button>
           </motion.div>
 
           {/* Visual flow demo */}

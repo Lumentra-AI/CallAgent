@@ -33,6 +33,27 @@ interface LumentraWidgetProps {
   className?: string;
 }
 
+// Session management
+function getSessionId(): string {
+  if (typeof window === "undefined") return "";
+  let sessionId = sessionStorage.getItem("lumentra_session_id");
+  if (!sessionId) {
+    sessionId = `demo_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    sessionStorage.setItem("lumentra_session_id", sessionId);
+  }
+  return sessionId;
+}
+
+// API configuration
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3100";
+const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || "demo-tenant";
+
+interface ChatApiResponse {
+  response: string;
+  session_id: string;
+  tool_calls?: Array<{ name: string; result: unknown }>;
+}
+
 export function LumentraWidget({
   onDemoTrigger,
   className,
@@ -70,12 +91,12 @@ export function LumentraWidget({
     }
   }, [state, mode]);
 
-  // Simulate AI response
-  const simulateResponse = useCallback(
-    (userMessage: string) => {
+  // Call real chat API
+  const sendToApi = useCallback(
+    async (userMessage: string) => {
       setIsTyping(true);
 
-      // Check for demo triggers
+      // Check for demo triggers based on keywords
       const lowerMessage = userMessage.toLowerCase();
       if (
         lowerMessage.includes("demo") ||
@@ -102,39 +123,67 @@ export function LumentraWidget({
         }
       }
 
-      // Simulate typing delay
-      setTimeout(() => {
+      try {
+        const sessionId = getSessionId();
+        const response = await fetch(`${API_BASE}/api/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            tenant_id: TENANT_ID,
+            session_id: sessionId,
+            message: userMessage,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+
+        const data: ChatApiResponse = await response.json();
+
         setIsTyping(false);
         setIsSpeaking(true);
-
-        const responses = [
-          "Great question! Our AI voice agents can handle calls 24/7, booking appointments, answering questions, and escalating to humans when needed. Would you like me to show you a demo?",
-          "I can demonstrate how our system works for different industries like clinics, hotels, salons, and restaurants. Just say 'show me a demo' to see it in action!",
-          "Our AI learns your business vocabulary and can handle complex conversations naturally. Try asking about specific features like appointment booking or call handling.",
-          "That's exactly what Lumentra excels at! We integrate with your existing calendar and CRM systems. Want to see how it works?",
-        ];
 
         const responseMessage: Message = {
           id: Date.now().toString(),
           role: "assistant",
-          content: responses[Math.floor(Math.random() * responses.length)],
+          content: data.response,
           timestamp: new Date(),
         };
 
         setMessages((prev) => [...prev, responseMessage]);
 
-        // Simulate speaking duration
+        // Simulate speaking duration based on response length
+        const speakingDuration = Math.min(
+          Math.max(data.response.length * 30, 1000),
+          4000,
+        );
         setTimeout(() => {
           setIsSpeaking(false);
-        }, 2000);
-      }, 1500);
+        }, speakingDuration);
+      } catch (error) {
+        console.error("[LumentraWidget] Chat API error:", error);
+        setIsTyping(false);
+
+        // Fallback response on error
+        const errorMessage: Message = {
+          id: Date.now().toString(),
+          role: "assistant",
+          content:
+            "I'm having trouble connecting right now. Please try again in a moment, or contact us directly to learn more about Lumentra.",
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, errorMessage]);
+      }
     },
     [onDemoTrigger],
   );
 
   // Handle message send
   const handleSend = useCallback(() => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || isTyping) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -145,8 +194,8 @@ export function LumentraWidget({
 
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
-    simulateResponse(inputValue.trim());
-  }, [inputValue, simulateResponse]);
+    sendToApi(inputValue.trim());
+  }, [inputValue, isTyping, sendToApi]);
 
   // Handle key press
   const handleKeyPress = useCallback(
@@ -414,11 +463,19 @@ export function LumentraWidget({
                 {["Show demo", "How does it work?", "Pricing"].map((action) => (
                   <button
                     key={action}
+                    disabled={isTyping}
                     onClick={() => {
-                      setInputValue(action);
-                      setTimeout(() => handleSend(), 100);
+                      if (isTyping) return;
+                      const userMessage: Message = {
+                        id: Date.now().toString(),
+                        role: "user",
+                        content: action,
+                        timestamp: new Date(),
+                      };
+                      setMessages((prev) => [...prev, userMessage]);
+                      sendToApi(action);
                     }}
-                    className="rounded-full border border-border bg-muted/30 px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className="rounded-full border border-border bg-muted/30 px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {action}
                   </button>
