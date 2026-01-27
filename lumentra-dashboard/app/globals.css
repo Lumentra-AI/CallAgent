@@ -125,6 +125,12 @@
   --chart-4: #ec4899; /* pink */
   --chart-5: #8b5cf6; /* violet */
 
+  /* Industry Accent (default - indigo, matches primary) */
+  --industry-accent: #6366f1;
+  --industry-accent-hover: #4f46e5;
+  --industry-accent-muted: #e0e7ff;
+  --industry-accent-foreground: #ffffff;
+
   /* Sidebar */
   --sidebar: #fafafa;
   --sidebar-foreground: #18181b;
@@ -204,6 +210,12 @@
   --chart-3: #f59e0b;
   --chart-4: #ec4899;
   --chart-5: #8b5cf6;
+
+  /* Industry Accent (default - indigo, matches primary) */
+  --industry-accent: #6366f1;
+  --industry-accent-hover: #818cf8;
+  --industry-accent-muted: #312e81;
+  --industry-accent-foreground: #ffffff;
 
   /* Sidebar */
   --sidebar: #0f0f11;

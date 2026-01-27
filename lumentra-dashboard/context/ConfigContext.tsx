@@ -161,28 +161,39 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
         // Load config
         const savedConfig = localStorage.getItem(STORAGE_KEYS.config);
+        let activeConfig: AppConfig;
+
         if (savedConfig) {
-          const parsed = JSON.parse(savedConfig) as AppConfig;
-          setConfig(parsed);
-
-          // Initialize metrics - try API first, fall back to mock
-          if (isApiAvailable) {
-            try {
-              const apiMetrics = await fetchDashboardMetrics();
-              setMetrics(apiMetrics);
-            } catch (err) {
-              console.warn(
-                "[ConfigContext] API fetch failed, using mock:",
-                err,
-              );
-              setMetrics(generateDashboardMetrics(parsed.industry));
-            }
-          } else {
-            setMetrics(generateDashboardMetrics(parsed.industry));
-          }
-
-          setIndustryMetrics(generateIndustryMetrics(parsed.industry));
+          activeConfig = JSON.parse(savedConfig) as AppConfig;
+          console.log("[ConfigContext] Loaded saved config");
+        } else {
+          // Initialize demo config when none exists
+          activeConfig = {
+            ...createDefaultConfig("hotel", "developer"),
+            isConfigured: true,
+            businessName: "Demo Hotel",
+            agentName: "Lumentra",
+            configuredAt: new Date().toISOString(),
+          };
+          console.log("[ConfigContext] Initialized demo config");
         }
+
+        setConfig(activeConfig);
+
+        // Initialize metrics - try API first, fall back to mock
+        if (isApiAvailable) {
+          try {
+            const apiMetrics = await fetchDashboardMetrics();
+            setMetrics(apiMetrics);
+          } catch (err) {
+            console.warn("[ConfigContext] API fetch failed, using mock:", err);
+            setMetrics(generateDashboardMetrics(activeConfig.industry));
+          }
+        } else {
+          setMetrics(generateDashboardMetrics(activeConfig.industry));
+        }
+
+        setIndustryMetrics(generateIndustryMetrics(activeConfig.industry));
 
         // Load UI state
         const savedUI = localStorage.getItem(STORAGE_KEYS.ui);
