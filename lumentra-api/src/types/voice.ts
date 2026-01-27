@@ -141,7 +141,11 @@ export interface GroqConfig {
   model:
     | "llama-3.1-8b-instant"
     | "llama-3.1-70b-versatile"
-    | "llama-3.3-70b-versatile";
+    | "llama-3.3-70b-versatile"
+    | "gpt-oss-20b-128k"
+    | "gpt-oss-120b-128k"
+    | "qwen3-32b-131k"
+    | string; // Allow dynamic model names
   temperature: number;
   maxTokens: number;
   stream: boolean;
@@ -204,7 +208,7 @@ export interface GroqResponse {
 // ============================================
 
 export interface CartesiaConfig {
-  modelId: "sonic-english" | "sonic-multilingual";
+  modelId: "sonic-english" | "sonic-multilingual" | "sonic-3" | string;
   voiceId: string;
   outputFormat: {
     container: "raw";
@@ -269,6 +273,7 @@ export interface ToolExecutionContext {
   tenantId: string;
   callSid: string;
   callerPhone?: string;
+  escalationPhone?: string;
 }
 
 export interface CheckAvailabilityArgs {
@@ -304,5 +309,32 @@ export interface TransferToHumanArgs {
 
 export interface TransferToHumanResult {
   transferred: boolean;
+  message: string;
+}
+
+export interface EndCallArgs {
+  reason: string;
+}
+
+export interface EndCallResult {
+  ended: boolean;
+  message: string;
+}
+
+export interface CreateOrderArgs {
+  customer_name: string;
+  customer_phone: string;
+  order_type: "pickup" | "delivery";
+  items: string;
+  delivery_address?: string;
+  special_instructions?: string;
+}
+
+export interface CreateOrderResult {
+  success: boolean;
+  order_id?: string;
+  confirmation_code?: string;
+  estimated_time?: string;
+  total?: string;
   message: string;
 }

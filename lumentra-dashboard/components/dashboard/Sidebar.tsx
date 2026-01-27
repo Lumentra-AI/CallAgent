@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { useConfig } from "@/context/ConfigContext";
 import type { ViewType } from "@/types";
 import {
@@ -18,6 +19,18 @@ import {
   Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// Route mapping for navigation
+const VIEW_ROUTES: Record<ViewType, string> = {
+  dashboard: "/dashboard",
+  calls: "/calls",
+  analytics: "/analytics",
+  contacts: "/contacts",
+  calendar: "/calendar",
+  notifications: "/notifications",
+  resources: "/resources",
+  settings: "/settings",
+};
 
 // ============================================================================
 // NAV ITEMS
@@ -64,8 +77,26 @@ const NAV_SECTIONS: NavSection[] = [
 // ============================================================================
 
 export default function Sidebar() {
+  const router = useRouter();
+  const pathname = usePathname();
   const { config, uiState, setView, toggleSidebar, resetConfig } = useConfig();
-  const { currentView, sidebarCollapsed } = uiState;
+  const { sidebarCollapsed } = uiState;
+
+  // Determine active view from current pathname
+  const currentView = React.useMemo(() => {
+    const path = pathname?.replace("/", "") || "dashboard";
+    return (
+      (Object.keys(VIEW_ROUTES) as ViewType[]).find(
+        (key) => VIEW_ROUTES[key] === `/${path}`,
+      ) || "dashboard"
+    );
+  }, [pathname]);
+
+  // Handle navigation
+  const handleNavClick = (viewId: ViewType) => {
+    setView(viewId); // Update context state
+    router.push(VIEW_ROUTES[viewId]); // Navigate to route
+  };
 
   return (
     <aside
@@ -107,7 +138,7 @@ export default function Sidebar() {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setView(item.id)}
+                    onClick={() => handleNavClick(item.id)}
                     className={cn(
                       "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                       isActive

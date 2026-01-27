@@ -143,6 +143,7 @@ export type IndustryType =
   | "motel"
   | "vacation_rental"
   | "restaurant"
+  | "pizza"
   | "catering"
   // Healthcare
   | "medical"

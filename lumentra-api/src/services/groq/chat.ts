@@ -1,5 +1,5 @@
 // Groq Chat Service
-// Handles LLM conversations with FunctionGemma routing + Llama 3.1 8B
+// Handles LLM conversations with native tool calling
 
 import { groqClient, chatConfig, toolConfig } from "./client.js";
 import { voiceAgentTools, executeTool } from "./tools.js";
@@ -16,6 +16,7 @@ import {
   type ChainContext,
 } from "../fallback/chain.js";
 import type { EscalationState } from "../escalation/escalation-manager.js";
+import { getIndustryConfig } from "../../config/industry-prompts.js";
 
 interface ChatResponse {
   text: string;
@@ -37,58 +38,75 @@ export function buildSystemPrompt(
     empathy: string;
   },
 ): string {
-  let prompt = `You are ${agentName}, the AI voice assistant for ${businessName}.
+  // Get industry-specific configuration
+  const industryConfig = getIndustryConfig(industry);
+  const { terminology } = industryConfig;
 
-## Your Role
-You help callers with inquiries, bookings, and support. You represent the business professionally.
-
-## Personality
-`;
-
+  // Build personality section
+  let personalitySection = "";
   switch (personality.tone) {
     case "professional":
-      prompt += "- Maintain a professional and businesslike demeanor\n";
+      personalitySection +=
+        "- Maintain a professional and businesslike demeanor\n";
       break;
     case "friendly":
-      prompt +=
+      personalitySection +=
         "- Be warm, friendly, and approachable while remaining professional\n";
       break;
     case "casual":
-      prompt += "- Keep things casual and relaxed, like talking to a friend\n";
+      personalitySection +=
+        "- Keep things casual and relaxed, like talking to a friend\n";
       break;
     case "formal":
-      prompt += "- Use formal language and maintain proper etiquette\n";
+      personalitySection +=
+        "- Use formal language and maintain proper etiquette\n";
       break;
   }
 
   switch (personality.verbosity) {
     case "concise":
-      prompt +=
+      personalitySection +=
         "- Keep responses brief and to the point. One or two sentences when possible\n";
       break;
     case "balanced":
-      prompt +=
+      personalitySection +=
         "- Provide enough detail to be helpful without being overly wordy\n";
       break;
     case "detailed":
-      prompt += "- Provide thorough explanations and details when helpful\n";
+      personalitySection +=
+        "- Provide thorough explanations and details when helpful\n";
       break;
   }
 
   switch (personality.empathy) {
     case "high":
-      prompt +=
+      personalitySection +=
         "- Show strong empathy. Acknowledge emotions and validate concerns\n";
       break;
     case "medium":
-      prompt += "- Be understanding and acknowledge the caller's situation\n";
+      personalitySection +=
+        "- Be understanding and acknowledge the caller's situation\n";
       break;
     case "low":
-      prompt += "- Focus on efficiency and getting things done\n";
+      personalitySection += "- Focus on efficiency and getting things done\n";
       break;
   }
 
-  prompt += `
+  // Calculate tomorrow's date for examples
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split("T")[0];
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  // Build the full prompt using industry config
+  const prompt = `You are ${agentName}, the AI voice assistant for ${businessName}.
+
+## Your Role
+${industryConfig.roleDescription} You represent the business professionally.
+
+## Personality
+${personalitySection}
+
 ## Voice Conversation Guidelines
 - This is a voice conversation. Keep responses concise and natural.
 - Don't use bullet points, markdown, or formatting - just speak naturally.
@@ -100,14 +118,40 @@ You help callers with inquiries, bookings, and support. You represent the busine
 ## Business Context
 Industry: ${industry}
 Business: ${businessName}
+Today's Date: ${todayStr}
+Terminology: ${terminology.transaction} (singular), ${terminology.transactionPlural} (plural)
+${industryConfig.criticalRules}
+${industryConfig.bookingFlow}
+${industryConfig.faqSection || ""}
 
-## Available Tools
-You have access to these tools:
-- check_availability: Check when appointments are available
-- create_booking: Book an appointment for the customer
-- transfer_to_human: Transfer to a staff member when needed
+## CRITICAL RULES
+- NEVER mention tools, functions, or internal systems to the caller
+- NEVER read technical information aloud
+- Keep responses SHORT - max 1-2 sentences
+- Speak naturally like a human receptionist
+- When using dates internally, use YYYY-MM-DD format
+- Today's date for internal use: ${todayStr}
 
-When a customer wants to book, first check availability, confirm the time with them, then create the booking.
+## FUNCTION CALLING EXAMPLES
+Follow these patterns exactly:
+
+EXAMPLE 1 - Checking availability:
+Caller: "When are you available tomorrow?"
+Your action: Call check_availability with date="${tomorrowStr}"
+
+EXAMPLE 2 - Creating a ${terminology.transaction.toLowerCase()} (only after confirming time):
+Caller: "Yes, book me for 2 PM"
+Your action: Call create_booking with time="14:00", date="[the date discussed]", customer_name="[${terminology.customer.toLowerCase()} name given]"
+
+EXAMPLE 3 - Missing info (DO NOT call tool yet):
+Caller: "I need an appointment"
+Your action: DO NOT call create_booking yet. Ask: "What date works best for you?"
+
+## Call Flow
+1. Greet briefly
+2. Help with their request
+3. Confirm details
+4. Say goodbye and hang up
 `;
 
   return prompt;
@@ -261,15 +305,14 @@ export interface ChainChatResponse extends ChatResponse {
   action: "response" | "escalate" | "retry";
   escalationReason?: string;
   metrics: {
-    functionGemmaUsed: boolean;
     llmUsed: boolean;
     retryCount: number;
     totalLatencyMs: number;
   };
 }
 
-// Chat with FunctionGemma routing + Llama 3.1 8B fallback chain
-// This is the preferred method for voice conversations
+// Chat with retry logic and escalation handling
+// Uses direct Groq LLM with native tool calling
 export async function chatWithFallback(
   userMessage: string,
   conversationHistory: ConversationMessage[],
@@ -286,23 +329,18 @@ export async function chatWithFallback(
     escalationState,
   };
 
-  // Execute the fallback chain
+  // Execute with retry and escalation logic
   const result = await executeChain(
     userMessage,
     chainContext,
-    // LLM chat function (used when FunctionGemma routes to LLM)
+    // Direct LLM chat function with native tool calling
     async (msg, history, prompt, toolCtx) => {
       return chat(msg, history, prompt, toolCtx);
-    },
-    // Tool execution function
-    async (toolName, args, toolCtx) => {
-      return executeTool(toolName, args, toolCtx);
     },
   );
 
   console.log(
-    `[CHAT] Chain result: action=${result.action}, ` +
-      `fg=${result.metrics.functionGemmaUsed}, ` +
+    `[CHAT] Result: action=${result.action}, ` +
       `llm=${result.metrics.llmUsed}, ` +
       `latency=${result.metrics.totalLatencyMs}ms`,
   );
@@ -323,6 +361,7 @@ export function initializeChainContext(
   callerPhone: string | undefined,
   conversationHistory: ConversationMessage[],
   systemPrompt: string,
+  escalationPhone?: string,
 ): ChainContext {
   return createChainContext(
     tenantId,
@@ -330,6 +369,7 @@ export function initializeChainContext(
     callerPhone,
     conversationHistory,
     systemPrompt,
+    escalationPhone,
   );
 }
 

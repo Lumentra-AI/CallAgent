@@ -4,7 +4,7 @@ import { getSupabase } from "../services/database/client.js";
  * Process callback queue
  *
  * Finds missed calls that need callbacks and initiates outbound calls.
- * For now, this just logs - actual outbound calls require Vapi API integration.
+ * TODO: Implement outbound calls via SignalWire API.
  */
 export async function processCallbacks(): Promise<void> {
   const db = getSupabase();
@@ -42,8 +42,7 @@ export async function processCallbacks(): Promise<void> {
         })
         .eq("id", callback.id);
 
-      // TODO: Initiate outbound call via Vapi API
-      // For now, just log
+      // TODO: Initiate outbound call via SignalWire API
       console.log(
         `[CALLBACKS] Would call ${callback.phone_number} for tenant ${callback.tenant_id}`,
       );

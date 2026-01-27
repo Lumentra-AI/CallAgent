@@ -13,10 +13,16 @@ export const cartesiaApiKey = CARTESIA_API_KEY;
 
 // Default voice IDs from Cartesia
 export const cartesiaVoices = {
-  // Female voices
-  hannah: "248be419-c632-4f23-adf1-5324ed7dbf1d", // Warm, professional
-  sarah: "a0e99841-438c-4a64-b679-ae501e7d6091", // Friendly, conversational
-  emma: "98a34ef2-2140-4c28-9c71-663dc4dd7022", // Clear, energetic
+  // Female voices - young adult (mid-twenties)
+  taylor: "abad7f2e-7eb3-4edb-b08e-d538401dfbad", // Clear, personable, warm & professional
+  allie: "2747b6cf-fa34-460c-97db-267566918881", // Confident, approachable young adult
+  mia: "1d3ba41a-96e6-44ad-aabb-9817c56caa68", // Firm, young female for support
+  katie: "f786b574-daa5-4673-aa0c-cbe3e8534c02", // Enunciating young adult for support
+  riley: "21b81c14-f85b-436d-aff5-43f2e788ecf8", // Casual, young female
+  madison: "02fe5732-a072-4767-83e3-a91d41d274ca", // Enthusiastic young adult female
+
+  // Female voices - mature
+  hannah: "248be419-c632-4f23-adf1-5324ed7dbf1d", // Enunciating young female (Elizabeth)
 
   // Male voices
   james: "69267136-1bdc-412f-ad78-0caad210fb40", // Professional, authoritative
@@ -25,8 +31,8 @@ export const cartesiaVoices = {
 
 // Default configuration for phone calls (mu-law 8kHz)
 export const defaultCartesiaConfig: CartesiaConfig = {
-  modelId: "sonic-english",
-  voiceId: cartesiaVoices.hannah,
+  modelId: "sonic-turbo", // Fastest model - 40ms latency
+  voiceId: cartesiaVoices.madison, // Enthusiastic young adult female
   outputFormat: {
     container: "raw",
     encoding: "pcm_mulaw",

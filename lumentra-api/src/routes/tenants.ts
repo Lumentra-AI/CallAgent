@@ -85,8 +85,8 @@ tenantsRoutes.post("/", async (c) => {
     },
     voice_config: body.voice_config || {
       provider: "cartesia",
-      voice_id: "a0e99841-438c-4a64-b679-ae501e7d6091",
-      voice_name: "Default",
+      voice_id: "02fe5732-a072-4767-83e3-a91d41d274ca", // Madison - Enthusiastic young adult female
+      voice_name: "Madison",
       speaking_rate: 1.0,
       pitch: 1.0,
     },

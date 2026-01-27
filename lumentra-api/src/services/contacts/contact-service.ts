@@ -600,77 +600,188 @@ export async function updateMetrics(
 }
 
 /**
- * Recalculate engagement score
+ * Engagement level type
+ */
+export type EngagementLevel = "cold" | "warm" | "hot" | "vip";
+
+/**
+ * Engagement factor breakdown
+ */
+export interface EngagementFactor {
+  name: string;
+  value: number;
+  weight: number;
+  contribution: number;
+}
+
+/**
+ * Full engagement score result
+ */
+export interface EngagementResult {
+  score: number;
+  level: EngagementLevel;
+  factors: EngagementFactor[];
+}
+
+// Scoring weights (total = 100)
+const ENGAGEMENT_WEIGHTS = {
+  recency: 25,
+  callFrequency: 15,
+  bookingFrequency: 20,
+  conversionRate: 15,
+  loyalty: 15,
+  lifetimeValue: 10,
+};
+
+/**
+ * Recalculate engagement score with detailed breakdown
  */
 export async function recalculateEngagementScore(
   tenantId: string,
   contactId: string,
 ): Promise<number> {
+  const result = await calculateEngagementDetails(tenantId, contactId);
+  return result.score;
+}
+
+/**
+ * Calculate detailed engagement score with factor breakdown
+ */
+export async function calculateEngagementDetails(
+  tenantId: string,
+  contactId: string,
+): Promise<EngagementResult> {
+  const db = getSupabase();
   const contact = await getContact(tenantId, contactId);
+
   if (!contact) {
     throw new Error("Contact not found");
   }
 
-  // Engagement score factors (0-100)
-  let score = 0;
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
-  // Recent activity (last 30 days)
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  // Get recent calls
+  const { data: recentCalls } = await db
+    .from("calls")
+    .select("created_at, outcome_type")
+    .eq("contact_id", contactId)
+    .eq("tenant_id", tenantId)
+    .gte("created_at", thirtyDaysAgo.toISOString());
 
-  if (
-    contact.last_contact_at &&
-    new Date(contact.last_contact_at) > thirtyDaysAgo
-  ) {
-    score += 20; // Recent contact
+  // Get recent bookings
+  const { data: recentBookings } = await db
+    .from("bookings")
+    .select("created_at, status")
+    .eq("contact_id", contactId)
+    .eq("tenant_id", tenantId)
+    .gte("created_at", ninetyDaysAgo.toISOString());
+
+  const factors: EngagementFactor[] = [];
+
+  // 1. Recency Score (0-100)
+  let recencyScore = 0;
+  if (contact.last_contact_at) {
+    const daysSince = Math.floor(
+      (now.getTime() - new Date(contact.last_contact_at).getTime()) /
+        (24 * 60 * 60 * 1000),
+    );
+    if (daysSince <= 7) recencyScore = 100;
+    else if (daysSince <= 14) recencyScore = 80;
+    else if (daysSince <= 30) recencyScore = 60;
+    else if (daysSince <= 60) recencyScore = 40;
+    else if (daysSince <= 90) recencyScore = 20;
   }
+  factors.push({
+    name: "Recency",
+    value: recencyScore,
+    weight: ENGAGEMENT_WEIGHTS.recency,
+    contribution: (recencyScore * ENGAGEMENT_WEIGHTS.recency) / 100,
+  });
 
-  // Call frequency
-  if (contact.total_calls >= 5) score += 15;
-  else if (contact.total_calls >= 3) score += 10;
-  else if (contact.total_calls >= 1) score += 5;
+  // 2. Call Frequency Score
+  const recentCallCount = recentCalls?.length || 0;
+  const callScore = Math.min(100, recentCallCount * 25);
+  factors.push({
+    name: "Call Frequency",
+    value: recentCallCount,
+    weight: ENGAGEMENT_WEIGHTS.callFrequency,
+    contribution: (callScore * ENGAGEMENT_WEIGHTS.callFrequency) / 100,
+  });
 
-  // Booking history
-  if (contact.total_bookings >= 5) score += 15;
-  else if (contact.total_bookings >= 3) score += 10;
-  else if (contact.total_bookings >= 1) score += 5;
+  // 3. Booking Frequency Score
+  const recentBookingCount = recentBookings?.length || 0;
+  const bookingScore = Math.min(100, recentBookingCount * 33);
+  factors.push({
+    name: "Booking Frequency",
+    value: recentBookingCount,
+    weight: ENGAGEMENT_WEIGHTS.bookingFrequency,
+    contribution: (bookingScore * ENGAGEMENT_WEIGHTS.bookingFrequency) / 100,
+  });
 
-  // Completion rate
-  if (contact.total_bookings > 0) {
-    const completionRate =
-      contact.total_completed_bookings / contact.total_bookings;
-    score += Math.round(completionRate * 20);
-  }
+  // 4. Conversion Rate
+  const bookingOutcomes =
+    recentCalls?.filter((c) => c.outcome_type === "booking").length || 0;
+  const conversionRate =
+    recentCallCount > 0 ? (bookingOutcomes / recentCallCount) * 100 : 0;
+  const conversionScore = Math.min(100, conversionRate * 2);
+  factors.push({
+    name: "Conversion Rate",
+    value: Math.round(conversionRate),
+    weight: ENGAGEMENT_WEIGHTS.conversionRate,
+    contribution: (conversionScore * ENGAGEMENT_WEIGHTS.conversionRate) / 100,
+  });
 
-  // Lifetime value
-  if (contact.lifetime_value_cents >= 50000)
-    score += 15; // $500+
-  else if (contact.lifetime_value_cents >= 10000)
-    score += 10; // $100+
-  else if (contact.lifetime_value_cents >= 1000) score += 5; // $10+
+  // 5. Loyalty (show rate)
+  const showRate =
+    contact.total_bookings > 0
+      ? (contact.total_completed_bookings / contact.total_bookings) * 100
+      : 0;
+  const loyaltyScore = Math.min(100, showRate);
+  factors.push({
+    name: "Loyalty",
+    value: Math.round(showRate),
+    weight: ENGAGEMENT_WEIGHTS.loyalty,
+    contribution: (loyaltyScore * ENGAGEMENT_WEIGHTS.loyalty) / 100,
+  });
 
-  // VIP status bonus
-  if (contact.status === "vip") score += 10;
+  // 6. Lifetime Value
+  let valueScore = 0;
+  if (contact.lifetime_value_cents >= 100000) valueScore = 100;
+  else if (contact.lifetime_value_cents >= 50000) valueScore = 80;
+  else if (contact.lifetime_value_cents >= 20000) valueScore = 60;
+  else if (contact.lifetime_value_cents >= 5000) valueScore = 40;
+  else if (contact.lifetime_value_cents >= 1000) valueScore = 20;
+  factors.push({
+    name: "Lifetime Value",
+    value: contact.lifetime_value_cents || 0,
+    weight: ENGAGEMENT_WEIGHTS.lifetimeValue,
+    contribution: (valueScore * ENGAGEMENT_WEIGHTS.lifetimeValue) / 100,
+  });
 
-  // Negative factors
-  if (contact.total_no_shows > 0) {
-    score -= Math.min(contact.total_no_shows * 5, 15);
-  }
-  if (contact.total_cancelled_bookings > contact.total_completed_bookings) {
-    score -= 10;
-  }
+  // Calculate total
+  const totalScore = Math.round(
+    factors.reduce((sum, f) => sum + f.contribution, 0),
+  );
 
-  // Clamp to 0-100
-  score = Math.max(0, Math.min(100, score));
+  // Determine level
+  let level: EngagementLevel;
+  if (totalScore >= 80 || contact.status === "vip") level = "vip";
+  else if (totalScore >= 60) level = "hot";
+  else if (totalScore >= 30) level = "warm";
+  else level = "cold";
 
-  // Update in database
-  const db = getSupabase();
+  // Update database
   await db
     .from("contacts")
-    .update({ engagement_score: score })
+    .update({
+      engagement_score: totalScore,
+      engagement_level: level,
+    })
     .eq("id", contactId);
 
-  return score;
+  return { score: totalScore, level, factors };
 }
 
 // ============================================================================

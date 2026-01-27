@@ -1,9 +1,7 @@
 // Fallback Chain
-// Orchestrates the flow: FunctionGemma -> Llama -> Retry -> Escalate
-// Handles failures gracefully with intelligent retry logic
+// Simple retry and escalation logic for voice conversations
+// No FunctionGemma - direct Groq LLM calls
 
-import { getFunctionGemmaRouter } from "../functiongemma/router.js";
-import { RouterDecision, TEMPLATE_RESPONSES } from "../functiongemma/types.js";
 import {
   EscalationState,
   createEscalationState,
@@ -37,7 +35,6 @@ export interface ChainResult {
   action: "response" | "escalate" | "retry";
   escalationReason?: string;
   metrics: {
-    functionGemmaUsed: boolean;
     llmUsed: boolean;
     retryCount: number;
     totalLatencyMs: number;
@@ -48,6 +45,7 @@ export interface ChainContext {
   tenantId: string;
   callSid: string;
   callerPhone?: string;
+  escalationPhone?: string;
   conversationHistory: ConversationMessage[];
   systemPrompt: string;
   escalationState: EscalationState;
@@ -91,7 +89,7 @@ function getClarificationPrompt(): string {
 }
 
 /**
- * Main fallback chain execution
+ * Main fallback chain execution - direct LLM with retry logic
  */
 export async function executeChain(
   userMessage: string,
@@ -109,18 +107,11 @@ export async function executeChain(
       result: unknown;
     }>;
   }>,
-  executeToolFn: (
-    toolName: string,
-    args: Record<string, unknown>,
-    toolContext: ToolExecutionContext,
-  ) => Promise<unknown>,
 ): Promise<ChainResult> {
   const startTime = Date.now();
-  const router = getFunctionGemmaRouter();
   const retryState = getRetryState(context.callSid);
 
   const metrics = {
-    functionGemmaUsed: false,
     llmUsed: false,
     retryCount: retryState.totalRetries,
     totalLatencyMs: 0,
@@ -130,6 +121,7 @@ export async function executeChain(
     tenantId: context.tenantId,
     callSid: context.callSid,
     callerPhone: context.callerPhone,
+    escalationPhone: context.escalationPhone,
   };
 
   // Step 1: Check escalation first
@@ -158,129 +150,50 @@ export async function executeChain(
     };
   }
 
-  // Step 2: Route with FunctionGemma
-  let routerDecision: RouterDecision;
+  // Step 2: Direct LLM call with native tool support
   try {
-    routerDecision = await router.route(userMessage);
-    metrics.functionGemmaUsed = true;
-  } catch (error) {
-    console.error("[CHAIN] FunctionGemma failed:", error);
-    // Fall back to LLM
-    routerDecision = {
-      action: "llm_required",
-      confidence: 0.5,
-      reason: "functiongemma_error",
-    };
-  }
+    metrics.llmUsed = true;
 
-  console.log(
-    `[CHAIN] Router decision: ${routerDecision.action} (confidence: ${routerDecision.confidence})`,
-  );
+    const llmResult = await llmChatFn(
+      userMessage,
+      context.conversationHistory,
+      context.systemPrompt,
+      toolContext,
+    );
 
-  // Step 3: Handle based on router decision
-  try {
-    switch (routerDecision.action) {
-      case "template_response": {
-        // Simple template response - no LLM needed
-        const templateKey = routerDecision.templateKey || "greeting";
-        const responses = TEMPLATE_RESPONSES[templateKey];
-        const text =
-          responses?.[Math.floor(Math.random() * responses.length)] ||
-          "How can I help you?";
-
-        // Reset failure count on success
-        retryState.consecutiveFailures = 0;
-
-        metrics.totalLatencyMs = Date.now() - startTime;
-        return { text, action: "response", metrics };
+    // Check if booking was completed
+    if (llmResult.toolCalls?.some((tc) => tc.name === "create_booking")) {
+      const bookingCall = llmResult.toolCalls.find(
+        (tc) => tc.name === "create_booking",
+      );
+      if ((bookingCall?.result as { success?: boolean })?.success) {
+        markTaskCompleted(context.escalationState);
       }
-
-      case "direct_tool": {
-        // Execute tool directly without LLM
-        if (!routerDecision.toolName || !routerDecision.toolArgs) {
-          throw new Error("Missing tool info for direct execution");
-        }
-
-        const toolResult = await executeToolFn(
-          routerDecision.toolName,
-          routerDecision.toolArgs,
-          toolContext,
-        );
-
-        // Format response based on tool result
-        const resultObj = toolResult as { message?: string; success?: boolean };
-        const text = resultObj.message || "Done!";
-
-        // Mark task completed if booking succeeded
-        if (routerDecision.toolName === "create_booking" && resultObj.success) {
-          markTaskCompleted(context.escalationState);
-        }
-
-        retryState.consecutiveFailures = 0;
-
-        metrics.totalLatencyMs = Date.now() - startTime;
-        return {
-          text,
-          toolCalls: [
-            {
-              name: routerDecision.toolName,
-              args: routerDecision.toolArgs,
-              result: toolResult,
-            },
-          ],
-          action: "response",
-          metrics,
-        };
-      }
-
-      case "llm_required": {
-        // Need LLM for conversation or to fill in missing params
-        metrics.llmUsed = true;
-
-        const llmResult = await llmChatFn(
-          userMessage,
-          context.conversationHistory,
-          context.systemPrompt,
-          toolContext,
-        );
-
-        // Check if booking was completed
-        if (llmResult.toolCalls?.some((tc) => tc.name === "create_booking")) {
-          const bookingCall = llmResult.toolCalls.find(
-            (tc) => tc.name === "create_booking",
-          );
-          if ((bookingCall?.result as { success?: boolean })?.success) {
-            markTaskCompleted(context.escalationState);
-          }
-        }
-
-        retryState.consecutiveFailures = 0;
-
-        metrics.totalLatencyMs = Date.now() - startTime;
-        return {
-          text: llmResult.text,
-          toolCalls: llmResult.toolCalls,
-          action: "response",
-          metrics,
-        };
-      }
-
-      case "escalate": {
-        // Router decided to escalate
-        metrics.totalLatencyMs = Date.now() - startTime;
-        return {
-          text: "Let me connect you with our team. Please hold.",
-          action: "escalate",
-          escalationReason: routerDecision.reason,
-          metrics,
-        };
-      }
-
-      default:
-        throw new Error(`Unknown router action: ${routerDecision.action}`);
     }
+
+    // Check for transfer request
+    if (llmResult.toolCalls?.some((tc) => tc.name === "transfer_to_human")) {
+      metrics.totalLatencyMs = Date.now() - startTime;
+      return {
+        text: llmResult.text,
+        toolCalls: llmResult.toolCalls,
+        action: "escalate",
+        escalationReason: "user_requested_transfer",
+        metrics,
+      };
+    }
+
+    retryState.consecutiveFailures = 0;
+
+    metrics.totalLatencyMs = Date.now() - startTime;
+    return {
+      text: llmResult.text,
+      toolCalls: llmResult.toolCalls,
+      action: "response",
+      metrics,
+    };
   } catch (error) {
-    console.error("[CHAIN] Execution error:", error);
+    console.error("[CHAIN] LLM error:", error);
 
     // Increment failure count
     retryState.consecutiveFailures++;
@@ -333,11 +246,13 @@ export function createChainContext(
   callerPhone: string | undefined,
   conversationHistory: ConversationMessage[],
   systemPrompt: string,
+  escalationPhone?: string,
 ): ChainContext {
   return {
     tenantId,
     callSid,
     callerPhone,
+    escalationPhone,
     conversationHistory,
     systemPrompt,
     escalationState: createEscalationState(),

@@ -9,7 +9,6 @@ import type { IncomingMessage } from "http";
 import type { Server } from "http";
 
 import { healthRoutes } from "./routes/health.js";
-import { vapiRoutes } from "./routes/vapi.js";
 import { callsRoutes } from "./routes/calls.js";
 import { bookingsRoutes } from "./routes/bookings.js";
 import { tenantsRoutes } from "./routes/tenants.js";
@@ -18,7 +17,10 @@ import { contactsRoutes } from "./routes/contacts.js";
 import { availabilityRoutes } from "./routes/availability.js";
 import { notificationsRoutes } from "./routes/notifications.js";
 import { resourcesRoutes } from "./routes/resources.js";
+import { voicemailRoutes } from "./routes/voicemails.js";
 import signalwireVoice from "./routes/signalwire-voice.js";
+import trainingDataRoutes from "./routes/training-data.js";
+import { chatRoutes } from "./routes/chat.js";
 import {
   handleSignalWireStream,
   isSignalWireStreamRequest,
@@ -34,7 +36,15 @@ app.use("*", timing());
 app.use(
   "*",
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: (origin) => {
+      const allowed = process.env.FRONTEND_URL || "http://localhost:3000";
+      const allowedOrigins = allowed.split(",").map((o) => o.trim());
+      // Allow localhost on any port for development
+      if (origin && origin.startsWith("http://localhost:")) {
+        return origin;
+      }
+      return allowedOrigins.includes(origin || "") ? origin : allowedOrigins[0];
+    },
     allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     allowHeaders: [
       "Content-Type",
@@ -46,9 +56,16 @@ app.use(
   }),
 );
 
+// WebSocket stream route - placeholder for upgrade handling
+// The actual WebSocket logic is in the upgrade handler below
+app.get("/signalwire/stream", (c) => {
+  // This should never be reached - WebSocket upgrade happens before this
+  // If we get here, the client didn't send proper WebSocket headers
+  return c.json({ error: "WebSocket upgrade required" }, 426);
+});
+
 // Routes
 app.route("/health", healthRoutes);
-app.route("/webhooks/vapi", vapiRoutes);
 app.route("/signalwire", signalwireVoice);
 app.route("/api/calls", callsRoutes);
 app.route("/api/bookings", bookingsRoutes);
@@ -58,6 +75,9 @@ app.route("/api/contacts", contactsRoutes);
 app.route("/api/availability", availabilityRoutes);
 app.route("/api/notifications", notificationsRoutes);
 app.route("/api/resources", resourcesRoutes);
+app.route("/api/voicemails", voicemailRoutes);
+app.route("/api/training", trainingDataRoutes);
+app.route("/api/chat", chatRoutes);
 
 // Root
 app.get("/", (c) => {
@@ -87,7 +107,6 @@ app.onError((err, c) => {
 
 // Startup
 const port = parseInt(process.env.PORT || "3001", 10);
-const VOICE_PROVIDER = process.env.VOICE_PROVIDER || "vapi";
 
 async function start() {
   console.log("[STARTUP] Initializing Lumentra API...");
@@ -108,36 +127,29 @@ async function start() {
     },
     (info) => {
       console.log(`[STARTUP] Server running on http://localhost:${info.port}`);
-      console.log(`[STARTUP] Voice provider: ${VOICE_PROVIDER}`);
-      if (VOICE_PROVIDER === "custom") {
-        console.log(
-          "[STARTUP] Custom voice stack enabled (SignalWire + Deepgram + Groq + Cartesia)",
-        );
-      } else {
-        console.log("[STARTUP] Vapi voice stack enabled");
-      }
+      console.log(
+        "[STARTUP] Voice stack: SignalWire + Deepgram + Gemini + Cartesia",
+      );
     },
   ) as Server;
 
   // Set up WebSocket server for SignalWire media streams
-  if (VOICE_PROVIDER === "custom") {
-    const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true });
 
-    server.on("upgrade", (request: IncomingMessage, socket, head) => {
-      const url = request.url || "";
+  server.on("upgrade", (request: IncomingMessage, socket, head) => {
+    const url = request.url || "";
 
-      if (isSignalWireStreamRequest(url)) {
-        wss.handleUpgrade(request, socket, head, (ws: WebSocket) => {
-          console.log("[WEBSOCKET] SignalWire stream connection");
-          handleSignalWireStream(ws, request);
-        });
-      } else {
-        socket.destroy();
-      }
-    });
+    if (isSignalWireStreamRequest(url)) {
+      wss.handleUpgrade(request, socket, head, (ws: WebSocket) => {
+        console.log("[WEBSOCKET] SignalWire stream connection");
+        handleSignalWireStream(ws, request);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
 
-    console.log("[STARTUP] WebSocket server initialized for media streams");
-  }
+  console.log("[STARTUP] WebSocket server initialized for media streams");
 }
 
 start().catch((err) => {

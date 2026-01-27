@@ -59,7 +59,47 @@ notificationsRoutes.get("/", async (c) => {
   }
 });
 
-// GET /api/notifications/:id
+// GET /api/notifications/templates - MUST be before /:id route
+notificationsRoutes.get("/templates", async (c) => {
+  try {
+    const tenantId = getTenantId(c);
+    const db = getSupabase();
+
+    const { data, error } = await db
+      .from("notification_templates")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("notification_type")
+      .order("channel");
+
+    if (error) return c.json({ error: error.message }, 500);
+    return c.json({ templates: data || [] });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
+// GET /api/notifications/preferences - MUST be before /:id route
+notificationsRoutes.get("/preferences", async (c) => {
+  try {
+    const tenantId = getTenantId(c);
+    const db = getSupabase();
+
+    const { data, error } = await db
+      .from("notification_preferences")
+      .select("*")
+      .eq("tenant_id", tenantId);
+
+    if (error) return c.json({ error: error.message }, 500);
+    return c.json({ preferences: data || [] });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
+// GET /api/notifications/:id - parameterized route MUST be after specific routes
 notificationsRoutes.get("/:id", async (c) => {
   try {
     const tenantId = getTenantId(c);
@@ -164,27 +204,6 @@ notificationsRoutes.post("/preview", async (c) => {
   }
 });
 
-// GET /api/notifications/templates
-notificationsRoutes.get("/templates", async (c) => {
-  try {
-    const tenantId = getTenantId(c);
-    const db = getSupabase();
-
-    const { data, error } = await db
-      .from("notification_templates")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .order("notification_type")
-      .order("channel");
-
-    if (error) return c.json({ error: error.message }, 500);
-    return c.json({ templates: data || [] });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return c.json({ error: message }, 500);
-  }
-});
-
 // POST /api/notifications/templates
 notificationsRoutes.post("/templates", async (c) => {
   try {
@@ -242,25 +261,6 @@ notificationsRoutes.put("/templates/:id", async (c) => {
 
     if (error) return c.json({ error: error.message }, 500);
     return c.json(data);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return c.json({ error: message }, 500);
-  }
-});
-
-// GET /api/notifications/preferences
-notificationsRoutes.get("/preferences", async (c) => {
-  try {
-    const tenantId = getTenantId(c);
-    const db = getSupabase();
-
-    const { data, error } = await db
-      .from("notification_preferences")
-      .select("*")
-      .eq("tenant_id", tenantId);
-
-    if (error) return c.json({ error: error.message }, 500);
-    return c.json({ preferences: data || [] });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return c.json({ error: message }, 500);

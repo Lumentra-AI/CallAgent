@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feature/*]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  api-checks:
+    name: API - Lint & Type Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lumentra-api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: lumentra-api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  dashboard-checks:
+    name: Dashboard - Lint & Type Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lumentra-dashboard
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: lumentra-dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint || true
+        continue-on-error: true
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://lumentra-api-production.up.railway.app
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Audit API dependencies
+        working-directory: lumentra-api
+        run: npm audit --audit-level=high || true
+
+      - name: Audit Dashboard dependencies
+        working-directory: lumentra-dashboard
+        run: npm audit --audit-level=high || true
+
+      - name: Check for secrets
+        run: |
+          if grep -rE "(SUPABASE_SERVICE_ROLE_KEY|API_KEY|SECRET|PASSWORD)=" --include="*.ts" --include="*.tsx" --include="*.js" . | grep -v node_modules | grep -v ".env.example"; then
+            echo "Potential secrets found in code!"
+            exit 1
+          fi
+          echo "No hardcoded secrets found"

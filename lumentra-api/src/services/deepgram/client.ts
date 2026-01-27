@@ -21,12 +21,12 @@ export const defaultDeepgramConfig: DeepgramConfig = {
   language: "en-US",
   punctuate: true,
   interimResults: true,
-  utteranceEndMs: 1000,
+  utteranceEndMs: 500, // Detect end of speech faster
   vadEvents: true,
   encoding: "mulaw",
   sampleRate: 8000,
   channels: 1,
-  endpointing: 300,
+  endpointing: 200, // Smart sentence-end detection (200ms)
 };
 
 export { LiveTranscriptionEvents };

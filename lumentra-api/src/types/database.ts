@@ -8,7 +8,7 @@ export interface Tenant {
   // Identity
   business_name: string;
   industry: string;
-  phone_number: string; // Vapi phone number assigned to this tenant
+  phone_number: string; // SignalWire phone number assigned to this tenant
 
   // Agent configuration
   agent_name: string;
@@ -81,7 +81,7 @@ export interface Call {
 
   // References
   tenant_id: string;
-  vapi_call_id: string;
+  vapi_call_id: string; // Actually SignalWire call SID (legacy column name)
   contact_id?: string; // CRM contact reference
 
   // Call details

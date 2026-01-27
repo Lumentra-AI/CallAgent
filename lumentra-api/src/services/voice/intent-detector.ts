@@ -1,67 +1,182 @@
 // Intent Detector for Hybrid LLM Routing
-// Determines if a user message requires tool calling
+// Optimized for accurate tool routing to reduce unnecessary 70B model calls
+// and improve function calling accuracy
 
-// Patterns that typically indicate tool calling is needed
-const toolTriggers = [
-  // Booking-related
-  /\b(book|schedule|appointment|reserve|reservation)\b/i,
-  /\b(when can i|when are you|when do you)\b/i,
+// High-confidence tool triggers (weighted scoring)
+const highConfidenceToolPatterns = [
+  // Direct booking/order actions
+  { pattern: /\b(book|schedule|reserve)\s+(me|an?|the)/i, weight: 10 },
+  { pattern: /\bi('d| would) like to (order|book|schedule)/i, weight: 10 },
+  { pattern: /\bplace\s+(an?\s+)?order/i, weight: 10 },
+  { pattern: /\bcan i (order|book|schedule)/i, weight: 10 },
 
-  // Availability
-  /\b(available|availability|open|free|slot)\b/i,
-  /\b(what times?|which days?)\b/i,
+  // Explicit food items (pizza ordering)
+  {
+    pattern:
+      /\b(large|medium|small)\s+(pepperoni|cheese|supreme|veggie|hawaiian|margherita)/i,
+    weight: 10,
+  },
+  { pattern: /\bpizza/i, weight: 8 },
+  { pattern: /\b(wings|garlic knots|mozzarella sticks)/i, weight: 8 },
 
-  // Transfer/escalation
-  /\b(transfer|human|person|agent|speak to|talk to|representative)\b/i,
-  /\b(real person|actual person|someone else)\b/i,
+  // Order type specification
+  { pattern: /\b(for\s+)?(pickup|pick.?up|delivery)/i, weight: 9 },
+  { pattern: /\bdeliver(ed)?\s+to/i, weight: 10 },
 
-  // Booking modifications
-  /\b(cancel|reschedule|change|modify)\b/i,
-  /\b(my appointment|my booking|my reservation)\b/i,
+  // Availability queries
+  { pattern: /\bwhen\s+(are\s+you|can\s+i|do\s+you\s+have)/i, weight: 9 },
+  { pattern: /\bwhat\s+times?\s+(are|do)/i, weight: 9 },
+  { pattern: /\b(any\s+)?availability/i, weight: 8 },
 
-  // Specific date/time mentions
-  /\b(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
-  /\b(next week|this week|next month)\b/i,
-  /\b(\d{1,2}:\d{2}|\d{1,2}\s*(am|pm))\b/i,
+  // Time slot selection (confirming offered times)
+  {
+    pattern: /\b(i'll\s+take|let's\s+do|book\s+(me\s+)?(for\s+)?)\s*(\d|the)/i,
+    weight: 10,
+  },
+  {
+    pattern: /\b(the\s+)?(first|second|third|last)\s+(one|slot|time)/i,
+    weight: 9,
+  },
+  {
+    pattern:
+      /\b(sounds\s+good|that\s+works|perfect|yes)\s*[,.]?\s*(book|schedule)/i,
+    weight: 10,
+  },
+
+  // Specific times
+  { pattern: /\b\d{1,2}\s*(:|\.)\s*\d{2}\s*(am|pm)?/i, weight: 7 },
+  { pattern: /\b\d{1,2}\s*(am|pm|a\.?m\.?|p\.?m\.?)/i, weight: 8 },
+  { pattern: /\b(at\s+)?(noon|midnight)/i, weight: 7 },
+
+  // Days/dates
+  { pattern: /\b(tomorrow|today)\b/i, weight: 6 },
+  {
+    pattern: /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i,
+    weight: 6,
+  },
+  {
+    pattern:
+      /\bnext\s+(week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i,
+    weight: 7,
+  },
+
+  // Transfer requests
+  {
+    pattern:
+      /\b(speak|talk)\s+(to|with)\s+(a\s+)?(human|person|agent|manager|someone)/i,
+    weight: 10,
+  },
+  { pattern: /\btransfer\s+me/i, weight: 10 },
+  { pattern: /\breal\s+person/i, weight: 10 },
+
+  // Order modifications
+  {
+    pattern: /\b(cancel|reschedule|change|modify)\s+(my|the|this)/i,
+    weight: 9,
+  },
+
+  // Call ending (must be strong signals)
+  {
+    pattern: /\b(goodbye|bye.?bye|that's\s+all|i'm\s+done|nothing\s+else)\b/i,
+    weight: 8,
+  },
+  { pattern: /\bhang\s+up/i, weight: 10 },
 ];
 
-// Patterns that indicate simple chat (no tools needed)
+// Low-confidence patterns (may need tools but often don't)
+const lowConfidenceToolPatterns = [
+  { pattern: /\byes\b/i, weight: 2 },
+  { pattern: /\bno\b/i, weight: 1 },
+  { pattern: /\bokay|ok|sure|alright/i, weight: 2 },
+  { pattern: /\bthank(s| you)/i, weight: 1 },
+  { pattern: /\b(extra|add|with|without)\b/i, weight: 3 },
+];
+
+// Chat-only patterns (negative weight)
 const chatOnlyPatterns = [
-  /\b(hi|hello|hey|good morning|good afternoon|good evening)\b/i,
-  /\b(how are you|what's up|sup)\b/i,
-  /\b(thank you|thanks|appreciate)\b/i,
-  /\b(bye|goodbye|see you|take care)\b/i,
-  /\b(yes|no|okay|ok|sure|alright)\b/i,
-  /\b(what do you do|what can you help|what services)\b/i,
-  /\b(tell me about|what is|who are)\b/i,
+  {
+    pattern: /^(hi|hello|hey|good\s+(morning|afternoon|evening))[\s!.?]*$/i,
+    weight: -8,
+  },
+  { pattern: /^how\s+are\s+you/i, weight: -6 },
+  { pattern: /^what\s+(do\s+you\s+do|can\s+you\s+help)/i, weight: -4 },
+  { pattern: /^(tell\s+me\s+about|what\s+is|who\s+are)/i, weight: -3 },
+  { pattern: /^(thanks|thank\s+you)[\s!.]*$/i, weight: -5 }, // Just "thanks" alone
 ];
+
+// Tool routing threshold
+const TOOL_THRESHOLD = 5;
+
+/**
+ * Calculate intent score for a message
+ * Positive = likely needs tools, Negative = likely chat only
+ */
+function calculateIntentScore(text: string): {
+  score: number;
+  triggers: string[];
+} {
+  let score = 0;
+  const triggers: string[] = [];
+
+  // Check high-confidence tool patterns
+  for (const { pattern, weight } of highConfidenceToolPatterns) {
+    if (pattern.test(text)) {
+      score += weight;
+      triggers.push(`+${weight}: ${pattern.source.substring(0, 30)}`);
+    }
+  }
+
+  // Check low-confidence patterns
+  for (const { pattern, weight } of lowConfidenceToolPatterns) {
+    if (pattern.test(text)) {
+      score += weight;
+    }
+  }
+
+  // Check chat-only patterns (subtract)
+  for (const { pattern, weight } of chatOnlyPatterns) {
+    if (pattern.test(text)) {
+      score += weight; // weight is already negative
+      triggers.push(`${weight}: chat pattern`);
+    }
+  }
+
+  // Short messages without clear triggers are likely confirmations/chat
+  if (text.trim().split(/\s+/).length <= 3 && score < 3) {
+    score -= 2;
+  }
+
+  return { score, triggers };
+}
 
 /**
  * Detect if a user message likely requires tool calling
+ * Uses weighted scoring for more accurate routing
  * Returns true if tools should be enabled, false for simple chat
  */
 export function needsToolCall(text: string): boolean {
-  // First check if it's clearly just chat
-  const isChatOnly = chatOnlyPatterns.some((pattern) => pattern.test(text));
-  const hasToolTrigger = toolTriggers.some((pattern) => pattern.test(text));
+  const { score, triggers } = calculateIntentScore(text);
 
-  // If it has tool triggers, use tools regardless of chat patterns
-  if (hasToolTrigger) {
-    console.log(`[INTENT] Tool call needed for: "${text.substring(0, 50)}..."`);
-    return true;
+  const needsTools = score >= TOOL_THRESHOLD;
+
+  if (needsTools) {
+    console.log(
+      `[INTENT] Tools enabled (score=${score}): "${text.substring(0, 40)}..." [${triggers.slice(0, 2).join(", ")}]`,
+    );
+  } else {
+    console.log(
+      `[INTENT] Chat only (score=${score}): "${text.substring(0, 40)}..."`,
+    );
   }
 
-  // If it's clearly just chat, skip tools
-  if (isChatOnly && !hasToolTrigger) {
-    console.log(`[INTENT] Chat only for: "${text.substring(0, 50)}..."`);
-    return false;
-  }
+  return needsTools;
+}
 
-  // For ambiguous cases, default to no tools (faster)
-  console.log(
-    `[INTENT] Ambiguous, defaulting to chat: "${text.substring(0, 50)}..."`,
-  );
-  return false;
+/**
+ * Get raw intent score for debugging/analytics
+ */
+export function getIntentScore(text: string): number {
+  return calculateIntentScore(text).score;
 }
 
 /**
@@ -71,6 +186,13 @@ export function needsToolCall(text: string): boolean {
 export function detectIntent(text: string): string {
   const lowerText = text.toLowerCase();
 
+  // Food ordering intents (check first as they're more specific)
+  if (/order|pizza|delivery|pickup|pick up/i.test(lowerText)) {
+    return "order";
+  }
+  if (/menu|what do you have|what's good|recommend/i.test(lowerText)) {
+    return "menu";
+  }
   if (/book|schedule|appointment|reserve/i.test(lowerText)) {
     return "booking";
   }
