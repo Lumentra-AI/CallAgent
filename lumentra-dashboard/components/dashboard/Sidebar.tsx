@@ -17,19 +17,28 @@ import {
   Calendar,
   Bell,
   Package,
+  Headphones,
+  AlertCircle,
+  User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Route mapping for navigation
-const VIEW_ROUTES: Record<ViewType, string> = {
+const VIEW_ROUTES: Record<
+  ViewType | "workstation" | "escalations" | "profile",
+  string
+> = {
   dashboard: "/dashboard",
+  workstation: "/workstation",
   calls: "/calls",
   analytics: "/analytics",
+  escalations: "/escalations",
   contacts: "/contacts",
   calendar: "/calendar",
   notifications: "/notifications",
   resources: "/resources",
   settings: "/settings",
+  profile: "/profile",
 };
 
 // ============================================================================
@@ -37,10 +46,10 @@ const VIEW_ROUTES: Record<ViewType, string> = {
 // ============================================================================
 
 interface NavItem {
-  id: ViewType;
+  id: ViewType | "workstation" | "escalations" | "profile";
   label: string;
   icon: React.ElementType;
-  section?: string;
+  badge?: number;
 }
 
 interface NavSection {
@@ -50,9 +59,16 @@ interface NavSection {
 
 const NAV_SECTIONS: NavSection[] = [
   {
-    title: "Agent",
+    title: "Workspace",
     items: [
+      { id: "workstation", label: "Workstation", icon: Headphones },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "escalations", label: "Escalations", icon: AlertCircle },
+    ],
+  },
+  {
+    title: "Activity",
+    items: [
       { id: "calls", label: "Calls", icon: Phone },
       { id: "analytics", label: "Analytics", icon: BarChart3 },
     ],
@@ -67,8 +83,11 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    title: "System",
-    items: [{ id: "settings", label: "Settings", icon: Settings }],
+    title: "Account",
+    items: [
+      { id: "profile", label: "Profile", icon: User },
+      { id: "settings", label: "Settings", icon: Settings },
+    ],
   },
 ];
 
@@ -83,19 +102,31 @@ export default function Sidebar() {
   const { sidebarCollapsed } = uiState;
 
   // Determine active view from current pathname
-  const currentView = React.useMemo(() => {
-    const path = pathname?.replace("/", "") || "dashboard";
-    return (
-      (Object.keys(VIEW_ROUTES) as ViewType[]).find(
-        (key) => VIEW_ROUTES[key] === `/${path}`,
-      ) || "dashboard"
-    );
+  const currentPath = React.useMemo(() => {
+    return pathname?.replace("/", "") || "dashboard";
   }, [pathname]);
 
   // Handle navigation
-  const handleNavClick = (viewId: ViewType) => {
-    setView(viewId); // Update context state
-    router.push(VIEW_ROUTES[viewId]); // Navigate to route
+  const handleNavClick = (viewId: string) => {
+    if (viewId in VIEW_ROUTES) {
+      const route = VIEW_ROUTES[viewId as keyof typeof VIEW_ROUTES];
+      // Only update context for ViewType items
+      if (
+        [
+          "dashboard",
+          "calls",
+          "analytics",
+          "contacts",
+          "calendar",
+          "notifications",
+          "resources",
+          "settings",
+        ].includes(viewId)
+      ) {
+        setView(viewId as ViewType);
+      }
+      router.push(route);
+    }
   };
 
   return (
@@ -119,7 +150,7 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-2">
+      <nav className="flex-1 overflow-y-auto p-2 scrollbar-thin">
         {NAV_SECTIONS.map((section, sectionIndex) => (
           <div key={section.title} className={cn(sectionIndex > 0 && "mt-4")}>
             {!sidebarCollapsed && (
@@ -132,7 +163,7 @@ export default function Sidebar() {
             )}
             <div className="space-y-1">
               {section.items.map((item) => {
-                const isActive = currentView === item.id;
+                const isActive = currentPath === item.id;
                 const Icon = item.icon;
 
                 return (
@@ -140,7 +171,7 @@ export default function Sidebar() {
                     key={item.id}
                     onClick={() => handleNavClick(item.id)}
                     className={cn(
-                      "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                      "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
                       isActive
                         ? "bg-sidebar-accent text-sidebar-accent-foreground"
                         : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
@@ -149,7 +180,16 @@ export default function Sidebar() {
                     title={sidebarCollapsed ? item.label : undefined}
                   >
                     <Icon className="h-4 w-4 shrink-0" />
-                    {!sidebarCollapsed && <span>{item.label}</span>}
+                    {!sidebarCollapsed && (
+                      <span className="flex-1 text-left">{item.label}</span>
+                    )}
+                    {!sidebarCollapsed &&
+                      item.badge !== undefined &&
+                      item.badge > 0 && (
+                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-medium text-destructive-foreground">
+                          {item.badge}
+                        </span>
+                      )}
                   </button>
                 );
               })}
@@ -174,7 +214,7 @@ export default function Sidebar() {
       <div className="border-t border-sidebar-border p-2">
         <button
           onClick={toggleSidebar}
-          className="flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          className="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
         >
           {sidebarCollapsed ? (
             <ChevronRight className="h-4 w-4" />
@@ -192,7 +232,7 @@ export default function Sidebar() {
         <button
           onClick={resetConfig}
           className={cn(
-            "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-destructive",
+            "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-destructive",
             sidebarCollapsed && "justify-center",
           )}
           title="Reset Configuration"

@@ -4,8 +4,11 @@ import { ConfigProvider, useConfig } from "@/context/ConfigContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { IndustryProvider } from "@/context/IndustryContext";
+import { EscalationProvider } from "@/context/EscalationContext";
 import Sidebar from "@/components/dashboard/Sidebar";
 import TopBar from "@/components/dashboard/TopBar";
+import { EscalationDock, EscalationPanel } from "@/components/escalation";
+import { SkipLinks } from "@/components/ui/skip-links";
 import { Loader2, Zap } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -55,13 +58,42 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background">
-      <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <TopBar />
-        <main className="flex-1 overflow-hidden">{children}</main>
+    <>
+      {/* Accessibility: Skip Links */}
+      <SkipLinks
+        links={[
+          { href: "#main-content", label: "Skip to main content" },
+          { href: "#navigation", label: "Skip to navigation" },
+        ]}
+      />
+
+      <div className="flex h-screen w-screen overflow-hidden bg-background">
+        {/* Navigation Sidebar with ARIA landmark */}
+        <nav id="navigation" aria-label="Main navigation">
+          <Sidebar />
+        </nav>
+
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <TopBar />
+          {/* Main Content with ARIA landmark */}
+          <main
+            id="main-content"
+            role="main"
+            aria-label="Dashboard content"
+            tabIndex={-1}
+            className="flex-1 overflow-hidden pb-20 outline-none"
+          >
+            {children}
+          </main>
+        </div>
+
+        {/* Escalation System */}
+        <aside aria-label="Escalation queue">
+          <EscalationDock />
+          <EscalationPanel />
+        </aside>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -75,7 +107,9 @@ export default function DashboardLayout({
       <AuthProvider>
         <ConfigProvider>
           <IndustryProvider>
-            <DashboardContent>{children}</DashboardContent>
+            <EscalationProvider>
+              <DashboardContent>{children}</DashboardContent>
+            </EscalationProvider>
           </IndustryProvider>
         </ConfigProvider>
       </AuthProvider>

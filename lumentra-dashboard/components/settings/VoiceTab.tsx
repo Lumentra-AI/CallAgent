@@ -1,8 +1,18 @@
 "use client";
 
+import React, { useState } from "react";
 import { useConfig } from "@/context/ConfigContext";
-import { Volume2, Play, Shield, Settings2 } from "lucide-react";
+import {
+  Volume2,
+  Play,
+  Shield,
+  Settings2,
+  Check,
+  Mic,
+  Sliders,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { VoicePreview, SampleTextSelector } from "./VoicePreview";
 
 // ============================================================================
 // VOICE OPTIONS
@@ -11,30 +21,128 @@ import { cn } from "@/lib/utils";
 // Admin-controlled: Voice selection, speaking rate, pitch within provider
 
 const VOICE_PROVIDERS = [
-  { value: "openai", label: "OpenAI", description: "Nova, Alloy, Echo voices" },
+  {
+    value: "openai",
+    label: "OpenAI",
+    description: "Nova, Alloy, Echo voices",
+    color: "emerald",
+  },
   {
     value: "elevenlabs",
     label: "ElevenLabs",
     description: "Premium cloned voices",
+    color: "violet",
   },
-  { value: "cartesia", label: "Cartesia", description: "Ultra-low latency" },
+  {
+    value: "cartesia",
+    label: "Cartesia",
+    description: "Ultra-low latency",
+    color: "blue",
+  },
 ] as const;
 
 const VOICES = {
   openai: [
-    { id: "nova", name: "Nova", description: "Warm, professional female" },
-    { id: "alloy", name: "Alloy", description: "Neutral, clear" },
-    { id: "echo", name: "Echo", description: "Formal, authoritative male" },
-    { id: "shimmer", name: "Shimmer", description: "Friendly, upbeat female" },
+    {
+      id: "nova",
+      name: "Nova",
+      description: "Warm, professional female",
+      gender: "female",
+    },
+    {
+      id: "alloy",
+      name: "Alloy",
+      description: "Neutral, clear",
+      gender: "neutral",
+    },
+    {
+      id: "echo",
+      name: "Echo",
+      description: "Formal, authoritative male",
+      gender: "male",
+    },
+    {
+      id: "shimmer",
+      name: "Shimmer",
+      description: "Friendly, upbeat female",
+      gender: "female",
+    },
+    {
+      id: "onyx",
+      name: "Onyx",
+      description: "Deep, resonant male",
+      gender: "male",
+    },
+    {
+      id: "fable",
+      name: "Fable",
+      description: "British, expressive",
+      gender: "neutral",
+    },
   ],
   elevenlabs: [
-    { id: "rachel", name: "Rachel", description: "Calm, professional female" },
-    { id: "adam", name: "Adam", description: "Deep, trustworthy male" },
-    { id: "domi", name: "Domi", description: "Energetic, youthful female" },
+    {
+      id: "rachel",
+      name: "Rachel",
+      description: "Calm, professional female",
+      gender: "female",
+    },
+    {
+      id: "adam",
+      name: "Adam",
+      description: "Deep, trustworthy male",
+      gender: "male",
+    },
+    {
+      id: "domi",
+      name: "Domi",
+      description: "Energetic, youthful female",
+      gender: "female",
+    },
+    {
+      id: "elli",
+      name: "Elli",
+      description: "Young, friendly female",
+      gender: "female",
+    },
+    {
+      id: "josh",
+      name: "Josh",
+      description: "Confident, American male",
+      gender: "male",
+    },
+    {
+      id: "sam",
+      name: "Sam",
+      description: "Raspy, mature male",
+      gender: "male",
+    },
   ],
   cartesia: [
-    { id: "sonic", name: "Sonic", description: "Fast, clear voice" },
-    { id: "neutral", name: "Neutral", description: "Balanced, professional" },
+    {
+      id: "sonic",
+      name: "Sonic",
+      description: "Fast, clear voice",
+      gender: "neutral",
+    },
+    {
+      id: "neutral",
+      name: "Neutral",
+      description: "Balanced, professional",
+      gender: "neutral",
+    },
+    {
+      id: "warm",
+      name: "Warm",
+      description: "Friendly, welcoming",
+      gender: "female",
+    },
+    {
+      id: "deep",
+      name: "Deep",
+      description: "Authoritative, calm",
+      gender: "male",
+    },
   ],
 };
 
@@ -44,6 +152,9 @@ const VOICES = {
 
 export default function VoiceTab() {
   const { config, updateConfig, hasPermission } = useConfig();
+  const [sampleText, setSampleText] = useState(
+    "Hello! Thank you for calling. How can I assist you today?",
+  );
 
   if (!config) return null;
 
@@ -58,8 +169,8 @@ export default function VoiceTab() {
     return (
       <div className="flex h-64 items-center justify-center">
         <div className="text-center">
-          <Shield className="mx-auto h-12 w-12 text-zinc-700" />
-          <p className="mt-4 text-sm text-zinc-500">
+          <Shield className="mx-auto h-12 w-12 text-muted-foreground" />
+          <p className="mt-4 text-sm text-muted-foreground">
             Voice settings are managed by your administrator
           </p>
         </div>
@@ -67,12 +178,18 @@ export default function VoiceTab() {
     );
   }
 
+  const selectedVoice = availableVoices.find(
+    (v) => v.id === agentVoice.voiceId,
+  );
+
   return (
     <div className="max-w-2xl space-y-8">
       {/* Header */}
       <div>
-        <h3 className="text-lg font-semibold text-white">Voice Settings</h3>
-        <p className="text-sm text-zinc-500">
+        <h3 className="text-lg font-semibold text-foreground">
+          Voice Settings
+        </h3>
+        <p className="text-sm text-muted-foreground">
           Configure how your AI agent sounds to callers
         </p>
       </div>
@@ -83,45 +200,55 @@ export default function VoiceTab() {
       {/* ================================================================== */}
       {canManageVoiceProviders && (
         <section className="space-y-4">
-          <div className="flex items-center gap-2 border-b border-zinc-800 pb-2">
+          <div className="flex items-center gap-2 border-b border-border pb-3">
             <Settings2 className="h-4 w-4 text-amber-500" />
-            <h4 className="text-sm font-medium text-white">Voice Provider</h4>
-            <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-500">
+            <h4 className="text-sm font-medium text-foreground">
+              Voice Provider
+            </h4>
+            <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase text-amber-500">
               Platform
             </span>
           </div>
-          <p className="text-xs text-zinc-600">
+          <p className="text-xs text-muted-foreground">
             Backend infrastructure setting. Determines which voice API is used.
           </p>
 
           <div className="grid gap-3 sm:grid-cols-3">
-            {VOICE_PROVIDERS.map((provider) => (
-              <button
-                key={provider.value}
-                type="button"
-                onClick={() =>
-                  updateConfig("agentVoice", {
-                    ...agentVoice,
-                    provider: provider.value,
-                    voiceId: VOICES[provider.value][0]?.id || "",
-                    voiceName: VOICES[provider.value][0]?.name || "",
-                  })
-                }
-                className={cn(
-                  "rounded-lg border p-4 text-left transition-all",
-                  agentVoice.provider === provider.value
-                    ? "border-amber-500 bg-amber-500/10"
-                    : "border-zinc-800 bg-zinc-900 hover:border-zinc-700",
-                )}
-              >
-                <div className="text-sm font-medium text-white">
-                  {provider.label}
-                </div>
-                <div className="text-[10px] text-zinc-500">
-                  {provider.description}
-                </div>
-              </button>
-            ))}
+            {VOICE_PROVIDERS.map((provider) => {
+              const isSelected = agentVoice.provider === provider.value;
+              return (
+                <button
+                  key={provider.value}
+                  type="button"
+                  onClick={() =>
+                    updateConfig("agentVoice", {
+                      ...agentVoice,
+                      provider: provider.value,
+                      voiceId: VOICES[provider.value][0]?.id || "",
+                      voiceName: VOICES[provider.value][0]?.name || "",
+                    })
+                  }
+                  className={cn(
+                    "relative rounded-xl border p-4 text-left transition-all",
+                    isSelected
+                      ? "border-amber-500/50 bg-amber-500/5 shadow-sm"
+                      : "border-border bg-card hover:border-amber-500/30 hover:bg-muted/50",
+                  )}
+                >
+                  {isSelected && (
+                    <div className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500">
+                      <Check className="h-3 w-3 text-white" />
+                    </div>
+                  )}
+                  <div className="text-sm font-medium text-foreground">
+                    {provider.label}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {provider.description}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </section>
       )}
@@ -134,149 +261,249 @@ export default function VoiceTab() {
         <>
           {/* Voice Selection */}
           <section className="space-y-4">
-            <div className="border-b border-zinc-800 pb-2">
-              <h4 className="text-sm font-medium text-white">Agent Voice</h4>
+            <div className="flex items-center gap-2 border-b border-border pb-3">
+              <Mic className="h-4 w-4 text-primary" />
+              <h4 className="text-sm font-medium text-foreground">
+                Agent Voice
+              </h4>
             </div>
-            <p className="text-xs text-zinc-600">
+            <p className="text-xs text-muted-foreground">
               Select the voice your AI agent will use when speaking to callers.
             </p>
 
-            <div className="space-y-2">
-              {availableVoices.map((voice) => (
-                <div
-                  key={voice.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() =>
-                    updateConfig("agentVoice", {
-                      ...agentVoice,
-                      voiceId: voice.id,
-                      voiceName: voice.name,
-                    })
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
+            {/* Current Selection */}
+            {selectedVoice && (
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                      <Volume2 className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <div className="text-base font-medium text-foreground">
+                        {selectedVoice.name}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {selectedVoice.description}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                    Active
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Voice Grid */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              {availableVoices.map((voice) => {
+                const isSelected = agentVoice.voiceId === voice.id;
+                return (
+                  <button
+                    key={voice.id}
+                    type="button"
+                    onClick={() =>
                       updateConfig("agentVoice", {
                         ...agentVoice,
                         voiceId: voice.id,
                         voiceName: voice.name,
-                      });
+                      })
                     }
-                  }}
-                  className={cn(
-                    "flex w-full cursor-pointer items-center justify-between rounded-lg border px-4 py-3 transition-all",
-                    agentVoice.voiceId === voice.id
-                      ? "border-indigo-500 bg-indigo-500/10"
-                      : "border-zinc-800 bg-zinc-900 hover:border-zinc-700",
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                    <Volume2
+                    className={cn(
+                      "group relative flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all",
+                      isSelected
+                        ? "border-primary bg-primary/5 shadow-sm"
+                        : "border-border bg-card hover:border-primary/50 hover:bg-muted/50",
+                    )}
+                  >
+                    <div
                       className={cn(
-                        "h-4 w-4",
-                        agentVoice.voiceId === voice.id
-                          ? "text-indigo-400"
-                          : "text-zinc-500",
+                        "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
+                        isSelected
+                          ? "bg-primary/10"
+                          : "bg-muted group-hover:bg-primary/10",
                       )}
-                    />
-                    <div className="text-left">
-                      <div className="text-sm font-medium text-white">
+                    >
+                      <Volume2
+                        className={cn(
+                          "h-5 w-5 transition-colors",
+                          isSelected
+                            ? "text-primary"
+                            : "text-muted-foreground group-hover:text-primary",
+                        )}
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <div
+                        className={cn(
+                          "text-sm font-medium",
+                          isSelected ? "text-primary" : "text-foreground",
+                        )}
+                      >
                         {voice.name}
                       </div>
-                      <div className="text-xs text-zinc-500">
+                      <div className="text-xs text-muted-foreground">
                         {voice.description}
                       </div>
                     </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="rounded-full p-2 text-zinc-500 hover:bg-zinc-800 hover:text-white"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      // Preview would play audio here
-                    }}
-                  >
-                    <Play className="h-4 w-4" />
+
+                    {isSelected && (
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
+                        <Check className="h-3 w-3 text-primary-foreground" />
+                      </div>
+                    )}
+
+                    {/* Play Preview Button */}
+                    <VoicePreview
+                      voiceId={voice.id}
+                      voiceName={voice.name}
+                      provider={agentVoice.provider}
+                      speakingRate={agentVoice.speakingRate}
+                      pitch={agentVoice.pitch}
+                      sampleText={sampleText}
+                      compact
+                    />
                   </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Voice Preview Panel */}
+          <section className="space-y-4 rounded-2xl border border-border bg-card p-6">
+            <div className="flex items-center gap-2">
+              <Play className="h-4 w-4 text-primary" />
+              <h4 className="text-sm font-medium text-foreground">
+                Preview Voice
+              </h4>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Listen to a sample of how your agent will sound with current
+              settings.
+            </p>
+
+            <SampleTextSelector value={sampleText} onChange={setSampleText} />
+
+            <VoicePreview
+              voiceId={agentVoice.voiceId}
+              voiceName={agentVoice.voiceName}
+              provider={agentVoice.provider}
+              speakingRate={agentVoice.speakingRate}
+              pitch={agentVoice.pitch}
+              sampleText={sampleText}
+            />
+          </section>
+
+          {/* Voice Fine-Tuning */}
+          <section className="space-y-6 rounded-2xl border border-border bg-card p-6">
+            <div className="flex items-center gap-2">
+              <Sliders className="h-4 w-4 text-primary" />
+              <h4 className="text-sm font-medium text-foreground">
+                Voice Fine-Tuning
+              </h4>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Adjust how the voice sounds to match your brand.
+            </p>
+
+            {/* Speaking Rate */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-foreground">
+                    Speaking Rate
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    How fast or slow the agent speaks
+                  </div>
                 </div>
-              ))}
-            </div>
-          </section>
-
-          {/* Speaking Rate */}
-          <section className="space-y-4">
-            <div className="border-b border-zinc-800 pb-2">
-              <h4 className="text-sm font-medium text-white">Speaking Rate</h4>
-            </div>
-            <p className="text-xs text-zinc-600">
-              Adjust how fast or slow the agent speaks.
-            </p>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-zinc-400">Speed</span>
-                <span className="font-mono text-sm text-white">
-                  {agentVoice.speakingRate.toFixed(2)}x
-                </span>
+                <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-1">
+                  <span className="font-mono text-sm font-medium text-foreground">
+                    {agentVoice.speakingRate.toFixed(2)}x
+                  </span>
+                </div>
               </div>
-              <input
-                type="range"
-                min="0.75"
-                max="1.25"
-                step="0.05"
-                value={agentVoice.speakingRate}
-                onChange={(e) =>
+
+              <div className="space-y-2">
+                <input
+                  type="range"
+                  min="0.75"
+                  max="1.25"
+                  step="0.05"
+                  value={agentVoice.speakingRate}
+                  onChange={(e) =>
+                    updateConfig("agentVoice", {
+                      ...agentVoice,
+                      speakingRate: parseFloat(e.target.value),
+                    })
+                  }
+                  className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-muted accent-primary"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>Slower</span>
+                  <span>Normal</span>
+                  <span>Faster</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Pitch */}
+            <div className="space-y-4 border-t border-border pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-foreground">
+                    Pitch
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Voice pitch adjustment
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-1">
+                  <span className="font-mono text-sm font-medium text-foreground">
+                    {agentVoice.pitch.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <input
+                  type="range"
+                  min="0.8"
+                  max="1.2"
+                  step="0.05"
+                  value={agentVoice.pitch}
+                  onChange={(e) =>
+                    updateConfig("agentVoice", {
+                      ...agentVoice,
+                      pitch: parseFloat(e.target.value),
+                    })
+                  }
+                  className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-muted accent-primary"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>Lower</span>
+                  <span>Natural</span>
+                  <span>Higher</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Reset to Defaults */}
+            <div className="border-t border-border pt-4">
+              <button
+                type="button"
+                onClick={() =>
                   updateConfig("agentVoice", {
                     ...agentVoice,
-                    speakingRate: parseFloat(e.target.value),
+                    speakingRate: 1.0,
+                    pitch: 1.0,
                   })
                 }
-                className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-800 accent-indigo-500"
-              />
-              <div className="flex justify-between text-[10px] text-zinc-600">
-                <span>Slower (0.75x)</span>
-                <span>Normal (1.0x)</span>
-                <span>Faster (1.25x)</span>
-              </div>
-            </div>
-          </section>
-
-          {/* Pitch */}
-          <section className="space-y-4">
-            <div className="border-b border-zinc-800 pb-2">
-              <h4 className="text-sm font-medium text-white">Pitch</h4>
-            </div>
-            <p className="text-xs text-zinc-600">
-              Fine-tune the voice pitch for your brand.
-            </p>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-zinc-400">Pitch Adjustment</span>
-                <span className="font-mono text-sm text-white">
-                  {agentVoice.pitch.toFixed(2)}
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0.8"
-                max="1.2"
-                step="0.05"
-                value={agentVoice.pitch}
-                onChange={(e) =>
-                  updateConfig("agentVoice", {
-                    ...agentVoice,
-                    pitch: parseFloat(e.target.value),
-                  })
-                }
-                className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-800 accent-indigo-500"
-              />
-              <div className="flex justify-between text-[10px] text-zinc-600">
-                <span>Lower</span>
-                <span>Natural</span>
-                <span>Higher</span>
-              </div>
+                className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+              >
+                Reset to defaults
+              </button>
             </div>
           </section>
         </>

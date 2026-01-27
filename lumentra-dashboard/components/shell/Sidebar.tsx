@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Users,
   Phone,
+  PhoneForwarded,
   Calendar,
   Bell,
   Settings,
@@ -16,9 +17,11 @@ import {
   BarChart3,
   MessageSquare,
   HelpCircle,
+  MonitorDot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIndustry } from "@/context/IndustryContext";
+import { useEscalation } from "@/context/EscalationContext";
 
 interface NavItem {
   label: string;
@@ -28,9 +31,11 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { label: "Workstation", href: "/workstation", icon: MonitorDot },
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Contacts", href: "/contacts", icon: Users },
   { label: "Calls", href: "/calls", icon: Phone },
+  { label: "Escalations", href: "/escalations", icon: PhoneForwarded },
   { label: "Calendar", href: "/calendar", icon: Calendar },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Resources", href: "/resources", icon: Briefcase },
@@ -50,6 +55,7 @@ interface SidebarProps {
 export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const { tenant, preset } = useIndustry();
+  const { waitingCount } = useEscalation();
 
   // Map generic labels to industry-specific terminology
   const getLabel = (item: NavItem): string => {
@@ -60,6 +66,14 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
       return `${preset.terminology.transactionPlural}`;
     }
     return item.label;
+  };
+
+  // Get badge count for nav items
+  const getBadge = (item: NavItem): number | undefined => {
+    if (item.label === "Escalations" && waitingCount > 0) {
+      return waitingCount;
+    }
+    return item.badge;
   };
 
   return (
@@ -138,9 +152,9 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                   </motion.span>
                 )}
               </AnimatePresence>
-              {item.badge && !collapsed && (
+              {getBadge(item) && !collapsed && (
                 <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-white">
-                  {item.badge}
+                  {getBadge(item)}
                 </span>
               )}
             </Link>

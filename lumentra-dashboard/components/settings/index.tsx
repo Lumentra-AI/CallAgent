@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useConfig } from "@/context/ConfigContext";
 import type { SettingsTab, Permission } from "@/types";
 import {
@@ -15,6 +16,7 @@ import {
   PhoneForwarded,
   CreditCard,
   Sliders,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import GeneralTab from "./GeneralTab";
@@ -45,49 +47,19 @@ interface TabConfig {
   description: string;
   requiredPermission?: Permission;
   minAccessTier: AccessTier;
+  category: "business" | "agent" | "platform";
 }
 
 const ALL_TABS: TabConfig[] = [
-  // Admin accessible tabs (business owner controls)
+  // Business Settings
   {
     id: "general",
     label: "General",
     icon: Settings,
-    description: "Business identity settings",
+    description: "Business identity and branding",
     minAccessTier: "admin",
     requiredPermission: "manage_agent",
-  },
-  {
-    id: "agent",
-    label: "Agent",
-    icon: User,
-    description: "Agent personality and behavior",
-    minAccessTier: "admin",
-    requiredPermission: "manage_agent",
-  },
-  {
-    id: "voice",
-    label: "Voice",
-    icon: Mic,
-    description: "Voice and speech settings",
-    minAccessTier: "admin",
-    requiredPermission: "manage_voice",
-  },
-  {
-    id: "greetings",
-    label: "Greetings",
-    icon: MessageSquare,
-    description: "Customize caller greetings",
-    minAccessTier: "admin",
-    requiredPermission: "manage_greetings",
-  },
-  {
-    id: "responses",
-    label: "Responses",
-    icon: MessageCircle,
-    description: "Custom AI responses",
-    minAccessTier: "admin",
-    requiredPermission: "manage_responses",
+    category: "business",
   },
   {
     id: "hours",
@@ -96,14 +68,7 @@ const ALL_TABS: TabConfig[] = [
     description: "Operating schedule",
     minAccessTier: "admin",
     requiredPermission: "manage_hours",
-  },
-  {
-    id: "escalation",
-    label: "Escalation",
-    icon: PhoneForwarded,
-    description: "Call transfer rules",
-    minAccessTier: "admin",
-    requiredPermission: "manage_escalation",
+    category: "business",
   },
   {
     id: "billing",
@@ -112,9 +77,57 @@ const ALL_TABS: TabConfig[] = [
     description: "Payment and subscription",
     minAccessTier: "admin",
     requiredPermission: "manage_billing",
+    category: "business",
   },
 
-  // Developer only tabs (platform infrastructure)
+  // Agent Configuration
+  {
+    id: "agent",
+    label: "Agent",
+    icon: User,
+    description: "Personality and behavior",
+    minAccessTier: "admin",
+    requiredPermission: "manage_agent",
+    category: "agent",
+  },
+  {
+    id: "voice",
+    label: "Voice",
+    icon: Mic,
+    description: "Voice and speech settings",
+    minAccessTier: "admin",
+    requiredPermission: "manage_voice",
+    category: "agent",
+  },
+  {
+    id: "greetings",
+    label: "Greetings",
+    icon: MessageSquare,
+    description: "Customize caller greetings",
+    minAccessTier: "admin",
+    requiredPermission: "manage_greetings",
+    category: "agent",
+  },
+  {
+    id: "responses",
+    label: "Responses",
+    icon: MessageCircle,
+    description: "Custom AI responses",
+    minAccessTier: "admin",
+    requiredPermission: "manage_responses",
+    category: "agent",
+  },
+  {
+    id: "escalation",
+    label: "Escalation",
+    icon: PhoneForwarded,
+    description: "Call transfer rules",
+    minAccessTier: "admin",
+    requiredPermission: "manage_escalation",
+    category: "agent",
+  },
+
+  // Platform Settings (Developer only)
   {
     id: "pricing",
     label: "Pricing",
@@ -122,6 +135,7 @@ const ALL_TABS: TabConfig[] = [
     description: "Rates, fees, and modifiers",
     minAccessTier: "developer",
     requiredPermission: "manage_pricing",
+    category: "platform",
   },
   {
     id: "integrations",
@@ -130,6 +144,7 @@ const ALL_TABS: TabConfig[] = [
     description: "Connected services and APIs",
     minAccessTier: "developer",
     requiredPermission: "manage_integrations",
+    category: "platform",
   },
   {
     id: "advanced",
@@ -138,6 +153,7 @@ const ALL_TABS: TabConfig[] = [
     description: "System configuration",
     minAccessTier: "developer",
     requiredPermission: "manage_infrastructure",
+    category: "platform",
   },
 ];
 
@@ -166,34 +182,36 @@ export default function SettingsPanel() {
 
   const userRole = config.userRole;
   const isDeveloper = userRole === "developer";
-  const isAdmin = userRole === "admin" || isDeveloper;
   const isStaff = userRole === "staff";
 
   // Filter tabs based on user role and permissions
   const visibleTabs = ALL_TABS.filter((tab) => {
-    // Check access tier first
     if (!hasMinAccessTier(userRole, tab.minAccessTier)) {
       return false;
     }
-
-    // Then check specific permission if required
     if (tab.requiredPermission) {
       return hasPermission(tab.requiredPermission);
     }
-
     return true;
   });
+
+  // Group tabs by category
+  const businessTabs = visibleTabs.filter((t) => t.category === "business");
+  const agentTabs = visibleTabs.filter((t) => t.category === "agent");
+  const platformTabs = visibleTabs.filter((t) => t.category === "platform");
 
   // Staff gets no settings tabs - redirect to dashboard
   if (isStaff || visibleTabs.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex h-full items-center justify-center bg-background">
         <div className="text-center">
-          <Settings className="mx-auto h-12 w-12 text-zinc-700" />
-          <h3 className="mt-4 text-lg font-medium text-white">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
+            <Settings className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <h3 className="mt-4 text-lg font-semibold text-foreground">
             Settings Access Restricted
           </h3>
-          <p className="mt-2 text-sm text-zinc-500">
+          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
             Contact your administrator to modify agent settings.
           </p>
         </div>
@@ -216,12 +234,12 @@ export default function SettingsPanel() {
     },
     admin: {
       label: "Admin Mode",
-      color: "indigo",
+      color: "primary",
       description: "Business configuration access",
     },
     staff: {
       label: "Staff Mode",
-      color: "zinc",
+      color: "muted",
       description: "Monitoring access only",
     },
   };
@@ -230,113 +248,209 @@ export default function SettingsPanel() {
     roleConfig[userRole as keyof typeof roleConfig] || roleConfig.staff;
 
   return (
-    <div className="flex h-full">
-      {/* Sidebar Tabs */}
-      <div className="w-64 shrink-0 border-r border-zinc-800 bg-zinc-950">
-        <div className="p-4">
-          <h2 className="text-lg font-semibold text-white">Settings</h2>
-          <p className="text-xs text-zinc-500">
-            {isDeveloper
-              ? "Platform configuration"
-              : isAdmin
-                ? "Business configuration"
-                : "View settings"}
+    <div className="flex h-full overflow-hidden bg-background">
+      {/* Sidebar */}
+      <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-card">
+        {/* Header */}
+        <div className="border-b border-border p-6">
+          <h2 className="text-xl font-semibold text-foreground">Settings</h2>
+          <p className="text-sm text-muted-foreground">
+            {isDeveloper ? "Platform configuration" : "Business configuration"}
           </p>
         </div>
 
-        <nav className="space-y-1 px-2">
-          {visibleTabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = settingsTab === tab.id;
-            const isDeveloperTab = tab.minAccessTier === "developer";
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto p-4 scrollbar-thin">
+          {/* Business Settings */}
+          {businessTabs.length > 0 && (
+            <div className="mb-6">
+              <h3 className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Business
+              </h3>
+              <ul className="space-y-1">
+                {businessTabs.map((tab) => (
+                  <TabButton
+                    key={tab.id}
+                    tab={tab}
+                    isActive={settingsTab === tab.id}
+                    onClick={() => setSettingsTab(tab.id)}
+                  />
+                ))}
+              </ul>
+            </div>
+          )}
 
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setSettingsTab(tab.id)}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors",
-                  isActive
-                    ? "bg-zinc-800 text-white"
-                    : "text-zinc-400 hover:bg-zinc-900 hover:text-white",
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">{tab.label}</div>
-                  {isActive && (
-                    <div className="truncate text-[10px] text-zinc-500">
-                      {tab.description}
-                    </div>
-                  )}
-                </div>
-                {isDeveloperTab && isDeveloper && (
-                  <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-medium text-amber-400">
-                    DEV
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {/* Agent Configuration */}
+          {agentTabs.length > 0 && (
+            <div className="mb-6">
+              <h3 className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Agent Configuration
+              </h3>
+              <ul className="space-y-1">
+                {agentTabs.map((tab) => (
+                  <TabButton
+                    key={tab.id}
+                    tab={tab}
+                    isActive={settingsTab === tab.id}
+                    onClick={() => setSettingsTab(tab.id)}
+                  />
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Platform Settings */}
+          {platformTabs.length > 0 && isDeveloper && (
+            <div>
+              <h3 className="mb-2 flex items-center gap-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-amber-500">
+                Platform
+                <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium">
+                  DEV
+                </span>
+              </h3>
+              <ul className="space-y-1">
+                {platformTabs.map((tab) => (
+                  <TabButton
+                    key={tab.id}
+                    tab={tab}
+                    isActive={settingsTab === tab.id}
+                    onClick={() => setSettingsTab(tab.id)}
+                    isDeveloperTab
+                  />
+                ))}
+              </ul>
+            </div>
+          )}
         </nav>
 
-        {/* Role indicator */}
-        <div
-          className={cn(
-            "mx-4 mt-6 rounded-lg border p-3",
-            currentRoleConfig.color === "amber"
-              ? "border-amber-500/20 bg-amber-500/5"
-              : currentRoleConfig.color === "indigo"
-                ? "border-indigo-500/20 bg-indigo-500/5"
-                : "border-zinc-700 bg-zinc-800/50",
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <div
-              className={cn(
-                "h-2 w-2 rounded-full",
-                currentRoleConfig.color === "amber"
-                  ? "bg-amber-500"
-                  : currentRoleConfig.color === "indigo"
-                    ? "bg-indigo-500"
-                    : "bg-zinc-500",
-              )}
-            />
-            <span
-              className={cn(
-                "text-xs font-medium",
-                currentRoleConfig.color === "amber"
-                  ? "text-amber-400"
-                  : currentRoleConfig.color === "indigo"
-                    ? "text-indigo-400"
-                    : "text-zinc-400",
-              )}
-            >
-              {currentRoleConfig.label}
-            </span>
+        {/* Role Indicator */}
+        <div className="border-t border-border p-4">
+          <div
+            className={cn(
+              "rounded-xl border p-4",
+              currentRoleConfig.color === "amber"
+                ? "border-amber-500/20 bg-amber-500/5"
+                : currentRoleConfig.color === "primary"
+                  ? "border-primary/20 bg-primary/5"
+                  : "border-border bg-muted/50",
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <div
+                className={cn(
+                  "h-2.5 w-2.5 rounded-full",
+                  currentRoleConfig.color === "amber"
+                    ? "bg-amber-500"
+                    : currentRoleConfig.color === "primary"
+                      ? "bg-primary"
+                      : "bg-muted-foreground",
+                )}
+              />
+              <span
+                className={cn(
+                  "text-sm font-medium",
+                  currentRoleConfig.color === "amber"
+                    ? "text-amber-500"
+                    : currentRoleConfig.color === "primary"
+                      ? "text-primary"
+                      : "text-muted-foreground",
+                )}
+              >
+                {currentRoleConfig.label}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {currentRoleConfig.description}
+            </p>
           </div>
-          <p className="mt-1 text-[10px] text-zinc-500">
-            {currentRoleConfig.description}
-          </p>
         </div>
-      </div>
+      </aside>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-y-auto bg-zinc-900/50 p-6 scrollbar-thin">
-        {settingsTab === "general" && <GeneralTab />}
-        {settingsTab === "agent" && <AgentTab />}
-        {settingsTab === "voice" && <VoiceTab />}
-        {settingsTab === "greetings" && <GreetingsTab />}
-        {settingsTab === "responses" && <ResponsesTab />}
-        {settingsTab === "hours" && <HoursTab />}
-        {settingsTab === "escalation" && <EscalationTab />}
-        {settingsTab === "billing" && <BillingTab />}
-        {settingsTab === "pricing" && isDeveloper && <PricingTab />}
-        {settingsTab === "integrations" && isDeveloper && <IntegrationsTab />}
-        {settingsTab === "advanced" && isDeveloper && <AdvancedTab />}
-      </div>
+      <main className="flex-1 overflow-y-auto bg-background p-8 scrollbar-thin">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={settingsTab}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            {settingsTab === "general" && <GeneralTab />}
+            {settingsTab === "agent" && <AgentTab />}
+            {settingsTab === "voice" && <VoiceTab />}
+            {settingsTab === "greetings" && <GreetingsTab />}
+            {settingsTab === "responses" && <ResponsesTab />}
+            {settingsTab === "hours" && <HoursTab />}
+            {settingsTab === "escalation" && <EscalationTab />}
+            {settingsTab === "billing" && <BillingTab />}
+            {settingsTab === "pricing" && isDeveloper && <PricingTab />}
+            {settingsTab === "integrations" && isDeveloper && (
+              <IntegrationsTab />
+            )}
+            {settingsTab === "advanced" && isDeveloper && <AdvancedTab />}
+          </motion.div>
+        </AnimatePresence>
+      </main>
     </div>
+  );
+}
+
+// ============================================================================
+// TAB BUTTON COMPONENT
+// ============================================================================
+
+interface TabButtonProps {
+  tab: TabConfig;
+  isActive: boolean;
+  onClick: () => void;
+  isDeveloperTab?: boolean;
+}
+
+function TabButton({ tab, isActive, onClick, isDeveloperTab }: TabButtonProps) {
+  const Icon = tab.icon;
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all",
+          isActive
+            ? isDeveloperTab
+              ? "bg-amber-500/10 text-amber-500"
+              : "bg-primary/10 text-primary"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+        )}
+      >
+        <div
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+            isActive
+              ? isDeveloperTab
+                ? "bg-amber-500/10"
+                : "bg-primary/10"
+              : "bg-muted group-hover:bg-background",
+          )}
+        >
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium">{tab.label}</div>
+          {isActive && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              className="truncate text-[10px] opacity-70"
+            >
+              {tab.description}
+            </motion.div>
+          )}
+        </div>
+        {isActive && <ChevronRight className="h-4 w-4 opacity-50" />}
+      </button>
+    </li>
   );
 }
 
@@ -352,17 +466,19 @@ function AdvancedTab() {
   return (
     <div className="max-w-2xl space-y-8">
       <div>
-        <h3 className="text-lg font-semibold text-white">Advanced Settings</h3>
-        <p className="text-sm text-zinc-500">
+        <h3 className="text-lg font-semibold text-foreground">
+          Advanced Settings
+        </h3>
+        <p className="text-sm text-muted-foreground">
           System-level configuration and feature flags
         </p>
       </div>
 
       {/* Feature Flags */}
       <section className="space-y-4">
-        <div className="border-b border-zinc-800 pb-2">
-          <h4 className="text-sm font-medium text-white">Feature Flags</h4>
-          <p className="text-xs text-zinc-600">
+        <div className="border-b border-border pb-3">
+          <h4 className="text-sm font-medium text-foreground">Feature Flags</h4>
+          <p className="text-xs text-muted-foreground">
             Enable or disable system features
           </p>
         </div>
@@ -371,22 +487,22 @@ function AdvancedTab() {
           {Object.entries(config.features).map(([key, enabled]) => (
             <div
               key={key}
-              className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 p-4"
+              className="flex items-center justify-between rounded-xl border border-border bg-card p-4"
             >
               <div>
-                <div className="text-sm font-medium text-white">
+                <div className="text-sm font-medium text-foreground">
                   {key
                     .replace(/([A-Z])/g, " $1")
                     .replace(/^./, (s) => s.toUpperCase())}
                 </div>
-                <div className="text-xs text-zinc-500">
+                <div className="text-xs text-muted-foreground">
                   {enabled ? "Enabled" : "Disabled"}
                 </div>
               </div>
               <div
                 className={cn(
-                  "h-2 w-2 rounded-full",
-                  enabled ? "bg-green-500" : "bg-zinc-600",
+                  "h-3 w-3 rounded-full",
+                  enabled ? "bg-green-500" : "bg-muted-foreground/30",
                 )}
               />
             </div>
@@ -396,41 +512,43 @@ function AdvancedTab() {
 
       {/* System Info */}
       <section className="space-y-4">
-        <div className="border-b border-zinc-800 pb-2">
-          <h4 className="text-sm font-medium text-white">System Information</h4>
+        <div className="border-b border-border pb-3">
+          <h4 className="text-sm font-medium text-foreground">
+            System Information
+          </h4>
         </div>
 
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-xl border border-border bg-card p-6">
+          <div className="grid gap-6 sm:grid-cols-2">
             <div>
-              <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                 Industry
               </div>
-              <div className="mt-1 font-mono text-sm text-white">
+              <div className="mt-1 font-mono text-sm text-foreground">
                 {config.industry}
               </div>
             </div>
             <div>
-              <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                 User Role
               </div>
-              <div className="mt-1 font-mono text-sm text-white">
+              <div className="mt-1 font-mono text-sm text-foreground">
                 {config.userRole}
               </div>
             </div>
             <div>
-              <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                 Configured
               </div>
-              <div className="mt-1 font-mono text-sm text-white">
+              <div className="mt-1 font-mono text-sm text-foreground">
                 {config.isConfigured ? "Yes" : "No"}
               </div>
             </div>
             <div>
-              <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                 Last Modified
               </div>
-              <div className="mt-1 font-mono text-sm text-white">
+              <div className="mt-1 font-mono text-sm text-foreground">
                 {config.lastModified
                   ? new Date(config.lastModified).toLocaleString()
                   : "Never"}
@@ -442,17 +560,17 @@ function AdvancedTab() {
 
       {/* Danger Zone */}
       <section className="space-y-4">
-        <div className="border-b border-red-500/30 pb-2">
-          <h4 className="text-sm font-medium text-red-400">Danger Zone</h4>
+        <div className="border-b border-destructive/30 pb-3">
+          <h4 className="text-sm font-medium text-destructive">Danger Zone</h4>
         </div>
 
-        <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-4">
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-medium text-white">
+              <div className="text-sm font-medium text-foreground">
                 Reset Configuration
               </div>
-              <div className="text-xs text-zinc-500">
+              <div className="text-xs text-muted-foreground">
                 This will clear all settings and return to setup wizard
               </div>
             </div>
@@ -463,7 +581,7 @@ function AdvancedTab() {
                   window.location.reload();
                 }
               }}
-              className="rounded-md border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20"
+              className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground"
             >
               Reset
             </button>
