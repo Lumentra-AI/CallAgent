@@ -191,7 +191,7 @@ export async function chat(
     // Start chat with function declarations
     const chatSession = model.startChat({
       history: contents.slice(0, -1), // All but the last message
-      systemInstruction: systemPrompt,
+      systemInstruction: { role: "user", parts: [{ text: systemPrompt }] },
       tools: [{ functionDeclarations: voiceAgentFunctions }],
     });
 
@@ -265,7 +265,7 @@ export async function quickResponse(
 
   const chatSession = model.startChat({
     history: contents.slice(0, -1),
-    systemInstruction: systemPrompt,
+    systemInstruction: { role: "user", parts: [{ text: systemPrompt }] },
     // No tools for quick response
   });
 

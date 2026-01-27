@@ -61,7 +61,7 @@ export async function* streamChat(
 
   const chatSession = model.startChat({
     history: contents,
-    systemInstruction: systemPrompt,
+    systemInstruction: { role: "user", parts: [{ text: systemPrompt }] },
     tools: [{ functionDeclarations: voiceAgentFunctions }],
   });
 
@@ -101,7 +101,7 @@ export async function* streamChatSimple(
 
   const chatSession = model.startChat({
     history: contents,
-    systemInstruction: systemPrompt,
+    systemInstruction: { role: "user", parts: [{ text: systemPrompt }] },
     // No tools for simple chat
   });
 

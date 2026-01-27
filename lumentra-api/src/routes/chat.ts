@@ -284,7 +284,7 @@ async function chatWithGemini(
     // Start chat with function declarations
     const chatSession = model.startChat({
       history: contents.slice(0, -1), // All but the last message
-      systemInstruction: systemPrompt,
+      systemInstruction: { role: "user", parts: [{ text: systemPrompt }] },
       tools: [{ functionDeclarations: chatAgentFunctions }],
     });
 
