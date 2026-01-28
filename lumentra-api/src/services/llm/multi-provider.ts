@@ -79,19 +79,21 @@ function convertGeminiSchemaToJsonSchema(
   const s = schema as Record<string, unknown>;
 
   // Map Gemini SchemaType to JSON Schema type
-  const typeMap: Record<string, string> = {
-    STRING: "string",
-    NUMBER: "number",
-    INTEGER: "integer",
-    BOOLEAN: "boolean",
-    ARRAY: "array",
-    OBJECT: "object",
-  };
+  // Note: SchemaType enum values are already lowercase ("object", "string", etc.)
+  const validTypes = new Set([
+    "string",
+    "number",
+    "integer",
+    "boolean",
+    "array",
+    "object",
+  ]);
 
   const jsonSchema: Record<string, unknown> = {};
 
   if (s.type) {
-    jsonSchema.type = typeMap[s.type as string] || "string";
+    const schemaType = String(s.type).toLowerCase();
+    jsonSchema.type = validTypes.has(schemaType) ? schemaType : "string";
   }
 
   if (s.description) {
