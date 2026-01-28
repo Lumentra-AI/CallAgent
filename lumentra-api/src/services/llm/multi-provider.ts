@@ -22,6 +22,12 @@ const providerStatus: Record<
   groq: { status: "available" },
 };
 
+// Log provider availability at startup
+console.log(`[LLM] Provider status at startup:`);
+console.log(`  - Gemini: ${genAI ? "READY" : "NOT CONFIGURED"}`);
+console.log(`  - OpenAI: ${openaiClient ? "READY" : "NOT CONFIGURED"}`);
+console.log(`  - Groq: ${groqClient ? "READY" : "NOT CONFIGURED"}`);
+
 // Rate limit cooldown (5 minutes)
 const RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000;
 
@@ -191,6 +197,14 @@ export interface LLMChatOptions {
   tools: FunctionDeclaration[];
 }
 
+// Check if provider has initialized client
+function isProviderInitialized(provider: string): boolean {
+  if (provider === "gemini") return genAI !== null;
+  if (provider === "openai") return openaiClient !== null;
+  if (provider === "groq") return groqClient !== null;
+  return false;
+}
+
 // Main chat function with fallback
 export async function chatWithFallback(
   options: LLMChatOptions,
@@ -201,9 +215,20 @@ export async function chatWithFallback(
     { name: "groq", fn: () => chatWithGroq(options) },
   ];
 
+  const errors: string[] = [];
+
   for (const provider of providers) {
+    // Skip if client not initialized (no API key)
+    if (!isProviderInitialized(provider.name)) {
+      console.log(
+        `[LLM] Skipping ${provider.name} (not initialized - no API key)`,
+      );
+      continue;
+    }
+
+    // Skip if temporarily unavailable (rate limited or recent error)
     if (!isProviderAvailable(provider.name)) {
-      console.log(`[LLM] Skipping ${provider.name} (not available)`);
+      console.log(`[LLM] Skipping ${provider.name} (cooling down)`);
       continue;
     }
 
@@ -212,24 +237,41 @@ export async function chatWithFallback(
       const result = await provider.fn();
       console.log(`[LLM] ${provider.name} succeeded`);
       return result;
-    } catch (error) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      console.error(`[LLM] ${provider.name} failed:`, errMsg);
+    } catch (error: unknown) {
+      // Extract error message safely
+      let errMsg = "Unknown error";
+      if (error instanceof Error) {
+        errMsg = error.message;
+      } else if (typeof error === "object" && error !== null) {
+        errMsg = JSON.stringify(error).slice(0, 200);
+      } else {
+        errMsg = String(error);
+      }
 
-      if (
+      console.error(`[LLM] ${provider.name} failed: ${errMsg}`);
+      errors.push(`${provider.name}: ${errMsg}`);
+
+      // Check for rate limiting indicators
+      const isRateLimit =
         errMsg.includes("429") ||
         errMsg.includes("rate") ||
-        errMsg.includes("quota")
-      ) {
+        errMsg.includes("quota") ||
+        errMsg.includes("RESOURCE_EXHAUSTED");
+
+      if (isRateLimit) {
         markProviderRateLimited(provider.name);
       } else {
         markProviderError(provider.name);
       }
+
+      // Continue to next provider
+      console.log(`[LLM] Falling back to next provider...`);
     }
   }
 
   // All providers failed
-  throw new Error("All LLM providers failed");
+  console.error(`[LLM] All providers failed:`, errors);
+  throw new Error(`All LLM providers failed: ${errors.join("; ")}`);
 }
 
 // Gemini implementation
