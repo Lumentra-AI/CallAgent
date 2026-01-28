@@ -5,10 +5,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-if (!GEMINI_API_KEY) {
-  console.warn("[GEMINI] Warning: GEMINI_API_KEY not set");
-}
-
 // Create Gemini client singleton
 export const genAI = GEMINI_API_KEY
   ? new GoogleGenerativeAI(GEMINI_API_KEY)
@@ -21,7 +17,13 @@ export const genAI = GEMINI_API_KEY
 // - Better at handling off-script conversations than Flash-Lite
 const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
-console.log(`[GEMINI] Model: ${MODEL_NAME}`);
+if (genAI) {
+  console.log(`[GEMINI] Initialized with model: ${MODEL_NAME}`);
+} else {
+  console.error(
+    "[GEMINI] NOT INITIALIZED - GEMINI_API_KEY is missing or empty",
+  );
+}
 
 // Get the generative model with function calling capabilities
 export function getModel() {
