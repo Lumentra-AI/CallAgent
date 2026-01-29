@@ -37,6 +37,7 @@ import {
   addAssistantTurn,
   endConversationLog,
 } from "../training/conversation-logger.js";
+import { saveCallRecord } from "../calls/call-logger.js";
 import { checkUtteranceCompleteness } from "../gemini/intent-check.js";
 import type { Tenant } from "../../types/database.js";
 import type WebSocket from "ws";
@@ -430,7 +431,7 @@ export class TurnManager {
     }
   }
 
-  async cleanup(): Promise<void> {
+  async cleanup(endReason: string = "completed"): Promise<void> {
     console.log(`[TURN] Cleaning up turn manager for ${this.callSid}`);
 
     if (this.silenceTimer) {
@@ -440,8 +441,17 @@ export class TurnManager {
 
     await Promise.all([this.transcriber?.stop(), this.tts?.disconnect()]);
 
-    // End conversation logging with final metadata
+    // Get session before ending it
     const session = sessionManager.getSession(this.callSid);
+
+    // Save call record to database for analytics and review
+    if (session) {
+      saveCallRecord(session, endReason).catch((err) =>
+        console.error("[CALL-LOGGER] Failed to save call record:", err),
+      );
+    }
+
+    // End conversation logging with final metadata
     const duration = session
       ? Math.floor((Date.now() - session.startTime.getTime()) / 1000)
       : 0;
@@ -456,7 +466,7 @@ export class TurnManager {
     // Cleanup call state (retry counters, etc.)
     cleanupCall(this.callSid);
     sessionManager.endSession(this.callSid);
-    this.callbacks.onCallEnd("cleanup");
+    this.callbacks.onCallEnd(endReason);
   }
 }
 

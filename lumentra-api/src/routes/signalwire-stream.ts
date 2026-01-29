@@ -90,12 +90,12 @@ export async function handleSignalWireStream(
   // Handle WebSocket close
   ws.on("close", async (code, reason) => {
     console.log(`[STREAM] Connection closed: ${code} ${reason}`);
-    await turnManager.cleanup();
+    await turnManager.cleanup("completed");
   });
 
   ws.on("error", async (error) => {
     console.error(`[STREAM] WebSocket error:`, error);
-    await turnManager.cleanup();
+    await turnManager.cleanup("error");
   });
 }
 
