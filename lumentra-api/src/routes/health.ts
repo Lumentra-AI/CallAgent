@@ -1,16 +1,23 @@
 import { Hono } from "hono";
 import { getDbStatus } from "../services/database/client.js";
 import { getTenantCacheStats } from "../services/database/tenant-cache.js";
-import { genAI, modelName } from "../services/gemini/client.js";
+import { getProviderStatus } from "../services/llm/multi-provider.js";
 
 export const healthRoutes = new Hono();
 
-// Get LLM configuration status
+// Get LLM configuration status for all providers
 function getLlmStatus() {
+  const providers = getProviderStatus();
+  const hasAnyProvider = Object.values(providers).some((p) => p.model !== null);
+  const availableProviders = Object.entries(providers)
+    .filter(([, p]) => p.model !== null)
+    .map(([name]) => name);
+
   return {
-    provider: "gemini",
-    configured: !!genAI,
-    model: modelName,
+    configured: hasAnyProvider,
+    providers,
+    availableProviders,
+    fallbackOrder: ["gemini", "openai", "groq"],
   };
 }
 
@@ -34,7 +41,8 @@ healthRoutes.get("/", async (c) => {
         llm: llmStatus,
       },
       config: {
-        voiceStack: "signalwire+deepgram+gemini+cartesia",
+        voiceStack: "signalwire+deepgram+multi-llm+cartesia",
+        llmFallback: "gemini->openai->groq",
         nodeEnv: process.env.NODE_ENV || "development",
       },
     },

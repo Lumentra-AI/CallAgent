@@ -10,11 +10,13 @@ import {
   clearAudioQueue,
 } from "./conversation-state.js";
 import * as sessionManager from "./session-manager.js";
+import { buildSystemPrompt, cleanupCall } from "../gemini/chat.js";
 import {
-  chatWithFallback,
-  buildSystemPrompt,
-  cleanupCall,
-} from "../gemini/chat.js";
+  chatWithFallback as multiProviderChat,
+  sendToolResults,
+  type LLMResponse,
+} from "../llm/multi-provider.js";
+import { voiceAgentFunctions, executeTool } from "../gemini/tools.js";
 import {
   createTranscriber,
   type DeepgramTranscriber,
@@ -282,7 +284,7 @@ export class TurnManager {
     );
 
     try {
-      // Generate response using Groq LLM with native tool calling
+      // Generate response using multi-provider LLM with fallback (Gemini -> OpenAI -> Groq)
       const conversationHistory = sessionManager.getConversationHistory(
         this.callSid,
       );
@@ -291,46 +293,110 @@ export class TurnManager {
         tenantId: this.tenant.id,
         callSid: this.callSid,
         callerPhone: sessionManager.getSession(this.callSid)?.callerPhone,
+        escalationPhone: this.tenant.escalation_phone,
       };
 
-      const response = await chatWithFallback(
-        transcript,
-        conversationHistory,
-        this.systemPrompt,
-        toolContext,
-        this.escalationState,
-      );
+      const startTime = Date.now();
 
+      // Use multi-provider fallback for resilience
+      let llmResponse: LLMResponse = await multiProviderChat({
+        userMessage: transcript,
+        conversationHistory,
+        systemPrompt: this.systemPrompt,
+        tools: voiceAgentFunctions,
+      });
+
+      console.log(`[TURN] LLM response from ${llmResponse.provider}`);
+
+      // Handle tool calls if present
+      let responseText = llmResponse.text;
+      let shouldEscalate = false;
+      let escalationReason: string | undefined;
+
+      if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
+        console.log(
+          `[TURN] Executing ${llmResponse.toolCalls.length} tool calls`,
+        );
+
+        const toolResults: Array<{
+          id: string;
+          name: string;
+          result: unknown;
+        }> = [];
+
+        for (const tc of llmResponse.toolCalls) {
+          console.log(`[TURN] Executing tool: ${tc.name}`, tc.args);
+
+          // Check for transfer request
+          if (tc.name === "transfer_to_human") {
+            shouldEscalate = true;
+            escalationReason = "user_requested_transfer";
+          }
+
+          const result = await executeTool(tc.name, tc.args, toolContext);
+          toolResults.push({
+            id: tc.id,
+            name: tc.name,
+            result,
+          });
+
+          // Check if booking was completed for escalation state
+          if (
+            tc.name === "create_booking" &&
+            (result as { success?: boolean })?.success
+          ) {
+            // Mark task completed in escalation state
+            this.escalationState.taskCompleted = true;
+          }
+        }
+
+        // Send tool results back to get final response
+        const options = {
+          userMessage: transcript,
+          conversationHistory,
+          systemPrompt: this.systemPrompt,
+          tools: voiceAgentFunctions,
+        };
+
+        const finalResponse = await sendToolResults(
+          llmResponse.provider,
+          options,
+          toolResults,
+        );
+
+        responseText = finalResponse.text;
+        console.log(`[TURN] Final response from ${finalResponse.provider}`);
+      }
+
+      const latencyMs = Date.now() - startTime;
       console.log(
-        `[TURN] Response: "${response.text.substring(0, 100)}..." ` +
-          `(action: ${response.action}, latency: ${response.metrics.totalLatencyMs}ms)`,
+        `[TURN] Response: "${responseText.substring(0, 100)}..." ` +
+          `(provider: ${llmResponse.provider}, latency: ${latencyMs}ms)`,
       );
 
       // Add assistant response to history
-      sessionManager.addMessage(this.callSid, "assistant", response.text);
+      sessionManager.addMessage(this.callSid, "assistant", responseText);
 
       // Log assistant turn for training data
-      addAssistantTurn(this.callSid, response.text).catch((err) =>
+      addAssistantTurn(this.callSid, responseText).catch((err) =>
         console.error("[TRAINING] Failed to log assistant turn:", err),
       );
 
       // Handle escalation/transfer
-      if (response.action === "escalate") {
-        console.log(
-          `[TURN] Escalation triggered: ${response.escalationReason}`,
-        );
+      if (shouldEscalate) {
+        console.log(`[TURN] Escalation triggered: ${escalationReason}`);
         if (this.tenant.escalation_phone) {
           this.callbacks.onTransferRequested(this.tenant.escalation_phone);
         }
       }
 
       // Speak response
-      await this.speak(response.text);
-      this.callbacks.onResponse(response.text);
+      await this.speak(responseText);
+      this.callbacks.onResponse(responseText);
     } catch (error) {
       console.error(`[TURN] Error processing turn:`, error);
 
-      // Fallback response
+      // Fallback response - only reached if ALL providers fail
       const fallback =
         "I'm sorry, I'm having trouble processing that. Could you please repeat?";
       await this.speak(fallback);

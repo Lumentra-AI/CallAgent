@@ -349,10 +349,10 @@ export function LumentraWidget({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="flex flex-1 flex-col"
+            className="flex flex-1 flex-col min-h-0"
           >
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
+            <div className="flex-1 overflow-y-auto p-4 min-h-0">
               <div className="space-y-4">
                 {messages.map((message) => (
                   <motion.div

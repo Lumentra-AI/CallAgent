@@ -17,12 +17,23 @@ export interface TranscriberCallbacks {
   onClose: () => void;
 }
 
+// Reconnection configuration
+const RECONNECT_CONFIG = {
+  maxRetries: 3,
+  baseDelayMs: 500,
+  maxDelayMs: 5000,
+};
+
 export class DeepgramTranscriber {
   private connection: LiveClient | null = null;
   private callbacks: TranscriberCallbacks;
   private config: DeepgramConfig;
   private isOpen = false;
   private keepAliveInterval: NodeJS.Timeout | null = null;
+  private reconnectAttempts = 0;
+  private isReconnecting = false;
+  private isStopped = false;
+  private audioBuffer: Buffer[] = []; // Buffer audio during reconnection
 
   constructor(
     callbacks: TranscriberCallbacks,
@@ -128,11 +139,83 @@ export class DeepgramTranscriber {
     this.connection.on(LiveTranscriptionEvents.Close, () => {
       console.log("[TRANSCRIBER] Connection closed");
       this.isOpen = false;
-      this.callbacks.onClose();
+
+      // Attempt reconnection if not intentionally stopped
+      if (!this.isStopped && !this.isReconnecting) {
+        this.attemptReconnect();
+      } else {
+        this.callbacks.onClose();
+      }
     });
   }
 
+  private async attemptReconnect(): Promise<void> {
+    if (
+      this.isStopped ||
+      this.isReconnecting ||
+      this.reconnectAttempts >= RECONNECT_CONFIG.maxRetries
+    ) {
+      console.log(
+        `[TRANSCRIBER] Max reconnect attempts reached or stopped, calling onClose`,
+      );
+      this.callbacks.onClose();
+      return;
+    }
+
+    this.isReconnecting = true;
+    this.reconnectAttempts++;
+
+    // Exponential backoff
+    const delay = Math.min(
+      RECONNECT_CONFIG.baseDelayMs * Math.pow(2, this.reconnectAttempts - 1),
+      RECONNECT_CONFIG.maxDelayMs,
+    );
+
+    console.log(
+      `[TRANSCRIBER] Attempting reconnect ${this.reconnectAttempts}/${RECONNECT_CONFIG.maxRetries} in ${delay}ms`,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
+    if (this.isStopped) {
+      this.isReconnecting = false;
+      return;
+    }
+
+    try {
+      await this.start();
+      console.log(`[TRANSCRIBER] Reconnected successfully`);
+      this.reconnectAttempts = 0;
+
+      // Flush buffered audio
+      if (this.audioBuffer.length > 0) {
+        console.log(
+          `[TRANSCRIBER] Flushing ${this.audioBuffer.length} buffered audio chunks`,
+        );
+        for (const chunk of this.audioBuffer) {
+          this.sendAudio(chunk);
+        }
+        this.audioBuffer = [];
+      }
+    } catch (error) {
+      console.error(`[TRANSCRIBER] Reconnect attempt failed:`, error);
+      this.attemptReconnect(); // Try again
+    } finally {
+      this.isReconnecting = false;
+    }
+  }
+
   sendAudio(audioData: Buffer): void {
+    // Buffer audio during reconnection
+    if (this.isReconnecting) {
+      this.audioBuffer.push(audioData);
+      // Limit buffer size to prevent memory issues (keep last 50 chunks ~1 second)
+      if (this.audioBuffer.length > 50) {
+        this.audioBuffer.shift();
+      }
+      return;
+    }
+
     if (!this.connection || !this.isOpen) {
       return;
     }
@@ -146,6 +229,7 @@ export class DeepgramTranscriber {
 
   async stop(): Promise<void> {
     console.log("[TRANSCRIBER] Stopping...");
+    this.isStopped = true; // Prevent reconnection attempts
 
     if (this.keepAliveInterval) {
       clearInterval(this.keepAliveInterval);
@@ -162,6 +246,7 @@ export class DeepgramTranscriber {
     }
 
     this.isOpen = false;
+    this.audioBuffer = [];
   }
 
   isConnected(): boolean {
