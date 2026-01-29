@@ -119,16 +119,6 @@ export function SetupSummary({
           </div>
         </motion.div>
 
-        <motion.div
-          variants={itemVariants}
-          className="flex items-center justify-between text-sm"
-        >
-          <span className="text-muted-foreground">Base Rate</span>
-          <span className="font-mono font-medium">
-            ${preset?.defaultPricing.baseRate}/mo
-          </span>
-        </motion.div>
-
         <div className="border-t border-border my-4" />
 
         <motion.div variants={itemVariants} className="space-y-2">

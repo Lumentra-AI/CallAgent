@@ -277,13 +277,6 @@ function IndustryCard({
         {preset.description}
       </p>
 
-      {/* Pricing hint */}
-      <div className="mt-3 border-t border-border pt-3">
-        <span className="font-mono text-xs text-muted-foreground/60">
-          From ${preset.defaultPricing.baseRate}/mo
-        </span>
-      </div>
-
       {/* Hover indicator */}
       {isHovered && (
         <motion.div

@@ -98,6 +98,19 @@ export function SetupMessage({
     };
   }, []);
 
+  // Get best English voice
+  const getEnglishVoice = useCallback(() => {
+    const voices = window.speechSynthesis.getVoices();
+    // Prioritize en-US voices, specifically looking for natural-sounding ones
+    return (
+      voices.find((v) => v.lang === "en-US" && v.name.includes("Google")) ||
+      voices.find((v) => v.lang === "en-US" && v.name.includes("Natural")) ||
+      voices.find((v) => v.lang === "en-US" && !v.name.includes("espeak")) ||
+      voices.find((v) => v.lang === "en-GB") ||
+      voices.find((v) => v.lang.startsWith("en-"))
+    );
+  }, []);
+
   // Speak the message using Web Speech API
   const speakMessage = useCallback(() => {
     if (!window.speechSynthesis) return;
@@ -108,19 +121,14 @@ export function SetupMessage({
     const utterance = new SpeechSynthesisUtterance(message.content);
     utteranceRef.current = utterance;
 
+    utterance.lang = "en-US";
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
 
-    // Try to find a good voice
-    const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(
-      (v) =>
-        v.name.includes("Google") ||
-        v.name.includes("Samantha") ||
-        v.name.includes("Alex"),
-    );
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
+    // Set voice if available
+    const voice = getEnglishVoice();
+    if (voice) {
+      utterance.voice = voice;
     }
 
     utterance.onstart = () => setIsSpeaking(true);
@@ -132,7 +140,7 @@ export function SetupMessage({
     utterance.onerror = () => setIsSpeaking(false);
 
     window.speechSynthesis.speak(utterance);
-  }, [message.content, message.id]);
+  }, [message.content, message.id, getEnglishVoice]);
 
   // Stop speaking
   const stopSpeaking = useCallback(() => {
