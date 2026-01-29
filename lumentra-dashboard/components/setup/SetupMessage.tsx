@@ -98,37 +98,29 @@ export function SetupMessage({
     };
   }, []);
 
-  // Get best English voice
-  const getEnglishVoice = useCallback(() => {
-    const voices = window.speechSynthesis.getVoices();
-    // Prioritize en-US voices, specifically looking for natural-sounding ones
-    return (
-      voices.find((v) => v.lang === "en-US" && v.name.includes("Google")) ||
-      voices.find((v) => v.lang === "en-US" && v.name.includes("Natural")) ||
-      voices.find((v) => v.lang === "en-US" && !v.name.includes("espeak")) ||
-      voices.find((v) => v.lang === "en-GB") ||
-      voices.find((v) => v.lang.startsWith("en-"))
-    );
-  }, []);
-
-  // Speak the message using Web Speech API
+  // Speak using Web Speech API with US English voice
   const speakMessage = useCallback(() => {
     if (!window.speechSynthesis) return;
 
-    // Cancel any ongoing speech
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(message.content);
     utteranceRef.current = utterance;
 
+    // Force US English
     utterance.lang = "en-US";
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
 
-    // Set voice if available
-    const voice = getEnglishVoice();
-    if (voice) {
-      utterance.voice = voice;
+    // Find a US English female voice
+    const voices = window.speechSynthesis.getVoices();
+    const usVoice =
+      voices.find(
+        (v) => v.lang === "en-US" && v.name.toLowerCase().includes("female"),
+      ) || voices.find((v) => v.lang === "en-US");
+
+    if (usVoice) {
+      utterance.voice = usVoice;
     }
 
     utterance.onstart = () => setIsSpeaking(true);
@@ -140,7 +132,7 @@ export function SetupMessage({
     utterance.onerror = () => setIsSpeaking(false);
 
     window.speechSynthesis.speak(utterance);
-  }, [message.content, message.id, getEnglishVoice]);
+  }, [message.content, message.id]);
 
   // Stop speaking
   const stopSpeaking = useCallback(() => {
