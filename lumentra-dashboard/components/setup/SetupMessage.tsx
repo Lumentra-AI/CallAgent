@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { Volume2, VolumeX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ConversationMessage, QuickAction } from "./SetupContext";
 
@@ -12,19 +13,34 @@ interface SetupMessageProps {
   isLatest?: boolean;
 }
 
+// Track which messages have been animated to prevent re-animation
+const animatedMessages = new Set<string>();
+// Track which messages have been spoken
+const spokenMessages = new Set<string>();
+
 function TypewriterText({
   text,
+  messageId,
   speed = 25,
   onComplete,
 }: {
   text: string;
+  messageId: string;
   speed?: number;
   onComplete?: () => void;
 }) {
-  const [displayedText, setDisplayedText] = useState("");
-  const [isComplete, setIsComplete] = useState(false);
+  // Check if this message was already animated
+  const wasAnimated = animatedMessages.has(messageId);
+  const [displayedText, setDisplayedText] = useState(wasAnimated ? text : "");
+  const [isComplete, setIsComplete] = useState(wasAnimated);
 
   useEffect(() => {
+    // Skip animation if already completed
+    if (wasAnimated) {
+      onComplete?.();
+      return;
+    }
+
     let index = 0;
     setDisplayedText("");
     setIsComplete(false);
@@ -36,12 +52,13 @@ function TypewriterText({
       } else {
         clearInterval(interval);
         setIsComplete(true);
+        animatedMessages.add(messageId);
         onComplete?.();
       }
     }, speed);
 
     return () => clearInterval(interval);
-  }, [text, speed, onComplete]);
+  }, [messageId, text, speed, onComplete, wasAnimated]);
 
   return (
     <span>
@@ -62,19 +79,81 @@ export function SetupMessage({
   onActionClick,
   isLatest = false,
 }: SetupMessageProps) {
-  const [showActions, setShowActions] = useState(false);
   const isAI = message.type === "ai";
+  // Initialize showActions to true if message was already animated
+  const wasAlreadyAnimated = animatedMessages.has(message.id);
+  const [showActions, setShowActions] = useState(
+    wasAlreadyAnimated && isAI && !!message.actions,
+  );
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const hasSpokenRef = useRef(spokenMessages.has(message.id));
 
+  // Cleanup speech on unmount
   useEffect(() => {
-    if (isLatest && isAI && message.actions) {
-      // Show actions after typewriter completes
-      const timer = setTimeout(
-        () => setShowActions(true),
-        message.content.length * 25 + 500,
-      );
-      return () => clearTimeout(timer);
+    return () => {
+      if (utteranceRef.current && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  // Speak the message using Web Speech API
+  const speakMessage = useCallback(() => {
+    if (!window.speechSynthesis) return;
+
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(message.content);
+    utteranceRef.current = utterance;
+
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    // Try to find a good voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(
+      (v) =>
+        v.name.includes("Google") ||
+        v.name.includes("Samantha") ||
+        v.name.includes("Alex"),
+    );
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
     }
-  }, [isLatest, isAI, message.actions, message.content.length]);
+
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      spokenMessages.add(message.id);
+      hasSpokenRef.current = true;
+    };
+    utterance.onerror = () => setIsSpeaking(false);
+
+    window.speechSynthesis.speak(utterance);
+  }, [message.content, message.id]);
+
+  // Stop speaking
+  const stopSpeaking = useCallback(() => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
+  }, []);
+
+  // Handle typewriter completion - speak once and show actions
+  const handleTypewriterComplete = useCallback(() => {
+    setShowActions(true);
+
+    // Auto-speak only if this message hasn't been spoken yet
+    if (isAI && !hasSpokenRef.current && isLatest) {
+      // Small delay to let the UI settle
+      setTimeout(() => {
+        speakMessage();
+      }, 300);
+    }
+  }, [isAI, isLatest, speakMessage]);
 
   return (
     <motion.div
@@ -92,15 +171,44 @@ export function SetupMessage({
         )}
       >
         <p className="text-sm leading-relaxed">
-          {isLatest && isAI ? (
+          {isLatest && isAI && !animatedMessages.has(message.id) ? (
             <TypewriterText
               text={message.content}
-              onComplete={() => setShowActions(true)}
+              messageId={message.id}
+              onComplete={handleTypewriterComplete}
             />
           ) : (
             message.content
           )}
         </p>
+
+        {/* Voice replay button for AI messages */}
+        {isAI && showActions && (
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={isSpeaking ? stopSpeaking : speakMessage}
+              className={cn(
+                "flex items-center gap-1 text-xs transition-colors",
+                isSpeaking
+                  ? "text-primary"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              title={isSpeaking ? "Stop" : "Listen again"}
+            >
+              {isSpeaking ? (
+                <>
+                  <VolumeX className="h-3.5 w-3.5" />
+                  <span>Stop</span>
+                </>
+              ) : (
+                <>
+                  <Volume2 className="h-3.5 w-3.5" />
+                  <span>Listen</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
 
         {/* Quick Actions */}
         {isAI && message.actions && showActions && (
