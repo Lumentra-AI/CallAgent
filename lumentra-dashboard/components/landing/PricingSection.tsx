@@ -178,6 +178,8 @@ function PricingCard({
             ? "/contact"
             : "/signup?plan=" + plan.name.toLowerCase()
         }
+        target="_blank"
+        rel="noopener noreferrer"
       >
         <Button
           className={cn(

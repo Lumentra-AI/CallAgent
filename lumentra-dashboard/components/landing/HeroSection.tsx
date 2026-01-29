@@ -64,7 +64,7 @@ export function HeroSection() {
             transition={{ duration: 0.6, delay: 0.25 }}
             className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4"
           >
-            <Link href="/signup">
+            <Link href="/signup" target="_blank" rel="noopener noreferrer">
               <ShimmerButton
                 className="h-12 px-8 text-base font-semibold"
                 background="linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)"

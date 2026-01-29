@@ -99,7 +99,7 @@ export function Navbar() {
                     Sign in
                   </Button>
                 </Link>
-                <Link href="/signup">
+                <Link href="/signup" target="_blank" rel="noopener noreferrer">
                   <Button size="sm" className="shadow-sm">
                     Get Started
                   </Button>
@@ -153,7 +153,12 @@ export function Navbar() {
                     Sign in
                   </Button>
                 </Link>
-                <Link href="/signup" className="block">
+                <Link
+                  href="/signup"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block"
+                >
                   <Button className="w-full">Get Started</Button>
                 </Link>
               </div>

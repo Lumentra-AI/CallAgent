@@ -68,7 +68,7 @@ export function CTASection() {
             opportunity. Start your free trial today.
           </p>
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/signup">
+            <Link href="/signup" target="_blank" rel="noopener noreferrer">
               <ShimmerButton
                 className="h-14 px-10 text-lg font-semibold"
                 background="linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)"
