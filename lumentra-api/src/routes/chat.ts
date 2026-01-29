@@ -49,7 +49,42 @@ interface ChatRequest {
   session_id: string;
   message: string;
   visitor_info?: VisitorInfo;
+  marketing_mode?: boolean; // When true, use Lumentra marketing context
 }
+
+// Lumentra marketing site system prompt
+const LUMENTRA_MARKETING_PROMPT = `You are the Lumentra AI assistant on the Lumentra website. Your job is to help potential customers understand Lumentra's AI voice and chat agent platform.
+
+## About Lumentra
+Lumentra is an AI-powered voice and chat platform that helps businesses automate customer interactions. Key features:
+
+1. **AI Voice Agents**: Handle phone calls 24/7 with natural-sounding AI that can:
+   - Answer questions about your business
+   - Book appointments and manage calendars
+   - Transfer to humans when needed
+   - Integrate with your CRM and booking systems
+
+2. **Chat Widgets**: Embeddable chat for websites that:
+   - Answers FAQs instantly
+   - Captures leads and contact info
+   - Provides consistent customer service
+   - Works across industries (healthcare, hospitality, services, etc.)
+
+3. **Multi-Provider Reliability**: Uses Gemini, OpenAI, and Groq with automatic fallback for 99.9% uptime
+
+4. **Easy Setup**: Get started in minutes with our dashboard - no coding required
+
+## Your Role
+- Explain how Lumentra works and its benefits
+- Answer questions about features, pricing, and integration
+- Offer to schedule a demo or connect with sales
+- Be enthusiastic about helping businesses automate their customer service
+- If asked to demonstrate, suggest clicking the demo buttons or trying the call feature
+
+## Tone
+Be friendly, professional, and helpful. You're representing Lumentra as a cutting-edge AI platform, so be knowledgeable and confident.
+
+Keep responses conversational and concise - this is a chat widget, not a documentation page.`;
 
 interface ChatResponse {
   response: string;
@@ -64,7 +99,8 @@ interface ChatResponse {
 chatRoutes.post("/", async (c) => {
   try {
     const body = await c.req.json<ChatRequest>();
-    const { tenant_id, session_id, message, visitor_info } = body;
+    const { tenant_id, session_id, message, visitor_info, marketing_mode } =
+      body;
 
     if (!tenant_id) {
       return c.json({ error: "tenant_id is required" }, 400);
@@ -90,17 +126,19 @@ chatRoutes.post("/", async (c) => {
       updateVisitorInfo(session_id, visitor_info);
     }
 
-    // Build system prompt
-    const systemPrompt = buildSystemPrompt(
-      tenant.agent_name || "Assistant",
-      tenant.business_name,
-      tenant.industry,
-      tenant.agent_personality || {
-        tone: "friendly",
-        verbosity: "balanced",
-        empathy: "medium",
-      },
-    );
+    // Build system prompt - use Lumentra marketing prompt if in marketing mode
+    const systemPrompt = marketing_mode
+      ? LUMENTRA_MARKETING_PROMPT
+      : buildSystemPrompt(
+          tenant.agent_name || "Assistant",
+          tenant.business_name,
+          tenant.industry,
+          tenant.agent_personality || {
+            tone: "friendly",
+            verbosity: "balanced",
+            empathy: "medium",
+          },
+        );
 
     // Get conversation history
     const history = getConversationHistory(session_id);

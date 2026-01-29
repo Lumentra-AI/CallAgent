@@ -137,6 +137,7 @@ export function LumentraWidget({
             tenant_id: TENANT_ID,
             session_id: sessionId,
             message: userMessage,
+            marketing_mode: true, // Use Lumentra marketing context
           }),
         });
 

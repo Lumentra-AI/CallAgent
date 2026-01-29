@@ -64,7 +64,7 @@ const DEMO_SCRIPT = [
   },
   {
     speaker: "customer",
-    text: "Yes, that would be perfect. My name is John Smith.",
+    text: "Yes, that would be perfect. My name is Sarah Johnson.",
   },
   {
     speaker: "ai",
@@ -73,7 +73,7 @@ const DEMO_SCRIPT = [
   { speaker: "customer", text: "No, that's all. Thank you so much!" },
   {
     speaker: "ai",
-    text: "You're welcome, John. Take care and we'll see you tomorrow. Goodbye!",
+    text: "You're welcome, Sarah. Take care and we'll see you tomorrow. Goodbye!",
   },
 ];
 
@@ -474,7 +474,7 @@ function IncomingCallDemo({
               <User className="h-5 w-5 text-muted-foreground" />
               <div>
                 <p className="text-sm font-medium text-foreground">
-                  John Smith
+                  Sarah Johnson
                 </p>
                 <p className="text-xs text-muted-foreground">
                   New patient - back pain
