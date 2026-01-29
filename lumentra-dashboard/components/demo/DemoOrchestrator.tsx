@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useCallback, createContext, useContext } from "react";
+import {
+  useState,
+  useCallback,
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+} from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Phone,
@@ -14,6 +21,8 @@ import {
   CheckCircle,
   Clock,
   MapPin,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 // Demo types
@@ -38,6 +47,184 @@ const DemoContext = createContext<DemoContextType>({
 });
 
 export const useDemoOrchestrator = () => useContext(DemoContext);
+
+// Demo conversation script for incoming call
+const DEMO_SCRIPT = [
+  {
+    speaker: "ai",
+    text: "Hello! Thank you for calling Wellness Clinic. How can I help you today?",
+  },
+  {
+    speaker: "customer",
+    text: "Hi, I need to schedule an appointment. I've been having terrible back pain for the past week.",
+  },
+  {
+    speaker: "ai",
+    text: "I'm sorry to hear that. Let me check our availability. I see we have an opening tomorrow at 10:30 AM with Dr. Williams. Would that work for you?",
+  },
+  {
+    speaker: "customer",
+    text: "Yes, that would be perfect. My name is John Smith.",
+  },
+  {
+    speaker: "ai",
+    text: "I've booked your appointment for tomorrow at 10:30 AM with Dr. Williams for back pain. You'll receive a confirmation shortly. Is there anything else I can help you with?",
+  },
+  { speaker: "customer", text: "No, that's all. Thank you so much!" },
+  {
+    speaker: "ai",
+    text: "You're welcome, John. Take care and we'll see you tomorrow. Goodbye!",
+  },
+];
+
+// Helper to play a line of demo dialogue
+function playDemoLine(
+  lineIndex: number,
+  isPlayingRef: React.MutableRefObject<boolean>,
+  onStepChange: (step: number) => void,
+  setCurrentLine: (line: number) => void,
+  scheduleNext: (nextIndex: number) => void,
+) {
+  if (
+    lineIndex >= DEMO_SCRIPT.length ||
+    typeof window === "undefined" ||
+    !window.speechSynthesis
+  ) {
+    return;
+  }
+
+  const line = DEMO_SCRIPT[lineIndex];
+  const utterance = new SpeechSynthesisUtterance(line.text);
+
+  // Different voice settings for AI vs customer
+  const voices = window.speechSynthesis.getVoices();
+  if (line.speaker === "ai") {
+    const femaleVoice = voices.find(
+      (v) =>
+        v.name.includes("Samantha") ||
+        v.name.includes("Google US English") ||
+        v.lang === "en-US",
+    );
+    if (femaleVoice) utterance.voice = femaleVoice;
+    utterance.rate = 1.0;
+    utterance.pitch = 1.1;
+  } else {
+    const maleVoice = voices.find(
+      (v) =>
+        v.name.includes("Daniel") ||
+        v.name.includes("Alex") ||
+        (v.lang === "en-US" && v.name.toLowerCase().includes("male")),
+    );
+    if (maleVoice) utterance.voice = maleVoice;
+    utterance.rate = 0.95;
+    utterance.pitch = 0.9;
+  }
+
+  // Map script lines to demo steps
+  if (lineIndex === 0) onStepChange(0);
+  else if (lineIndex === 1 || lineIndex === 2) onStepChange(1);
+  else if (lineIndex === 3 || lineIndex === 4) onStepChange(2);
+  else onStepChange(3);
+
+  utterance.onend = () => {
+    if (isPlayingRef.current && lineIndex < DEMO_SCRIPT.length - 1) {
+      scheduleNext(lineIndex + 1);
+    }
+    setCurrentLine(lineIndex + 1);
+  };
+
+  utterance.onerror = () => {
+    if (isPlayingRef.current && lineIndex < DEMO_SCRIPT.length - 1) {
+      scheduleNext(lineIndex + 1);
+    }
+  };
+
+  window.speechSynthesis.speak(utterance);
+}
+
+// Hook for demo audio playback
+function useDemoAudio(isActive: boolean, onStepChange: (step: number) => void) {
+  const [isMuted, setIsMuted] = useState(false);
+  const [currentLine, setCurrentLine] = useState(0);
+  const isPlayingRef = useRef(false);
+  const onStepChangeRef = useRef(onStepChange);
+
+  // Keep refs up to date
+  useEffect(() => {
+    onStepChangeRef.current = onStepChange;
+  }, [onStepChange]);
+
+  const stop = useCallback(() => {
+    isPlayingRef.current = false;
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    setIsMuted((prev) => {
+      const newMuted = !prev;
+      if (newMuted && typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      return newMuted;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isActive || isMuted) {
+      return;
+    }
+
+    const scheduleNext = (nextIndex: number) => {
+      setTimeout(() => {
+        playDemoLine(
+          nextIndex,
+          isPlayingRef,
+          onStepChangeRef.current,
+          setCurrentLine,
+          scheduleNext,
+        );
+      }, 500);
+    };
+
+    const startDemo = () => {
+      isPlayingRef.current = true;
+      setCurrentLine(0);
+      setTimeout(() => {
+        playDemoLine(
+          0,
+          isPlayingRef,
+          onStepChangeRef.current,
+          setCurrentLine,
+          scheduleNext,
+        );
+      }, 1000);
+    };
+
+    if (window.speechSynthesis.getVoices().length > 0) {
+      startDemo();
+    } else {
+      window.speechSynthesis.onvoiceschanged = startDemo;
+    }
+
+    return () => {
+      stop();
+    };
+  }, [isActive, isMuted, stop]);
+
+  return {
+    isMuted,
+    toggleMute,
+    currentLine,
+    currentSpeaker:
+      currentLine < DEMO_SCRIPT.length
+        ? DEMO_SCRIPT[currentLine]?.speaker
+        : null,
+    currentText:
+      currentLine < DEMO_SCRIPT.length ? DEMO_SCRIPT[currentLine]?.text : null,
+  };
+}
 
 interface DemoOrchestratorProps {
   children: React.ReactNode;
@@ -72,6 +259,10 @@ export function DemoOrchestrator({ children }: DemoOrchestratorProps) {
     setDemoStep(0);
   }, []);
 
+  const handleStepChange = useCallback((step: number) => {
+    setDemoStep(step);
+  }, []);
+
   return (
     <DemoContext.Provider value={{ activeDemo, triggerDemo, dismissDemo }}>
       {children}
@@ -80,6 +271,7 @@ export function DemoOrchestrator({ children }: DemoOrchestratorProps) {
           <DemoOverlay
             type={activeDemo}
             step={demoStep}
+            onStepChange={handleStepChange}
             onDismiss={dismissDemo}
           />
         )}
@@ -92,10 +284,22 @@ export function DemoOrchestrator({ children }: DemoOrchestratorProps) {
 interface DemoOverlayProps {
   type: DemoType;
   step: number;
+  onStepChange: (step: number) => void;
   onDismiss: () => void;
 }
 
-function DemoOverlay({ type, step, onDismiss }: DemoOverlayProps) {
+function DemoOverlay({
+  type,
+  step,
+  onStepChange,
+  onDismiss,
+}: DemoOverlayProps) {
+  const isIncomingCall = type === "incoming-call";
+  const { isMuted, toggleMute, currentSpeaker, currentText } = useDemoAudio(
+    isIncomingCall,
+    onStepChange,
+  );
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -115,9 +319,41 @@ function DemoOverlay({ type, step, onDismiss }: DemoOverlayProps) {
         <X className="h-4 w-4" />
       </motion.div>
 
+      {/* Mute button for call demos */}
+      {isIncomingCall && (
+        <motion.button
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleMute();
+          }}
+          className="absolute top-6 left-6 flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground hover:bg-muted/80 transition-colors"
+        >
+          {isMuted ? (
+            <>
+              <VolumeX className="h-4 w-4" />
+              <span>Unmute</span>
+            </>
+          ) : (
+            <>
+              <Volume2 className="h-4 w-4" />
+              <span>Mute</span>
+            </>
+          )}
+        </motion.button>
+      )}
+
       {/* Demo content */}
       <div onClick={(e) => e.stopPropagation()}>
-        {type === "incoming-call" && <IncomingCallDemo step={step} />}
+        {type === "incoming-call" && (
+          <IncomingCallDemo
+            step={step}
+            currentSpeaker={currentSpeaker}
+            currentText={currentText}
+          />
+        )}
         {type === "booking" && <BookingDemo step={step} />}
         {type === "contact" && <ContactDemo step={step} />}
         {type === "dashboard" && <DashboardDemo step={step} />}
@@ -146,36 +382,85 @@ function DemoOverlay({ type, step, onDismiss }: DemoOverlayProps) {
 }
 
 // Individual demo animations
-function IncomingCallDemo({ step }: { step: number }) {
+interface IncomingCallDemoProps {
+  step: number;
+  currentSpeaker: string | null;
+  currentText: string | null;
+}
+
+function IncomingCallDemo({
+  step,
+  currentSpeaker,
+  currentText,
+}: IncomingCallDemoProps) {
   return (
     <motion.div
       initial={{ scale: 0.9, y: 20 }}
       animate={{ scale: 1, y: 0 }}
-      className="w-96 rounded-2xl bg-background border border-border shadow-elevated overflow-hidden"
+      className="w-[420px] rounded-2xl bg-background border border-border shadow-elevated overflow-hidden"
     >
       {/* Phone ringing animation */}
-      <div className="bg-gradient-to-br from-industry/20 to-industry/5 px-6 py-8 text-center">
+      <div className="bg-gradient-to-br from-industry/20 to-industry/5 px-6 py-6 text-center">
         <motion.div
           animate={{
-            scale: step === 0 ? [1, 1.1, 1] : 1,
-            rotate: step === 0 ? [0, -5, 5, 0] : 0,
+            scale: step === 0 && !currentSpeaker ? [1, 1.1, 1] : 1,
+            rotate: step === 0 && !currentSpeaker ? [0, -5, 5, 0] : 0,
           }}
-          transition={{ duration: 0.5, repeat: step === 0 ? Infinity : 0 }}
-          className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-industry"
+          transition={{
+            duration: 0.5,
+            repeat: step === 0 && !currentSpeaker ? Infinity : 0,
+          }}
+          className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-industry"
         >
-          <PhoneIncoming className="h-10 w-10 text-white" />
+          <PhoneIncoming className="h-8 w-8 text-white" />
         </motion.div>
-        <h3 className="text-xl font-semibold text-foreground">Incoming Call</h3>
+        <h3 className="text-lg font-semibold text-foreground">
+          {step >= 3 ? "Call Complete" : "Live Call"}
+        </h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          {step === 0
+          {step === 0 && !currentSpeaker
             ? "+1 555-123-4567"
-            : step === 1
-              ? "AI answered: Hello, Wellness Clinic..."
-              : step === 2
-                ? "Booking appointment for tomorrow..."
-                : "Appointment confirmed!"}
+            : step >= 3
+              ? "Appointment booked successfully"
+              : "AI handling call..."}
         </p>
       </div>
+
+      {/* Live transcript */}
+      {currentText && (
+        <div className="px-6 py-4 border-b border-border">
+          <div className="flex items-start gap-3">
+            <motion.div
+              animate={{ scale: [1, 1.2, 1] }}
+              transition={{ duration: 0.5, repeat: Infinity }}
+              className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                currentSpeaker === "ai"
+                  ? "bg-industry text-white"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
+              {currentSpeaker === "ai" ? (
+                <Volume2 className="h-4 w-4" />
+              ) : (
+                <User className="h-4 w-4" />
+              )}
+            </motion.div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-muted-foreground mb-1">
+                {currentSpeaker === "ai" ? "AI Agent" : "Customer"}
+              </p>
+              <motion.p
+                key={currentText}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-sm text-foreground leading-relaxed"
+              >
+                &quot;{currentText}&quot;
+              </motion.p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Call info */}
       <div className="px-6 py-4 space-y-3">
@@ -192,7 +477,7 @@ function IncomingCallDemo({ step }: { step: number }) {
                   John Smith
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Returning patient
+                  New patient - back pain
                 </p>
               </div>
             </motion.div>
@@ -210,7 +495,7 @@ function IncomingCallDemo({ step }: { step: number }) {
                   Tomorrow, 10:30 AM
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Annual checkup with Dr. Williams
+                  Dr. Williams - Back pain consultation
                 </p>
               </div>
             </motion.div>
@@ -224,7 +509,7 @@ function IncomingCallDemo({ step }: { step: number }) {
             >
               <CheckCircle className="h-5 w-5 text-green-500" />
               <p className="text-sm font-medium text-green-600">
-                Appointment booked successfully
+                Appointment booked - confirmation sent
               </p>
             </motion.div>
           )}
