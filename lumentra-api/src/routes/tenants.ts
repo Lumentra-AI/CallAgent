@@ -317,6 +317,80 @@ tenantsRoutes.delete("/:id", async (c) => {
 });
 
 /**
+ * PUT /api/tenants/:id/phone
+ * Update tenant phone number (owner only)
+ * This requires special handling since phone numbers map to tenant lookups
+ */
+tenantsRoutes.put("/:id/phone", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const userId = getAuthUserId(c);
+  const db = getSupabase();
+
+  // Verify user is owner
+  const { data: membership } = await db
+    .from("tenant_members")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("tenant_id", id)
+    .eq("is_active", true)
+    .single();
+
+  if (!membership || membership.role !== "owner") {
+    return c.json({ error: "Forbidden - owner role required" }, 403);
+  }
+
+  if (!body.phone_number) {
+    return c.json({ error: "phone_number is required" }, 400);
+  }
+
+  // Normalize phone number (ensure +1 prefix for US numbers)
+  let phoneNumber = body.phone_number.replace(/\D/g, "");
+  if (phoneNumber.length === 10) {
+    phoneNumber = "+1" + phoneNumber;
+  } else if (phoneNumber.length === 11 && phoneNumber.startsWith("1")) {
+    phoneNumber = "+" + phoneNumber;
+  } else if (!phoneNumber.startsWith("+")) {
+    phoneNumber = "+" + phoneNumber;
+  }
+
+  // Check if phone number is already in use by another tenant
+  const { data: existing } = await db
+    .from("tenants")
+    .select("id")
+    .eq("phone_number", phoneNumber)
+    .neq("id", id)
+    .single();
+
+  if (existing) {
+    return c.json(
+      { error: "Phone number already in use by another tenant" },
+      400,
+    );
+  }
+
+  // Update phone number
+  const { data, error } = await db
+    .from("tenants")
+    .update({
+      phone_number: phoneNumber,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    return c.json({ error: error.message }, 500);
+  }
+
+  // Invalidate cache so new phone number mapping takes effect
+  await invalidateTenant(id);
+
+  return c.json(data);
+});
+
+/**
  * POST /api/tenants/:id/members
  * Invite a user to the tenant (owner/admin only)
  */

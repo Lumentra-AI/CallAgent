@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useConfig } from "@/context/ConfigContext";
+import { useTenant } from "@/context/TenantContext";
+import { put } from "@/lib/api/client";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
 import {
   Building2,
   Stethoscope,
@@ -18,6 +21,8 @@ import {
   UtensilsCrossed,
   Scale,
   Palette,
+  Phone,
+  Loader2,
 } from "lucide-react";
 import type { IndustryType, ThemeColor, IndustryCategory } from "@/types";
 import {
@@ -99,9 +104,49 @@ export default function GeneralTab() {
     industryPresets,
     hasPermission,
   } = useConfig();
+  const { currentTenant, refreshTenants } = useTenant();
   const [showAllIndustries, setShowAllIndustries] = useState(false);
   const [selectedCategory, setSelectedCategory] =
     useState<IndustryCategory | null>(null);
+
+  // Phone number state
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [phoneSaving, setPhoneSaving] = useState(false);
+  const [phoneSuccess, setPhoneSuccess] = useState(false);
+
+  // Initialize phone number from tenant
+  useEffect(() => {
+    if (currentTenant?.phone_number) {
+      setPhoneNumber(currentTenant.phone_number);
+    }
+  }, [currentTenant?.phone_number]);
+
+  const handlePhoneSave = async () => {
+    if (!currentTenant) return;
+
+    setPhoneSaving(true);
+    setPhoneError(null);
+    setPhoneSuccess(false);
+
+    try {
+      await put(`/api/tenants/${currentTenant.id}/phone`, {
+        phone_number: phoneNumber,
+      });
+      setPhoneSuccess(true);
+      await refreshTenants();
+      setTimeout(() => setPhoneSuccess(false), 3000);
+    } catch (err) {
+      setPhoneError(
+        err instanceof Error ? err.message : "Failed to update phone number",
+      );
+    } finally {
+      setPhoneSaving(false);
+    }
+  };
+
+  const isPhoneChanged = phoneNumber !== (currentTenant?.phone_number || "");
+  const isOwner = currentTenant?.role === "owner";
 
   if (!config) return null;
 
@@ -153,6 +198,64 @@ export default function GeneralTab() {
             <p className="text-xs text-muted-foreground">
               The name your AI agent will use when greeting callers
             </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Phone Configuration */}
+      <section className="space-y-4 rounded-2xl border border-border bg-card p-6">
+        <div className="flex items-center gap-2 border-b border-border pb-3">
+          <Phone className="h-4 w-4 text-primary" />
+          <h4 className="text-sm font-medium text-foreground">Phone Number</h4>
+        </div>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-muted-foreground">
+              Business Phone Number
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                value={phoneNumber}
+                onChange={(e) => {
+                  setPhoneNumber(e.target.value);
+                  setPhoneError(null);
+                  setPhoneSuccess(false);
+                }}
+                placeholder="+1 (555) 123-4567"
+                disabled={!isOwner}
+              />
+              <Button
+                onClick={handlePhoneSave}
+                disabled={!isOwner || !isPhoneChanged || phoneSaving}
+                className="shrink-0"
+              >
+                {phoneSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : phoneSuccess ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  "Save"
+                )}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This is the phone number customers will call to reach your AI
+              agent. Incoming calls to this number will be handled by Lumentra.
+            </p>
+            {phoneError && (
+              <p className="text-xs text-destructive">{phoneError}</p>
+            )}
+            {phoneSuccess && (
+              <p className="text-xs text-green-600">
+                Phone number updated successfully
+              </p>
+            )}
+            {!isOwner && (
+              <p className="text-xs text-amber-600">
+                Only the account owner can change the phone number.
+              </p>
+            )}
           </div>
         </div>
       </section>
