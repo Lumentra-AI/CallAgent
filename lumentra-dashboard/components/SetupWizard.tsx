@@ -579,13 +579,6 @@ function IndustryCard({
       <p className="text-xs leading-relaxed text-zinc-500">
         {preset.description}
       </p>
-
-      {/* SOW-aligned pricing hint */}
-      <div className="mt-3 border-t border-zinc-800 pt-3">
-        <span className="font-mono text-xs text-zinc-600">
-          Base: ${preset.defaultPricing.baseRate}
-        </span>
-      </div>
     </button>
   );
 }
