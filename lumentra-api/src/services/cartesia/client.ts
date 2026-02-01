@@ -31,13 +31,19 @@ export const cartesiaVoices = {
 
 // Default configuration for phone calls (mu-law 8kHz)
 export const defaultCartesiaConfig: CartesiaConfig = {
-  modelId: "sonic-turbo", // Fastest model - 40ms latency
-  voiceId: cartesiaVoices.madison, // Enthusiastic young adult female
+  modelId: "sonic-2024-10-19", // Better quality than turbo
+  voiceId: cartesiaVoices.taylor, // Warm, professional - less robotic
   outputFormat: {
     container: "raw",
     encoding: "pcm_mulaw",
     sampleRate: 8000,
   },
+};
+
+// Emotion controls for more natural speech
+export const voiceControls = {
+  speed: "normal" as const,
+  emotion: ["positivity:low", "curiosity:low"] as const, // Subtle warmth
 };
 
 // WebSocket URL for streaming TTS

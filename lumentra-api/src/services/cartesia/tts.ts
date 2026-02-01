@@ -6,6 +6,7 @@ import {
   cartesiaApiKey,
   cartesiaWsUrl,
   defaultCartesiaConfig,
+  voiceControls,
 } from "./client.js";
 import type { CartesiaConfig, CartesiaStreamChunk } from "../../types/voice.js";
 
@@ -130,6 +131,7 @@ export class CartesiaTTS {
       voice: {
         mode: "id",
         id: this.config.voiceId,
+        __experimental_controls: voiceControls,
       },
       output_format: {
         container: this.config.outputFormat.container,
@@ -158,6 +160,7 @@ export class CartesiaTTS {
       voice: {
         mode: "id",
         id: this.config.voiceId,
+        __experimental_controls: voiceControls,
       },
       output_format: {
         container: this.config.outputFormat.container,
