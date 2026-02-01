@@ -18,8 +18,15 @@ const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
  */
 signalwireVoice.post("/voice", async (c) => {
   try {
+    // Debug: log raw request info
+    const contentType = c.req.header("content-type");
+    console.log(`[SIGNALWIRE] Content-Type: ${contentType}`);
+
     // Get call parameters from SignalWire
     const formData = await c.req.parseBody();
+    console.log(`[SIGNALWIRE] Form data keys: ${Object.keys(formData).join(", ")}`);
+    console.log(`[SIGNALWIRE] Form data: ${JSON.stringify(formData)}`);
+
     const callSid = formData.CallSid as string;
     const from = formData.From as string;
     const to = formData.To as string;
