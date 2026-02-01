@@ -3,6 +3,7 @@
 import React, { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useConfig } from "@/context/ConfigContext";
+import { post } from "@/lib/api/client";
 import {
   INDUSTRY_PRESETS,
   INDUSTRY_CATEGORIES,
@@ -131,7 +132,9 @@ export default function SetupWizard() {
   // Form State
   const [industry, setIndustry] = useState<IndustryType | null>(null);
   const [businessName, setBusinessName] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [agentName, setAgentName] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   // Get popular industries
   const popularIndustries = getPopularIndustries();
@@ -145,16 +148,23 @@ export default function SetupWizard() {
     if (step > 1) setStep(step - 1);
   }, [step]);
 
-  const handleLaunch = useCallback(() => {
-    if (!industry || !businessName) return;
+  const handleLaunch = useCallback(async () => {
+    if (!industry || !businessName || !phoneNumber) return;
 
     setIsLaunching(true);
+    setError(null);
 
-    // Create config from preset
-    const config = createDefaultConfig(industry);
+    try {
+      // Create tenant via API
+      await post("/api/tenants", {
+        business_name: businessName,
+        phone_number: phoneNumber,
+        industry,
+        agent_name: agentName || "Lumentra",
+      });
 
-    // Small delay for animation, then save and redirect
-    setTimeout(() => {
+      // Also save local config
+      const config = createDefaultConfig(industry);
       saveConfig({
         ...config,
         industry,
@@ -162,22 +172,27 @@ export default function SetupWizard() {
         agentName: agentName || "Lumentra",
         isConfigured: true,
       });
+
+      // Redirect to dashboard
       router.push("/dashboard");
-    }, 1500);
-  }, [industry, businessName, agentName, saveConfig, router]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create tenant");
+      setIsLaunching(false);
+    }
+  }, [industry, businessName, phoneNumber, agentName, saveConfig, router]);
 
   const canProceed = useCallback(() => {
     switch (step) {
       case 1:
         return industry !== null;
       case 2:
-        return businessName.trim().length > 0;
+        return businessName.trim().length > 0 && phoneNumber.trim().length > 0;
       case 3:
         return true;
       default:
         return false;
     }
-  }, [step, industry, businessName]);
+  }, [step, industry, businessName, phoneNumber]);
 
   const getIndustryIcon = (industryId: string) => {
     return INDUSTRY_ICON_MAP[industryId] || Building2;
@@ -376,6 +391,23 @@ export default function SetupWizard() {
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="phoneNumber" className="text-sm text-zinc-400">
+                  Business Phone Number
+                </Label>
+                <Input
+                  id="phoneNumber"
+                  type="tel"
+                  placeholder="e.g. +1 (555) 123-4567"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  className="border-zinc-800 bg-zinc-950 text-white placeholder:text-zinc-600 focus:border-indigo-500 focus:ring-indigo-500/20"
+                />
+                <p className="text-xs text-zinc-600">
+                  The phone number your AI agent will answer calls on
+                </p>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="agentName" className="text-sm text-zinc-400">
                   AI Agent Name{" "}
                   <span className="text-zinc-600">(Optional)</span>
@@ -422,6 +454,11 @@ export default function SetupWizard() {
           {/* Step 3: Launch */}
           {step === 3 && industry && (
             <div className="mx-auto max-w-md">
+              {error && (
+                <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+                  {error}
+                </div>
+              )}
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 text-center">
                 {isLaunching ? (
                   <div className="space-y-4 py-4">
