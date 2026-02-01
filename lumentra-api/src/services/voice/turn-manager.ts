@@ -74,10 +74,10 @@ const PROCESSING_FILLERS = [
   "Let me check...",
 ];
 
-// Filler timing - randomized for naturalness
-const FILLER_DELAY_MIN_MS = 350;
-const FILLER_DELAY_MAX_MS = 500;
-const FILLER_SKIP_CHANCE = 0.15; // 15% chance to skip filler (natural variation)
+// Filler timing - only speak filler if LLM is genuinely slow
+const FILLER_DELAY_MIN_MS = 800;
+const FILLER_DELAY_MAX_MS = 1200;
+const FILLER_SKIP_CHANCE = 0.5; // 50% chance to skip filler (be more selective)
 
 // Filler responses for tool calls - spoken immediately while tool executes
 const TOOL_FILLERS: Record<string, string> = {
@@ -495,9 +495,9 @@ export class TurnManager {
           const remaining = sentenceBuffer.flush();
           if (remaining) {
             const ttfs = Date.now() - startTime;
-            const shouldContinue = this.fillerSpoken || !isFirstChunk;
-            console.log(`[TURN] Flushing final (${ttfs}ms): "${remaining.substring(0, 40)}..." (continue: ${shouldContinue})`);
-            this.speakChunk(remaining, shouldContinue);
+            // Final chunk should NEVER continue - this closes the prosody properly
+            console.log(`[TURN] Flushing final (${ttfs}ms): "${remaining.substring(0, 40)}..." (continue: false)`);
+            this.speakChunk(remaining, false);
           }
         }
       }
