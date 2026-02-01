@@ -17,6 +17,7 @@ import {
   CreditCard,
   Sliders,
   ChevronRight,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import GeneralTab from "./GeneralTab";
@@ -29,6 +30,7 @@ import GreetingsTab from "./GreetingsTab";
 import ResponsesTab from "./ResponsesTab";
 import AgentTab from "./AgentTab";
 import EscalationTab from "./EscalationTab";
+import InstructionsTab from "./InstructionsTab";
 
 // ============================================================================
 // TABS CONFIGURATION
@@ -124,6 +126,15 @@ const ALL_TABS: TabConfig[] = [
     description: "Call transfer rules",
     minAccessTier: "admin",
     requiredPermission: "manage_escalation",
+    category: "agent",
+  },
+  {
+    id: "instructions",
+    label: "Instructions",
+    icon: Sparkles,
+    description: "Custom AI instructions",
+    minAccessTier: "admin",
+    requiredPermission: "manage_agent",
     category: "agent",
   },
 
@@ -381,6 +392,7 @@ export default function SettingsPanel() {
             {settingsTab === "voice" && <VoiceTab />}
             {settingsTab === "greetings" && <GreetingsTab />}
             {settingsTab === "responses" && <ResponsesTab />}
+            {settingsTab === "instructions" && <InstructionsTab />}
             {settingsTab === "hours" && <HoursTab />}
             {settingsTab === "escalation" && <EscalationTab />}
             {settingsTab === "billing" && <BillingTab />}
@@ -607,4 +619,5 @@ export {
   ResponsesTab,
   AgentTab,
   EscalationTab,
+  InstructionsTab,
 };

@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useConfig } from "@/context/ConfigContext";
+import { useTenantSettings } from "@/hooks/useTenantSettings";
 import {
   Volume2,
   Play,
@@ -10,6 +11,8 @@ import {
   Check,
   Mic,
   Sliders,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VoicePreview, SampleTextSelector } from "./VoicePreview";
@@ -152,8 +155,90 @@ const VOICES = {
 
 export default function VoiceTab() {
   const { config, updateConfig, hasPermission } = useConfig();
+  const { updateSettings, error, clearError } = useTenantSettings();
   const [sampleText, setSampleText] = useState(
     "Hello! Thank you for calling. How can I assist you today?",
+  );
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Clear error after 5 seconds
+  useEffect(() => {
+    if (error) {
+      const timeout = setTimeout(clearError, 5000);
+      return () => clearTimeout(timeout);
+    }
+  }, [error, clearError]);
+
+  // Debounced save to database
+  const saveToDatabase = useCallback(
+    async (voiceConfig: {
+      provider: "openai" | "elevenlabs" | "cartesia";
+      voice_id: string;
+      voice_name: string;
+      speaking_rate: number;
+      pitch: number;
+    }) => {
+      // Clear any existing debounce timer
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+
+      // Debounce: wait 500ms before saving
+      debounceRef.current = setTimeout(async () => {
+        setSaveStatus("saving");
+        try {
+          await updateSettings({ voice_config: voiceConfig });
+          setSaveStatus("saved");
+
+          // Reset to idle after 2 seconds
+          if (saveTimeoutRef.current) {
+            clearTimeout(saveTimeoutRef.current);
+          }
+          saveTimeoutRef.current = setTimeout(() => {
+            setSaveStatus("idle");
+          }, 2000);
+        } catch {
+          setSaveStatus("idle");
+        }
+      }, 500);
+    },
+    [updateSettings],
+  );
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  // Helper to update voice config and save to database
+  const updateVoice = useCallback(
+    (updates: {
+      provider?: "openai" | "elevenlabs" | "cartesia";
+      voiceId?: string;
+      voiceName?: string;
+      speakingRate?: number;
+      pitch?: number;
+    }) => {
+      if (!config) return;
+      const newVoice = { ...config.agentVoice, ...updates };
+      updateConfig("agentVoice", newVoice);
+      // Save to database - cast provider to correct type
+      saveToDatabase({
+        provider: newVoice.provider as "openai" | "elevenlabs" | "cartesia",
+        voice_id: newVoice.voiceId,
+        voice_name: newVoice.voiceName,
+        speaking_rate: newVoice.speakingRate,
+        pitch: newVoice.pitch,
+      });
+    },
+    [config, updateConfig, saveToDatabase],
   );
 
   if (!config) return null;
@@ -184,14 +269,38 @@ export default function VoiceTab() {
 
   return (
     <div className="max-w-2xl space-y-8">
-      {/* Header */}
-      <div>
-        <h3 className="text-lg font-semibold text-foreground">
-          Voice Settings
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          Configure how your AI agent sounds to callers
-        </p>
+      {/* Header with Save Status */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-foreground">
+            Voice Settings
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Configure how your AI agent sounds to callers
+          </p>
+        </div>
+
+        {/* Save Status Indicator */}
+        <div className="flex items-center gap-2">
+          {error && (
+            <div className="flex items-center gap-1.5 rounded-full bg-red-500/10 px-3 py-1 text-xs text-red-400">
+              <AlertCircle className="h-3 w-3" />
+              <span>Failed to save</span>
+            </div>
+          )}
+          {!error && saveStatus === "saving" && (
+            <div className="flex items-center gap-1.5 rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-400">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Saving...</span>
+            </div>
+          )}
+          {!error && saveStatus === "saved" && (
+            <div className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400">
+              <Check className="h-3 w-3" />
+              <span>Saved</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ================================================================== */}
@@ -221,8 +330,7 @@ export default function VoiceTab() {
                   key={provider.value}
                   type="button"
                   onClick={() =>
-                    updateConfig("agentVoice", {
-                      ...agentVoice,
+                    updateVoice({
                       provider: provider.value,
                       voiceId: VOICES[provider.value][0]?.id || "",
                       voiceName: VOICES[provider.value][0]?.name || "",
@@ -304,8 +412,7 @@ export default function VoiceTab() {
                     key={voice.id}
                     type="button"
                     onClick={() =>
-                      updateConfig("agentVoice", {
-                        ...agentVoice,
+                      updateVoice({
                         voiceId: voice.id,
                         voiceName: voice.name,
                       })
@@ -433,8 +540,7 @@ export default function VoiceTab() {
                   step="0.05"
                   value={agentVoice.speakingRate}
                   onChange={(e) =>
-                    updateConfig("agentVoice", {
-                      ...agentVoice,
+                    updateVoice({
                       speakingRate: parseFloat(e.target.value),
                     })
                   }
@@ -474,8 +580,7 @@ export default function VoiceTab() {
                   step="0.05"
                   value={agentVoice.pitch}
                   onChange={(e) =>
-                    updateConfig("agentVoice", {
-                      ...agentVoice,
+                    updateVoice({
                       pitch: parseFloat(e.target.value),
                     })
                   }
@@ -494,8 +599,7 @@ export default function VoiceTab() {
               <button
                 type="button"
                 onClick={() =>
-                  updateConfig("agentVoice", {
-                    ...agentVoice,
+                  updateVoice({
                     speakingRate: 1.0,
                     pitch: 1.0,
                   })

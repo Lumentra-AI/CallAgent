@@ -104,15 +104,27 @@ export async function getTenantByPhoneWithFallback(
     return cached;
   }
 
+  // Normalize phone number - ensure it has + prefix for US numbers
+  let normalized = phoneNumber.replace(/[^\d]/g, ""); // digits only
+  if (normalized.length === 10) {
+    normalized = "+1" + normalized;
+  } else if (normalized.length === 11 && normalized.startsWith("1")) {
+    normalized = "+" + normalized;
+  } else if (!phoneNumber.startsWith("+")) {
+    normalized = "+" + normalized;
+  } else {
+    normalized = phoneNumber;
+  }
+
   // Fallback to DB query
-  console.log("[CACHE] Cache miss, querying database for:", phoneNumber);
+  console.log("[CACHE] Cache miss, querying database for:", normalized);
 
   try {
     const db = getSupabase();
     const { data, error } = await db
       .from("tenants")
       .select("*")
-      .eq("phone_number", phoneNumber)
+      .eq("phone_number", normalized)
       .eq("is_active", true)
       .single();
 
@@ -187,8 +199,23 @@ export function getTenantCacheStats(): {
 
 /**
  * Normalize phone number for consistent lookup
+ * Ensures +1 prefix for US numbers
  */
 function normalizePhone(phone: string): string {
-  // Remove all non-digit characters except leading +
-  return phone.replace(/[^\d+]/g, "");
+  // Extract digits only
+  const digits = phone.replace(/[^\d]/g, "");
+
+  // Add proper prefix
+  if (digits.length === 10) {
+    return "+1" + digits; // US number without country code
+  } else if (digits.length === 11 && digits.startsWith("1")) {
+    return "+" + digits; // US number with country code but no +
+  }
+
+  // Already has + or international format
+  if (phone.startsWith("+")) {
+    return phone.replace(/[^\d+]/g, "");
+  }
+
+  return "+" + digits;
 }

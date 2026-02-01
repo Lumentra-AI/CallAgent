@@ -13,7 +13,7 @@
   "use strict";
 
   const WIDGET_VERSION = "1.0.0";
-  const DEFAULT_API_URL = "http://localhost:3001";
+  const DEFAULT_API_URL = "https://api.lumentraai.com";
 
   class LumentraChat {
     constructor(config) {

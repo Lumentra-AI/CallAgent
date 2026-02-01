@@ -555,6 +555,7 @@ export type SettingsTab =
   | "voice"
   | "greetings"
   | "responses"
+  | "instructions"
   | "hours"
   | "escalation"
   | "billing"
@@ -569,6 +570,7 @@ export const CUSTOMER_SETTINGS_TABS: SettingsTab[] = [
   "voice",
   "greetings",
   "responses",
+  "instructions",
   "hours",
   "escalation",
   "billing",

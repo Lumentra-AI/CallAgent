@@ -33,3 +33,7 @@ texput.log
 
 # local backups
 .git-dashboard-backup/
+
+# private docs (design plans, internal notes)
+docs/plans/
+hetzner/

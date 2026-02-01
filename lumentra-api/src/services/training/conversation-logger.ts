@@ -178,6 +178,51 @@ class ConversationLogger {
         m.content.toLowerCase().includes("representative"),
     );
 
+    // Convert camelCase finalData to snake_case for database
+    // The database uses snake_case columns but the interface uses camelCase
+    const snakeCaseFinalData: Record<string, unknown> = {};
+    if (finalData) {
+      if (finalData.durationSeconds !== undefined) {
+        snakeCaseFinalData.duration_seconds = finalData.durationSeconds;
+      }
+      if (finalData.outcomeSuccess !== undefined) {
+        snakeCaseFinalData.outcome_success = finalData.outcomeSuccess;
+      }
+      if (finalData.qualityScore !== undefined) {
+        snakeCaseFinalData.quality_score = finalData.qualityScore;
+      }
+      if (finalData.isComplete !== undefined) {
+        snakeCaseFinalData.is_complete = finalData.isComplete;
+      }
+      if (finalData.hasToolCalls !== undefined) {
+        snakeCaseFinalData.has_tool_calls = finalData.hasToolCalls;
+      }
+      if (finalData.hasEscalation !== undefined) {
+        snakeCaseFinalData.has_escalation = finalData.hasEscalation;
+      }
+      if (finalData.turnCount !== undefined) {
+        snakeCaseFinalData.turn_count = finalData.turnCount;
+      }
+      if (finalData.userTurns !== undefined) {
+        snakeCaseFinalData.user_turns = finalData.userTurns;
+      }
+      if (finalData.assistantTurns !== undefined) {
+        snakeCaseFinalData.assistant_turns = finalData.assistantTurns;
+      }
+      if (finalData.toolCallsCount !== undefined) {
+        snakeCaseFinalData.tool_calls_count = finalData.toolCallsCount;
+      }
+      if (finalData.totalTokensEstimate !== undefined) {
+        snakeCaseFinalData.total_tokens_estimate = finalData.totalTokensEstimate;
+      }
+      if (finalData.tags !== undefined) {
+        snakeCaseFinalData.tags = finalData.tags;
+      }
+      if (finalData.messages !== undefined) {
+        snakeCaseFinalData.messages = finalData.messages;
+      }
+    }
+
     const updateData = {
       messages: conversation.messages,
       turn_count: conversation.messages.length,
@@ -192,7 +237,7 @@ class ConversationLogger {
       quality_score: qualityScore,
       total_tokens_estimate: tokenEstimate,
       is_complete: true,
-      ...finalData,
+      ...snakeCaseFinalData,
     };
 
     const { error } = await getSupabase()

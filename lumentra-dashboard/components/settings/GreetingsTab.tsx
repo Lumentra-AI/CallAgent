@@ -1,9 +1,19 @@
 "use client";
 
-import React from "react";
+import React, { useCallback, useRef, useEffect, useState } from "react";
 import { useConfig } from "@/context/ConfigContext";
+import { useTenantSettings } from "@/hooks/useTenantSettings";
 import { Label } from "@/components/ui/label";
-import { MessageSquare, Sun, Moon, Gift, Clock, UserCheck } from "lucide-react";
+import {
+  MessageSquare,
+  Moon,
+  Gift,
+  Clock,
+  UserCheck,
+  Loader2,
+  Check,
+  AlertCircle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ============================================================================
@@ -64,25 +74,115 @@ const GREETING_FIELDS: GreetingField[] = [
 // GREETINGS TAB COMPONENT
 // ============================================================================
 
+// Map frontend greeting field names to database field names
+const GREETING_DB_MAP: Record<string, string> = {
+  standard: "greeting_standard",
+  afterHours: "greeting_after_hours",
+  returning: "greeting_returning",
+};
+
 export default function GreetingsTab() {
   const { config, updateConfig } = useConfig();
+  const { updateSettings, error, clearError } = useTenantSettings();
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Clear error after 5 seconds
+  useEffect(() => {
+    if (error) {
+      const timeout = setTimeout(clearError, 5000);
+      return () => clearTimeout(timeout);
+    }
+  }, [error, clearError]);
+
+  // Debounced save to database
+  const saveToDatabase = useCallback(
+    async (dbUpdates: Record<string, string | null>) => {
+      // Clear any existing debounce timer
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+
+      // Debounce: wait 500ms before saving
+      debounceRef.current = setTimeout(async () => {
+        setSaveStatus("saving");
+        try {
+          await updateSettings(dbUpdates);
+          setSaveStatus("saved");
+
+          // Reset to idle after 2 seconds
+          if (saveTimeoutRef.current) {
+            clearTimeout(saveTimeoutRef.current);
+          }
+          saveTimeoutRef.current = setTimeout(() => {
+            setSaveStatus("idle");
+          }, 2000);
+        } catch {
+          setSaveStatus("idle");
+        }
+      }, 500);
+    },
+    [updateSettings],
+  );
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   if (!config) return null;
 
   const { greetings } = config;
 
   const updateGreeting = (field: keyof typeof greetings, value: string) => {
+    // Update local state
     updateConfig("greetings", { ...greetings, [field]: value });
+
+    // Save to database if this field maps to a DB field
+    const dbField = GREETING_DB_MAP[field];
+    if (dbField) {
+      saveToDatabase({ [dbField]: value || null });
+    }
   };
 
   return (
     <div className="max-w-2xl space-y-8">
-      {/* Header */}
-      <div>
-        <h3 className="text-lg font-semibold text-white">Greetings</h3>
-        <p className="text-sm text-zinc-500">
-          Customize how your AI agent greets callers in different situations
-        </p>
+      {/* Header with Save Status */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-white">Greetings</h3>
+          <p className="text-sm text-zinc-500">
+            Customize how your AI agent greets callers in different situations
+          </p>
+        </div>
+
+        {/* Save Status Indicator */}
+        <div className="flex items-center gap-2">
+          {error && (
+            <div className="flex items-center gap-1.5 rounded-full bg-red-500/10 px-3 py-1 text-xs text-red-400">
+              <AlertCircle className="h-3 w-3" />
+              <span>Failed to save</span>
+            </div>
+          )}
+          {!error && saveStatus === "saving" && (
+            <div className="flex items-center gap-1.5 rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-400">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Saving...</span>
+            </div>
+          )}
+          {!error && saveStatus === "saved" && (
+            <div className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400">
+              <Check className="h-3 w-3" />
+              <span>Saved</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Variables Reference */}

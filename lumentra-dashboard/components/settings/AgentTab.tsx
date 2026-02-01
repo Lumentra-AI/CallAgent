@@ -1,10 +1,23 @@
 "use client";
 
-import React from "react";
+import React, { useCallback, useRef, useEffect, useState } from "react";
 import { useConfig } from "@/context/ConfigContext";
+import {
+  useTenantSettings,
+  type TenantSettings,
+} from "@/hooks/useTenantSettings";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { User, Smile, MessageCircle, Sparkles, Volume2 } from "lucide-react";
+import {
+  User,
+  Smile,
+  MessageCircle,
+  Sparkles,
+  Volume2,
+  Loader2,
+  Check,
+  AlertCircle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ============================================================================
@@ -60,23 +73,124 @@ const EMPATHY_OPTIONS = [
 
 export default function AgentTab() {
   const { config, updateConfig } = useConfig();
+  const { updateSettings, isSaving, error, clearError } = useTenantSettings();
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Clear error after 5 seconds
+  useEffect(() => {
+    if (error) {
+      const timeout = setTimeout(clearError, 5000);
+      return () => clearTimeout(timeout);
+    }
+  }, [error, clearError]);
+
+  // Debounced save to database
+  const saveToDatabase = useCallback(
+    async (updates: Partial<TenantSettings>) => {
+      // Clear any existing debounce timer
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+
+      // Debounce: wait 500ms before saving
+      debounceRef.current = setTimeout(async () => {
+        setSaveStatus("saving");
+        try {
+          await updateSettings(updates);
+          setSaveStatus("saved");
+
+          // Reset to idle after 2 seconds
+          if (saveTimeoutRef.current) {
+            clearTimeout(saveTimeoutRef.current);
+          }
+          saveTimeoutRef.current = setTimeout(() => {
+            setSaveStatus("idle");
+          }, 2000);
+        } catch {
+          setSaveStatus("idle");
+        }
+      }, 500);
+    },
+    [updateSettings],
+  );
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   if (!config) return null;
 
   const { agentName, agentPersonality } = config;
 
   const updatePersonality = (updates: Partial<typeof agentPersonality>) => {
-    updateConfig("agentPersonality", { ...agentPersonality, ...updates });
+    const newPersonality = { ...agentPersonality, ...updates };
+    updateConfig("agentPersonality", newPersonality);
+    // Also save to database - cast to correct types for API
+    saveToDatabase({
+      agent_personality: {
+        tone: newPersonality.tone as
+          | "professional"
+          | "friendly"
+          | "casual"
+          | "formal",
+        verbosity: newPersonality.verbosity as
+          | "concise"
+          | "balanced"
+          | "detailed",
+        empathy: newPersonality.empathy as "low" | "medium" | "high",
+        humor: newPersonality.humor,
+      },
+    });
+  };
+
+  const updateAgentName = (name: string) => {
+    updateConfig("agentName", name);
+    // Also save to database
+    saveToDatabase({ agent_name: name });
   };
 
   return (
     <div className="max-w-2xl space-y-8">
-      {/* Header */}
-      <div>
-        <h3 className="text-lg font-semibold text-white">Agent Personality</h3>
-        <p className="text-sm text-zinc-500">
-          Customize your AI agent&apos;s name and communication style
-        </p>
+      {/* Header with Save Status */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-white">
+            Agent Personality
+          </h3>
+          <p className="text-sm text-zinc-500">
+            Customize your AI agent&apos;s name and communication style
+          </p>
+        </div>
+
+        {/* Save Status Indicator */}
+        <div className="flex items-center gap-2">
+          {error && (
+            <div className="flex items-center gap-1.5 rounded-full bg-red-500/10 px-3 py-1 text-xs text-red-400">
+              <AlertCircle className="h-3 w-3" />
+              <span>Failed to save</span>
+            </div>
+          )}
+          {!error && saveStatus === "saving" && (
+            <div className="flex items-center gap-1.5 rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-400">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Saving...</span>
+            </div>
+          )}
+          {!error && saveStatus === "saved" && (
+            <div className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400">
+              <Check className="h-3 w-3" />
+              <span>Saved</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Agent Name */}
@@ -93,7 +207,7 @@ export default function AgentTab() {
             </div>
             <Input
               value={agentName}
-              onChange={(e) => updateConfig("agentName", e.target.value)}
+              onChange={(e) => updateAgentName(e.target.value)}
               placeholder="Lumentra"
               className="max-w-xs border-zinc-800 bg-zinc-950 text-white"
             />

@@ -150,6 +150,8 @@ export class CartesiaTTS {
       return;
     }
 
+    console.log(`[TTS] Chunk: "${text.substring(0, 40)}${text.length > 40 ? '...' : ''}" (continue: ${isContinuation})`);
+
     const request = {
       model_id: this.config.modelId,
       transcript: text,

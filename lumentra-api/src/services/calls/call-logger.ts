@@ -15,7 +15,8 @@ export interface CallRecord {
   ended_at: string;
   duration_seconds: number;
   ended_reason: string | null;
-  outcome_type: string | null;
+  // Must match database CHECK constraint: ('booking', 'inquiry', 'support', 'escalation', 'hangup')
+  outcome_type: "booking" | "inquiry" | "support" | "escalation" | "hangup" | null;
   outcome_success: boolean;
   transcript: string | null;
   summary: string | null;
@@ -169,17 +170,28 @@ function calculateSentiment(
   );
 }
 
+// Valid outcome types as defined in the database constraint
+// CHECK (outcome_type IN ('booking', 'inquiry', 'support', 'escalation', 'hangup'))
+type OutcomeType = "booking" | "inquiry" | "support" | "escalation" | "hangup";
+
 /**
  * Determine outcome type from conversation
+ * Returns only valid outcome_type values that match the database constraint
  */
 function determineOutcome(
   conversationHistory: ConversationMessage[],
   intents: string[],
-): { type: string; success: boolean } {
+  endReason: string,
+): { type: OutcomeType; success: boolean } {
   const fullText = conversationHistory
     .map((m) => m.content)
     .join(" ")
     .toLowerCase();
+
+  // Check for hangup (caller ended without completing)
+  if (endReason === "hangup" || endReason === "caller-hangup" || conversationHistory.length <= 2) {
+    return { type: "hangup", success: false };
+  }
 
   // Check for booking/reservation confirmation
   if (intents.includes("booking") || intents.includes("reservation")) {
@@ -198,7 +210,12 @@ function determineOutcome(
     return { type: "escalation", success: true };
   }
 
-  // Check for inquiry
+  // Check for support-related issues (complaints, problems)
+  if (intents.includes("complaint") || intents.includes("cancellation")) {
+    return { type: "support", success: true };
+  }
+
+  // Check for inquiry (pricing, availability, general questions)
   if (
     intents.includes("inquiry") ||
     intents.includes("pricing") ||
@@ -207,8 +224,8 @@ function determineOutcome(
     return { type: "inquiry", success: true };
   }
 
-  // Default
-  return { type: "general", success: true };
+  // Default to inquiry for general conversations (valid database value)
+  return { type: "inquiry", success: true };
 }
 
 /**
@@ -217,22 +234,32 @@ function determineOutcome(
 function generateSummary(
   conversationHistory: ConversationMessage[],
   intents: string[],
-  outcome: { type: string; success: boolean },
+  outcome: { type: OutcomeType; success: boolean },
 ): string {
   const turnCount = Math.ceil(conversationHistory.length / 2);
 
   let summary = "";
 
-  if (outcome.type === "booking" && outcome.success) {
-    summary = `Successful booking completed.`;
-  } else if (outcome.type === "booking" && !outcome.success) {
-    summary = `Booking inquiry - not completed.`;
-  } else if (outcome.type === "escalation") {
-    summary = `Call escalated to human agent.`;
-  } else if (outcome.type === "inquiry") {
-    summary = `General inquiry handled.`;
-  } else {
-    summary = `General call.`;
+  switch (outcome.type) {
+    case "booking":
+      summary = outcome.success
+        ? "Successful booking completed."
+        : "Booking inquiry - not completed.";
+      break;
+    case "escalation":
+      summary = "Call escalated to human agent.";
+      break;
+    case "support":
+      summary = "Support request handled.";
+      break;
+    case "inquiry":
+      summary = "Inquiry handled.";
+      break;
+    case "hangup":
+      summary = "Caller disconnected.";
+      break;
+    default:
+      summary = "Call completed.";
   }
 
   summary += ` ${turnCount} conversation turns.`;
@@ -261,7 +288,7 @@ export async function saveCallRecord(
     const transcript = buildTranscript(session.conversationHistory);
     const intents = detectIntents(session.conversationHistory);
     const sentiment = calculateSentiment(session.conversationHistory);
-    const outcome = determineOutcome(session.conversationHistory, intents);
+    const outcome = determineOutcome(session.conversationHistory, intents, endReason);
     const summary = generateSummary(
       session.conversationHistory,
       intents,

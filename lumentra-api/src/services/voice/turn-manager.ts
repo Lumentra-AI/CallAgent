@@ -1,5 +1,5 @@
 // Turn Manager
-// Orchestrates the voice conversation flow
+// Orchestrates the voice conversation flow with streaming LLM responses
 
 import {
   createTurnState,
@@ -12,10 +12,9 @@ import {
 import * as sessionManager from "./session-manager.js";
 import { buildSystemPrompt, cleanupCall } from "../gemini/chat.js";
 import {
-  chatWithFallback as multiProviderChat,
-  sendToolResults,
-  type LLMResponse,
-} from "../llm/multi-provider.js";
+  streamChatWithFallback,
+  streamToolResults,
+} from "../llm/streaming-provider.js";
 import { voiceAgentFunctions, executeTool } from "../gemini/tools.js";
 import {
   createTranscriber,
@@ -39,13 +38,55 @@ import {
 } from "../training/conversation-logger.js";
 import { saveCallRecord } from "../calls/call-logger.js";
 import { checkUtteranceCompleteness } from "../gemini/intent-check.js";
+import { createSentenceBuffer } from "./sentence-buffer.js";
 import type { Tenant } from "../../types/database.js";
 import type WebSocket from "ws";
 
-// Configuration
-const SILENCE_THRESHOLD_MS = 300; // Small buffer after Deepgram's utterance end
-const INCOMPLETE_WAIT_MS = 1200; // Wait longer when LLM detects incomplete thought
+// Configuration - REDUCED for lower latency
+const SILENCE_THRESHOLD_MS = 100; // Was 300 - reduced for faster response
+const INCOMPLETE_WAIT_MS = 400; // Was 1200 - reduced for faster response
 const MIN_TRANSCRIPT_LENGTH = 3; // Minimum characters before processing
+
+// Natural thinking fillers - short, human-like
+// These fire if LLM takes > FILLER_DELAY_MS to respond
+const THINKING_FILLERS = [
+  "Hmm...",
+  "Let me see...",
+  "Okay...",
+  "Alright...",
+  "Um...",
+];
+
+// Acknowledgment fillers - for statements/longer input
+const ACKNOWLEDGMENT_FILLERS = [
+  "I see.",
+  "Got it.",
+  "Right.",
+  "Okay.",
+  "Mm-hmm.",
+];
+
+// Processing fillers - for complex questions
+const PROCESSING_FILLERS = [
+  "Let me think...",
+  "Good question...",
+  "One moment...",
+  "Let me check...",
+];
+
+// Filler timing - randomized for naturalness
+const FILLER_DELAY_MIN_MS = 350;
+const FILLER_DELAY_MAX_MS = 500;
+const FILLER_SKIP_CHANCE = 0.15; // 15% chance to skip filler (natural variation)
+
+// Filler responses for tool calls - spoken immediately while tool executes
+const TOOL_FILLERS: Record<string, string> = {
+  check_availability: "Let me check that for you.",
+  create_booking: "One moment while I book that.",
+  get_business_hours: "Let me look that up.",
+  transfer_to_human: "I'll connect you with someone right away.",
+  default: "One moment please.",
+};
 
 export interface TurnManagerCallbacks {
   onResponse: (text: string) => void;
@@ -67,6 +108,14 @@ export class TurnManager {
   private silenceTimer: NodeJS.Timeout | null = null;
   private isProcessing = false;
   private escalationState: EscalationState;
+
+  // For parallel completeness checking
+  private pendingCompletenessCheck: Promise<{ isComplete: boolean; latencyMs: number }> | null = null;
+
+  // Natural filler tracking
+  private lastFillerUsed: string | null = null;
+  private fillerTimer: NodeJS.Timeout | null = null;
+  private fillerSpoken = false;
 
   constructor(
     callSid: string,
@@ -106,10 +155,9 @@ export class TurnManager {
         tenantId: this.tenant.id,
         sessionId: this.callSid,
         industry: this.tenant.industry,
-        scenarioType: "general", // Will be updated based on conversation
+        scenarioType: "general",
       });
 
-      // Log the system prompt
       await conversationLogger.addSystemMessage(
         this.callSid,
         this.systemPrompt,
@@ -182,7 +230,25 @@ export class TurnManager {
     });
 
     // Connect services
-    await Promise.all([this.tts.connect(), this.transcriber.start()]);
+    console.log(`[TURN] Connecting TTS and STT services...`);
+    const [ttsResult, sttResult] = await Promise.allSettled([
+      this.tts.connect(),
+      this.transcriber.start(),
+    ]);
+
+    if (ttsResult.status === "rejected") {
+      console.error(`[TURN] TTS connection failed:`, ttsResult.reason);
+      throw new Error("TTS initialization failed - cannot proceed without voice output");
+    }
+    console.log(`[TURN] TTS connected successfully`);
+
+    if (sttResult.status === "rejected") {
+      console.error(`[TURN] STT connection failed:`, sttResult.reason);
+      console.error(`[TURN] CRITICAL: Caller speech will NOT be recognized!`);
+      this.transcriber = null;
+    } else {
+      console.log(`[TURN] STT connected successfully - ready for speech recognition`);
+    }
 
     // Speak greeting and log it
     await this.speak(this.tenant.greeting_standard);
@@ -191,9 +257,21 @@ export class TurnManager {
     );
   }
 
+  private audioChunkCount = 0;
+  private lastAudioLogTime = 0;
+
   private handleIncomingAudio(audioBuffer: Buffer): void {
-    // Forward audio to STT
-    this.transcriber?.sendAudio(audioBuffer);
+    this.audioChunkCount++;
+
+    const now = Date.now();
+    if (now - this.lastAudioLogTime > 2000) {
+      console.log(`[TURN] Received ${this.audioChunkCount} audio chunks, STT active: ${!!this.transcriber}`);
+      this.lastAudioLogTime = now;
+    }
+
+    if (this.transcriber) {
+      this.transcriber.sendAudio(audioBuffer);
+    }
   }
 
   private handleTranscript(text: string, isFinal: boolean): void {
@@ -208,7 +286,11 @@ export class TurnManager {
     if (isFinal) {
       console.log(`[TURN] Final transcript: "${text}"`);
 
-      // Start silence timer - the actual completeness check happens in processUserTurn
+      // Start completeness check in parallel (don't await)
+      // This runs while we wait for the silence threshold
+      this.pendingCompletenessCheck = checkUtteranceCompleteness(text);
+
+      // Start silence timer
       this.silenceTimer = setTimeout(() => {
         this.processUserTurn();
       }, SILENCE_THRESHOLD_MS);
@@ -243,6 +325,10 @@ export class TurnManager {
     }
   }
 
+  /**
+   * Process user turn with STREAMING LLM response
+   * This is the core of the low-latency architecture
+   */
   private async processUserTurn(): Promise<void> {
     if (this.isProcessing) {
       console.log(`[TURN] Already processing, skipping`);
@@ -255,23 +341,28 @@ export class TurnManager {
       return;
     }
 
-    // Use LLM to check if user's utterance is complete
-    // This catches things like "I want to book for..." where user is still thinking
-    const completeness = await checkUtteranceCompleteness(transcript);
-
-    if (!completeness.isComplete) {
-      console.log(
-        `[TURN] Utterance incomplete, waiting for more: "${transcript}"`,
-      );
-      // Wait longer for user to finish their thought
-      this.silenceTimer = setTimeout(() => {
-        this.processUserTurn();
-      }, INCOMPLETE_WAIT_MS);
-      return;
+    // Use the parallel completeness check result if available
+    if (this.pendingCompletenessCheck) {
+      try {
+        const completeness = await this.pendingCompletenessCheck;
+        if (!completeness.isComplete) {
+          console.log(`[TURN] Utterance incomplete, waiting: "${transcript}"`);
+          this.silenceTimer = setTimeout(() => {
+            this.pendingCompletenessCheck = null; // Don't check again
+            this.processUserTurn();
+          }, INCOMPLETE_WAIT_MS);
+          return;
+        }
+      } catch (error) {
+        console.error(`[TURN] Completeness check failed, proceeding:`, error);
+      }
+      this.pendingCompletenessCheck = null;
     }
 
     this.isProcessing = true;
-    console.log(`[TURN] Processing complete utterance: "${transcript}"`);
+    this.fillerSpoken = false; // Reset for this turn
+    const startTime = Date.now();
+    console.log(`[TURN] Processing with streaming: "${transcript}"`);
 
     // Clear transcript buffer
     this.state = clearTranscript(this.state);
@@ -285,11 +376,7 @@ export class TurnManager {
     );
 
     try {
-      // Generate response using multi-provider LLM with fallback (Gemini -> OpenAI -> Groq)
-      const conversationHistory = sessionManager.getConversationHistory(
-        this.callSid,
-      );
-
+      const conversationHistory = sessionManager.getConversationHistory(this.callSid);
       const toolContext = {
         tenantId: this.tenant.id,
         callSid: this.callSid,
@@ -297,115 +384,172 @@ export class TurnManager {
         escalationPhone: this.tenant.escalation_phone,
       };
 
-      const startTime = Date.now();
-
-      // Use multi-provider fallback for resilience
-      let llmResponse: LLMResponse = await multiProviderChat({
+      // Stream the response
+      const stream = streamChatWithFallback({
         userMessage: transcript,
         conversationHistory,
         systemPrompt: this.systemPrompt,
         tools: voiceAgentFunctions,
       });
 
-      console.log(`[TURN] LLM response from ${llmResponse.provider}`);
-
-      // Handle tool calls if present
-      let responseText = llmResponse.text;
+      const sentenceBuffer = createSentenceBuffer();
+      let fullResponse = "";
+      let isFirstChunk = true;
+      let currentProvider = "unknown";
       let shouldEscalate = false;
-      let escalationReason: string | undefined;
 
-      if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
-        console.log(
-          `[TURN] Executing ${llmResponse.toolCalls.length} tool calls`,
-        );
+      // Start filler timer - will speak natural filler if LLM is slow
+      this.startFillerTimer(transcript);
 
-        const toolResults: Array<{
-          id: string;
-          name: string;
-          result: unknown;
-        }> = [];
+      for await (const chunk of stream) {
+        // Handle errors
+        if (chunk.type === "error") {
+          console.error(`[TURN] Stream error: ${chunk.error}`);
+          continue;
+        }
 
-        for (const tc of llmResponse.toolCalls) {
-          console.log(`[TURN] Executing tool: ${tc.name}`, tc.args);
+        // Track provider
+        if (chunk.provider) {
+          currentProvider = chunk.provider;
+        }
 
-          // Check for transfer request
-          if (tc.name === "transfer_to_human") {
+        // Handle tool calls - speak filler immediately
+        if (chunk.type === "tool_call" && chunk.toolCall) {
+          this.cancelFillerTimer(); // Cancel thinking filler, tool has its own
+          const { id, name, args } = chunk.toolCall;
+          console.log(`[TURN] Tool call: ${name}`, args);
+
+          // Speak filler IMMEDIATELY while tool executes
+          const filler = TOOL_FILLERS[name] || TOOL_FILLERS.default;
+          this.speakChunk(filler, false);
+
+          // Check for transfer
+          if (name === "transfer_to_human") {
             shouldEscalate = true;
-            escalationReason = "user_requested_transfer";
           }
 
-          const result = await executeTool(tc.name, tc.args, toolContext);
-          toolResults.push({
-            id: tc.id,
-            name: tc.name,
-            result,
-          });
+          // Execute tool
+          const result = await executeTool(name, args, toolContext);
 
-          // Check if booking was completed for escalation state
-          if (
-            tc.name === "create_booking" &&
-            (result as { success?: boolean })?.success
-          ) {
-            // Mark task completed in escalation state
+          // Track booking completion
+          if (name === "create_booking" && (result as { success?: boolean })?.success) {
             this.escalationState.taskCompleted = true;
+          }
+
+          // Stream tool result response
+          const toolResultStream = streamToolResults(
+            currentProvider,
+            {
+              userMessage: transcript,
+              conversationHistory,
+              systemPrompt: this.systemPrompt,
+              tools: voiceAgentFunctions,
+            },
+            [{ id, name, result }],
+          );
+
+          // Continue streaming from tool result (tool filler already spoken, so continue)
+          for await (const resultChunk of toolResultStream) {
+            if (resultChunk.type === "text" && resultChunk.content) {
+              fullResponse += resultChunk.content;
+
+              // Buffer and speak sentences as they complete
+              const sentences = sentenceBuffer.add(resultChunk.content);
+              for (const sentence of sentences) {
+                // Tool filler was spoken, so always continue
+                this.speakChunk(sentence, true);
+                isFirstChunk = false;
+              }
+            }
+          }
+
+          continue;
+        }
+
+        // Handle text chunks
+        if (chunk.type === "text" && chunk.content) {
+          fullResponse += chunk.content;
+
+          // Log first token latency and cancel filler timer
+          if (isFirstChunk) {
+            this.cancelFillerTimer(); // LLM responded fast, no filler needed
+            const ttft = Date.now() - startTime;
+            console.log(`[TURN] Time to first token: ${ttft}ms (${currentProvider})`);
+          }
+
+          // Buffer and speak sentences as they complete
+          const sentences = sentenceBuffer.add(chunk.content);
+          for (const sentence of sentences) {
+            const ttfs = Date.now() - startTime;
+            // If filler was spoken, continue from it; otherwise start fresh on first chunk
+            const shouldContinue = this.fillerSpoken || !isFirstChunk;
+            console.log(`[TURN] Speaking sentence (${ttfs}ms): "${sentence.substring(0, 40)}..." (continue: ${shouldContinue})`);
+            this.speakChunk(sentence, shouldContinue);
+            isFirstChunk = false;
           }
         }
 
-        // Send tool results back to get final response
-        const options = {
-          userMessage: transcript,
-          conversationHistory,
-          systemPrompt: this.systemPrompt,
-          tools: voiceAgentFunctions,
-        };
-
-        const finalResponse = await sendToolResults(
-          llmResponse.provider,
-          options,
-          toolResults,
-        );
-
-        responseText = finalResponse.text;
-        console.log(`[TURN] Final response from ${finalResponse.provider}`);
+        // Handle stream completion
+        if (chunk.type === "done") {
+          // Flush any remaining buffered text
+          const remaining = sentenceBuffer.flush();
+          if (remaining) {
+            const ttfs = Date.now() - startTime;
+            const shouldContinue = this.fillerSpoken || !isFirstChunk;
+            console.log(`[TURN] Flushing final (${ttfs}ms): "${remaining.substring(0, 40)}..." (continue: ${shouldContinue})`);
+            this.speakChunk(remaining, shouldContinue);
+          }
+        }
       }
 
-      const latencyMs = Date.now() - startTime;
+      const totalLatency = Date.now() - startTime;
       console.log(
-        `[TURN] Response: "${responseText.substring(0, 100)}..." ` +
-          `(provider: ${llmResponse.provider}, latency: ${latencyMs}ms)`,
+        `[TURN] Response complete: "${fullResponse.substring(0, 100)}..." ` +
+          `(provider: ${currentProvider}, total: ${totalLatency}ms)`,
       );
 
       // Add assistant response to history
-      sessionManager.addMessage(this.callSid, "assistant", responseText);
+      if (fullResponse) {
+        sessionManager.addMessage(this.callSid, "assistant", fullResponse);
 
-      // Log assistant turn for training data
-      addAssistantTurn(this.callSid, responseText).catch((err) =>
-        console.error("[TRAINING] Failed to log assistant turn:", err),
-      );
+        // Log assistant turn for training data
+        addAssistantTurn(this.callSid, fullResponse).catch((err) =>
+          console.error("[TRAINING] Failed to log assistant turn:", err),
+        );
 
-      // Handle escalation/transfer
-      if (shouldEscalate) {
-        console.log(`[TURN] Escalation triggered: ${escalationReason}`);
-        if (this.tenant.escalation_phone) {
-          this.callbacks.onTransferRequested(this.tenant.escalation_phone);
-        }
+        this.callbacks.onResponse(fullResponse);
       }
 
-      // Speak response
-      await this.speak(responseText);
-      this.callbacks.onResponse(responseText);
+      // Handle escalation/transfer
+      if (shouldEscalate && this.tenant.escalation_phone) {
+        console.log(`[TURN] Escalation triggered`);
+        this.callbacks.onTransferRequested(this.tenant.escalation_phone);
+      }
+
     } catch (error) {
       console.error(`[TURN] Error processing turn:`, error);
 
-      // Fallback response - only reached if ALL providers fail
-      const fallback =
-        "I'm sorry, I'm having trouble processing that. Could you please repeat?";
+      // Fallback response
+      const fallback = "I'm sorry, I'm having trouble processing that. Could you please repeat?";
       await this.speak(fallback);
     } finally {
       this.isProcessing = false;
     }
   }
 
+  /**
+   * Speak a chunk of text using streaming TTS
+   */
+  private speakChunk(text: string, isContinuation: boolean): void {
+    if (!this.tts || !text.trim()) return;
+
+    sessionManager.setPlaying(this.callSid, true);
+    this.tts.speakChunk(text, isContinuation);
+  }
+
+  /**
+   * Speak full text (for greetings, etc.)
+   */
   private async speak(text: string): Promise<void> {
     if (!this.tts) {
       console.warn(`[TURN] TTS not initialized`);
@@ -416,17 +560,76 @@ export class TurnManager {
     this.tts.speak(text);
   }
 
+  /**
+   * Select a natural filler based on input context
+   * Avoids repeating the same filler twice in a row
+   */
+  private selectFiller(userInput: string): string {
+    // Categorize input to pick appropriate filler type
+    const isQuestion = userInput.includes("?") ||
+      /^(what|where|when|why|how|can|do|is|are|will|would|could)\b/i.test(userInput);
+    const isLong = userInput.length > 30;
+
+    let pool: string[];
+    if (isQuestion && isLong) {
+      pool = PROCESSING_FILLERS;
+    } else if (isQuestion) {
+      pool = THINKING_FILLERS;
+    } else if (isLong) {
+      pool = ACKNOWLEDGMENT_FILLERS;
+    } else {
+      pool = THINKING_FILLERS;
+    }
+
+    // Filter out last used filler to avoid repetition
+    const available = pool.filter(f => f !== this.lastFillerUsed);
+    const selected = available[Math.floor(Math.random() * available.length)] || pool[0];
+
+    this.lastFillerUsed = selected;
+    return selected;
+  }
+
+  /**
+   * Start filler timer - will speak a natural filler if LLM is slow
+   */
+  private startFillerTimer(userInput: string): void {
+    // Random chance to skip filler (natural variation)
+    if (Math.random() < FILLER_SKIP_CHANCE) {
+      return;
+    }
+
+    // Randomize delay for naturalness
+    const delay = FILLER_DELAY_MIN_MS + Math.random() * (FILLER_DELAY_MAX_MS - FILLER_DELAY_MIN_MS);
+
+    this.fillerSpoken = false;
+    this.fillerTimer = setTimeout(() => {
+      if (!this.fillerSpoken) {
+        const filler = this.selectFiller(userInput);
+        console.log(`[TURN] Speaking filler: "${filler}"`);
+        this.speakChunk(filler, false);
+        this.fillerSpoken = true;
+      }
+    }, delay);
+  }
+
+  /**
+   * Cancel filler timer (called when LLM responds quickly)
+   */
+  private cancelFillerTimer(): void {
+    if (this.fillerTimer) {
+      clearTimeout(this.fillerTimer);
+      this.fillerTimer = null;
+    }
+  }
+
   private checkForPendingResponse(): void {
-    // Check if we need to process another turn
     const session = sessionManager.getSession(this.callSid);
     if (session?.isSpeaking) {
-      // User is speaking, wait
       return;
     }
 
     const transcript = getCompleteTranscript(this.state);
     if (transcript.length >= MIN_TRANSCRIPT_LENGTH) {
-      // Process pending transcript
       this.processUserTurn();
     }
   }
@@ -439,31 +642,29 @@ export class TurnManager {
       this.silenceTimer = null;
     }
 
+    this.cancelFillerTimer();
+
     await Promise.all([this.transcriber?.stop(), this.tts?.disconnect()]);
 
-    // Get session before ending it
     const session = sessionManager.getSession(this.callSid);
 
-    // Save call record to database for analytics and review
     if (session) {
       saveCallRecord(session, endReason).catch((err) =>
         console.error("[CALL-LOGGER] Failed to save call record:", err),
       );
     }
 
-    // End conversation logging with final metadata
     const duration = session
       ? Math.floor((Date.now() - session.startTime.getTime()) / 1000)
       : 0;
 
     endConversationLog(this.callSid, {
       durationSeconds: duration,
-      outcomeSuccess: true, // Can be updated based on call outcome
+      outcomeSuccess: true,
     }).catch((err) =>
       console.error("[TRAINING] Failed to end conversation log:", err),
     );
 
-    // Cleanup call state (retry counters, etc.)
     cleanupCall(this.callSid);
     sessionManager.endSession(this.callSid);
     this.callbacks.onCallEnd(endReason);

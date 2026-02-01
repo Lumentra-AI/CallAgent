@@ -98,6 +98,16 @@ if $START_API; then
     else
         log_api "Starting API server..."
         cd lumentra-api
+
+        # Load nvm and use correct node version (requires node >= 22)
+        export NVM_DIR="$HOME/.nvm"
+        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+        if [ -f .nvmrc ]; then
+            nvm use > /dev/null 2>&1 || nvm install > /dev/null 2>&1
+            log_api "Using node $(node --version)"
+        fi
+
         npm run dev > /tmp/lumentra-api.log 2>&1 &
         API_PID=$!
         cd ..

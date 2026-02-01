@@ -44,10 +44,10 @@ function getSessionId(): string {
   return sessionId;
 }
 
-// API configuration - production Railway URL as fallback
+// API configuration - production URL as fallback
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
-  "https://lumentra-api-production.up.railway.app";
+  "https://api.lumentraai.com";
 const TENANT_ID =
   process.env.NEXT_PUBLIC_TENANT_ID || "deadbeef-cafe-4000-a000-000000000002";
 

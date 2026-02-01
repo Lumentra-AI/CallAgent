@@ -29,6 +29,7 @@ import {
 import { initTenantCache } from "./services/database/tenant-cache.js";
 import { startScheduler } from "./jobs/scheduler.js";
 import { authMiddleware, rateLimit } from "./middleware/index.js";
+import { verifyDeepgramApiKey, deepgramClient } from "./services/deepgram/client.js";
 
 const app = new Hono();
 
@@ -41,7 +42,14 @@ app.use(
     origin: (origin) => {
       const allowed = process.env.FRONTEND_URL || "http://localhost:3000";
       const allowedOrigins = allowed.split(",").map((o) => o.trim());
-      // Allow localhost on any port for development
+      const isProduction = process.env.NODE_ENV === "production";
+
+      // In production, only allow configured origins
+      if (isProduction) {
+        return allowedOrigins.includes(origin || "") ? origin : null;
+      }
+
+      // In development, allow localhost on any port
       if (origin && origin.startsWith("http://localhost:")) {
         return origin;
       }
@@ -55,6 +63,7 @@ app.use(
       "X-User-ID",
       "X-User-Name",
     ],
+    credentials: true,
   }),
 );
 
@@ -120,6 +129,21 @@ const port = parseInt(process.env.PORT || "3001", 10);
 
 async function start() {
   console.log("[STARTUP] Initializing Lumentra API...");
+
+  // Verify Deepgram API key at startup
+  console.log("[STARTUP] Verifying Deepgram STT connection...");
+  if (!deepgramClient) {
+    console.error("[STARTUP] WARNING: Deepgram client not initialized - STT will not work!");
+    console.error("[STARTUP] Check that DEEPGRAM_API_KEY is set correctly in .env");
+  } else {
+    const dgResult = await verifyDeepgramApiKey();
+    if (dgResult.valid) {
+      console.log("[STARTUP] Deepgram API key verified successfully");
+    } else {
+      console.error(`[STARTUP] WARNING: Deepgram API key verification failed: ${dgResult.error}`);
+      console.error("[STARTUP] STT may not work during calls. Check your API key at https://console.deepgram.com");
+    }
+  }
 
   // Initialize tenant cache for low-latency webhook responses
   await initTenantCache();

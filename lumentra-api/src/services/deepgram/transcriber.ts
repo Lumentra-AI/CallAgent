@@ -1,13 +1,15 @@
 // Deepgram Real-time Transcriber
 // Handles streaming audio transcription with VAD
 
+import { createClient } from "@deepgram/sdk";
 import {
   deepgramClient,
   defaultDeepgramConfig,
   LiveTranscriptionEvents,
+  verifyDeepgramApiKey,
 } from "./client.js";
 import type { DeepgramConfig, DeepgramTranscript } from "../../types/voice.js";
-import type { LiveClient } from "@deepgram/sdk";
+import type { LiveClient, DeepgramClient } from "@deepgram/sdk";
 
 export interface TranscriberCallbacks {
   onTranscript: (text: string, isFinal: boolean) => void;
@@ -26,6 +28,7 @@ const RECONNECT_CONFIG = {
 
 export class DeepgramTranscriber {
   private connection: LiveClient | null = null;
+  private client: DeepgramClient | null = null; // Fresh client per transcriber
   private callbacks: TranscriberCallbacks;
   private config: DeepgramConfig;
   private isOpen = false;
@@ -41,11 +44,23 @@ export class DeepgramTranscriber {
   ) {
     this.callbacks = callbacks;
     this.config = { ...defaultDeepgramConfig, ...config };
+
+    // Create a fresh client for each transcriber instance
+    // This avoids potential issues with the singleton pattern
+    const apiKey = process.env.DEEPGRAM_API_KEY;
+    if (apiKey) {
+      this.client = createClient(apiKey);
+    }
   }
 
   async start(): Promise<void> {
-    if (!deepgramClient) {
-      throw new Error("Deepgram client not initialized - missing API key");
+    // Use fresh client per instance, fallback to singleton
+    const client = this.client || deepgramClient;
+
+    if (!client) {
+      const msg = "Deepgram client not initialized - check DEEPGRAM_API_KEY environment variable";
+      console.error(`[TRANSCRIBER] ${msg}`);
+      throw new Error(msg);
     }
 
     if (this.connection) {
@@ -58,7 +73,7 @@ export class DeepgramTranscriber {
     console.log("[TRANSCRIBER] Starting Deepgram connection...");
 
     try {
-      this.connection = deepgramClient.listen.live({
+      this.connection = client.listen.live({
         model: this.config.model,
         language: this.config.language,
         punctuate: this.config.punctuate,
@@ -76,7 +91,7 @@ export class DeepgramTranscriber {
       // Wait for connection to open
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
-          reject(new Error("Deepgram connection timeout"));
+          reject(new Error("Deepgram connection timeout after 5 seconds"));
         }, 5000);
 
         this.connection!.on(LiveTranscriptionEvents.Open, () => {
@@ -98,8 +113,23 @@ export class DeepgramTranscriber {
           this.connection.keepAlive();
         }
       }, 10000);
-    } catch (error) {
-      console.error("[TRANSCRIBER] Failed to start:", error);
+    } catch (error: unknown) {
+      // Provide actionable error messages
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      if (errorMessage.includes("non-101") || errorMessage.includes("401") || errorMessage.includes("403")) {
+        console.error("[TRANSCRIBER] AUTHENTICATION FAILED - Your Deepgram API key is invalid, expired, or has no credits");
+        console.error("[TRANSCRIBER] Please verify your API key at https://console.deepgram.com");
+
+        // Verify the key to get more details
+        const verification = await verifyDeepgramApiKey();
+        if (!verification.valid) {
+          console.error(`[TRANSCRIBER] API key verification: ${verification.error}`);
+        }
+      } else {
+        console.error("[TRANSCRIBER] Failed to start:", error);
+      }
+
       throw error;
     }
   }
