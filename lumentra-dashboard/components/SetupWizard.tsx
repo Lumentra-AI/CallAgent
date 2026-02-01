@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useConfig } from "@/context/ConfigContext";
 import {
   INDUSTRY_PRESETS,
@@ -119,6 +120,7 @@ const CATEGORY_ICONS: Record<IndustryCategory, React.ElementType> = {
 // ============================================================================
 
 export default function SetupWizard() {
+  const router = useRouter();
   const { saveConfig } = useConfig();
   const [step, setStep] = useState(1);
   const [isLaunching, setIsLaunching] = useState(false);
@@ -151,7 +153,7 @@ export default function SetupWizard() {
     // Create config from preset
     const config = createDefaultConfig(industry);
 
-    // Small delay for animation
+    // Small delay for animation, then save and redirect
     setTimeout(() => {
       saveConfig({
         ...config,
@@ -160,8 +162,9 @@ export default function SetupWizard() {
         agentName: agentName || "Lumentra",
         isConfigured: true,
       });
+      router.push("/dashboard");
     }, 1500);
-  }, [industry, businessName, agentName, saveConfig]);
+  }, [industry, businessName, agentName, saveConfig, router]);
 
   const canProceed = useCallback(() => {
     switch (step) {
