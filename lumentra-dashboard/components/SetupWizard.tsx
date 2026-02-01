@@ -3,6 +3,7 @@
 import React, { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useConfig } from "@/context/ConfigContext";
+import { useTenant } from "@/context/TenantContext";
 import { post } from "@/lib/api/client";
 import {
   INDUSTRY_PRESETS,
@@ -123,6 +124,7 @@ const CATEGORY_ICONS: Record<IndustryCategory, React.ElementType> = {
 export default function SetupWizard() {
   const router = useRouter();
   const { saveConfig } = useConfig();
+  const { refreshTenants } = useTenant();
   const [step, setStep] = useState(1);
   const [isLaunching, setIsLaunching] = useState(false);
   const [showAllIndustries, setShowAllIndustries] = useState(false);
@@ -163,6 +165,9 @@ export default function SetupWizard() {
         agent_name: agentName || "Lumentra",
       });
 
+      // Refresh tenants so dashboard knows we have one now
+      await refreshTenants();
+
       // Also save local config
       const config = createDefaultConfig(industry);
       saveConfig({
@@ -179,7 +184,15 @@ export default function SetupWizard() {
       setError(err instanceof Error ? err.message : "Failed to create tenant");
       setIsLaunching(false);
     }
-  }, [industry, businessName, phoneNumber, agentName, saveConfig, router]);
+  }, [
+    industry,
+    businessName,
+    phoneNumber,
+    agentName,
+    saveConfig,
+    router,
+    refreshTenants,
+  ]);
 
   const canProceed = useCallback(() => {
     switch (step) {
