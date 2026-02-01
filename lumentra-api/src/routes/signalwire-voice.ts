@@ -6,7 +6,7 @@ import {
   generateStreamXml,
   generateTransferXml,
 } from "../services/signalwire/client.js";
-import { getTenantByPhoneWithFallback } from "../services/database/tenant-cache.js";
+import { getTenantByPhoneWithFallback, getTenantByPhone, getTenantCacheStats } from "../services/database/tenant-cache.js";
 
 const signalwireVoice = new Hono();
 
@@ -149,6 +149,28 @@ signalwireVoice.get("/health", (c) => {
   return c.json({
     provider: "signalwire",
     enabled: true,
+  });
+});
+
+/**
+ * Debug endpoint to test tenant lookup
+ * GET /signalwire/debug?phone=+19458001233
+ */
+signalwireVoice.get("/debug", async (c) => {
+  const phone = c.req.query("phone");
+  if (!phone) {
+    return c.json({ error: "phone query param required" }, 400);
+  }
+
+  const cacheStats = getTenantCacheStats();
+  const cachedTenant = getTenantByPhone(phone);
+  const dbTenant = await getTenantByPhoneWithFallback(phone);
+
+  return c.json({
+    input: phone,
+    cacheStats,
+    cachedResult: cachedTenant ? { id: cachedTenant.id, name: cachedTenant.business_name, phone: cachedTenant.phone_number } : null,
+    dbResult: dbTenant ? { id: dbTenant.id, name: dbTenant.business_name, phone: dbTenant.phone_number } : null,
   });
 });
 
