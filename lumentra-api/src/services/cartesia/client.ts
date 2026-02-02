@@ -43,7 +43,7 @@ export const defaultCartesiaConfig: CartesiaConfig = {
 // Voice controls matching Cartesia playground settings
 export const voiceControls = {
   speed: "normal" as const,
-  emotion: ["positivity:medium"] as const, // Moderate warmth - sounds human
+  emotion: ["positivity"] as const, // Default level warmth - sounds human
 };
 
 // WebSocket URL for streaming TTS
