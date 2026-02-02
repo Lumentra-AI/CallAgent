@@ -28,6 +28,7 @@ import { integrationsRoutes } from "./routes/integrations.js";
 import { phoneConfigRoutes } from "./routes/phone-config.js";
 import { escalationRoutes } from "./routes/escalation.js";
 import { promotionsRoutes } from "./routes/promotions.js";
+import { pendingBookingsRoutes } from "./routes/pending-bookings.js";
 import {
   handleSignalWireStream,
   isSignalWireStreamRequest,
@@ -113,6 +114,7 @@ app.route("/api/integrations", integrationsRoutes);
 app.route("/api/phone", phoneConfigRoutes);
 app.route("/api/escalation", escalationRoutes);
 app.route("/api/promotions", promotionsRoutes);
+app.route("/api/pending-bookings", pendingBookingsRoutes);
 
 // Root
 app.get("/", (c) => {
