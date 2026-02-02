@@ -31,7 +31,7 @@ export const cartesiaVoices = {
 
 // Default configuration for phone calls (mu-law 8kHz)
 export const defaultCartesiaConfig: CartesiaConfig = {
-  modelId: "sonic-english", // Good quality
+  modelId: "sonic-3", // Best quality - natural emotions, laughter
   voiceId: cartesiaVoices.katie, // Friendly fixer - natural sounding
   outputFormat: {
     container: "raw",
