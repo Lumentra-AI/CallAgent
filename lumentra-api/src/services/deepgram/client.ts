@@ -59,7 +59,6 @@ export async function verifyDeepgramApiKey(): Promise<{ valid: boolean; error?: 
 }
 
 // Default configuration for phone calls - OPTIMIZED FOR LOW LATENCY
-// Using 24kHz Linear PCM for high quality audio (matches SignalWire L16@24000h codec)
 export const defaultDeepgramConfig: DeepgramConfig = {
   model: "nova-2-phonecall",
   language: "en-US",
@@ -67,8 +66,8 @@ export const defaultDeepgramConfig: DeepgramConfig = {
   interimResults: true,
   utteranceEndMs: 1000, // Minimum allowed value (Deepgram rejects <1000)
   vadEvents: true,
-  encoding: "linear16", // 16-bit Linear PCM (high quality)
-  sampleRate: 24000, // 24kHz - matches SignalWire L16@24000h codec
+  encoding: "mulaw", // Standard telephony codec
+  sampleRate: 8000, // 8kHz - standard for phone calls
   channels: 1,
   endpointing: 500, // Silence detection - 500ms balances responsiveness vs cutting off speech
 };
