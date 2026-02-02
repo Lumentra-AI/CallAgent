@@ -96,3 +96,26 @@ jobs:
             exit 1
           fi
           echo "No hardcoded secrets found"
+
+  deploy:
+    name: Deploy to Coolify
+    runs-on: ubuntu-latest
+    needs: [api-checks, dashboard-checks, security-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Deploy API
+        run: |
+          curl -X GET "${{ secrets.COOLIFY_WEBHOOK_API }}" \
+            -H "Accept: application/json" \
+            --fail --silent --show-error
+        env:
+          COOLIFY_WEBHOOK_API: ${{ secrets.COOLIFY_WEBHOOK_API }}
+
+      - name: Deploy Dashboard
+        run: |
+          curl -X GET "${{ secrets.COOLIFY_WEBHOOK_DASHBOARD }}" \
+            -H "Accept: application/json" \
+            --fail --silent --show-error
+        env:
+          COOLIFY_WEBHOOK_DASHBOARD: ${{ secrets.COOLIFY_WEBHOOK_DASHBOARD }}
