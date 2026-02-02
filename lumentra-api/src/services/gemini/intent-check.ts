@@ -6,6 +6,9 @@ import { genAI } from "./client.js";
 // Lightweight model for quick checks (lower latency than main model)
 const QUICK_MODEL = "gemini-2.0-flash-lite";
 
+// Maximum time to wait for intent check before assuming complete
+const INTENT_TIMEOUT_MS = 500;
+
 const COMPLETENESS_PROMPT = `You are analyzing a phone call transcript. Determine if the caller has finished their thought or is still thinking/speaking.
 
 RESPOND WITH ONLY ONE WORD: "complete" or "incomplete"
@@ -74,15 +77,31 @@ export async function checkUtteranceCompleteness(
     });
 
     const prompt = COMPLETENESS_PROMPT.replace("{utterance}", trimmed);
-    const result = await model.generateContent(prompt);
-    const response = result.response.text().toLowerCase().trim();
+
+    // Race between LLM call and timeout - don't block on slow API
+    const timeoutPromise = new Promise<null>((resolve) =>
+      setTimeout(() => resolve(null), INTENT_TIMEOUT_MS)
+    );
+
+    const result = await Promise.race([
+      model.generateContent(prompt),
+      timeoutPromise,
+    ]);
 
     const latencyMs = Date.now() - startTime;
+
+    // If timeout hit, assume complete to avoid blocking
+    if (result === null) {
+      console.log(`[INTENT] "${trimmed.substring(0, 30)}..." -> TIMEOUT (${latencyMs}ms), assuming complete`);
+      return { isComplete: true, latencyMs };
+    }
+
+    const response = result.response.text().toLowerCase().trim();
     const isComplete =
       response.includes("complete") && !response.includes("incomplete");
 
     console.log(
-      `[INTENT] "${trimmed.substring(0, 50)}..." -> ${isComplete ? "complete" : "incomplete"} (${latencyMs}ms)`,
+      `[INTENT] "${trimmed.substring(0, 30)}..." -> ${isComplete ? "complete" : "incomplete"} (${latencyMs}ms)`,
     );
 
     return { isComplete, latencyMs };

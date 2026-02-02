@@ -117,6 +117,9 @@ export class TurnManager {
   private fillerTimer: NodeJS.Timeout | null = null;
   private fillerSpoken = false;
 
+  // Barge-in debounce - only interrupt TTS once per playback
+  private bargeInHandled = false;
+
   constructor(
     callSid: string,
     tenant: Tenant,
@@ -176,6 +179,10 @@ export class TurnManager {
     this.mediaHandler = createMediaStreamHandler(ws, {
       onStart: (event) => {
         console.log(`[TURN] Media stream started for ${this.callSid}`);
+        // Log the actual audio format SignalWire is sending
+        if (event.mediaFormat) {
+          console.log(`[TURN] Audio format: ${event.mediaFormat.encoding} @ ${event.mediaFormat.sampleRate}Hz`);
+        }
         sessionManager.updateSession(this.callSid, {
           streamSid: event.streamSid,
         });
@@ -301,10 +308,11 @@ export class TurnManager {
     console.log(`[TURN] User started speaking`);
     sessionManager.setSpeaking(this.callSid, true);
 
-    // Check for barge-in (interrupt TTS)
+    // Check for barge-in (interrupt TTS) - only once per TTS playback
     const session = sessionManager.getSession(this.callSid);
-    if (session?.isPlaying) {
+    if (session?.isPlaying && !this.bargeInHandled) {
       console.log(`[TURN] Barge-in detected, interrupting TTS`);
+      this.bargeInHandled = true; // Prevent repeated interrupts
       sessionManager.requestInterrupt(this.callSid);
       this.tts?.cancel();
       this.mediaHandler?.clearAudio();
@@ -544,6 +552,7 @@ export class TurnManager {
     if (!this.tts || !text.trim()) return;
 
     sessionManager.setPlaying(this.callSid, true);
+    this.bargeInHandled = false; // Reset barge-in flag for new TTS playback
     this.tts.speakChunk(text, isContinuation);
   }
 
@@ -557,6 +566,7 @@ export class TurnManager {
     }
 
     sessionManager.setPlaying(this.callSid, true);
+    this.bargeInHandled = false; // Reset barge-in flag for new TTS playback
     this.tts.speak(text);
   }
 
