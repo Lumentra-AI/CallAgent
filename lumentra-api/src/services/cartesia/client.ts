@@ -29,14 +29,14 @@ export const cartesiaVoices = {
   michael: "d46abd1d-2f43-4e2b-86ee-e9b9e8f3a4e7", // Friendly, warm
 } as const;
 
-// Default configuration for phone calls (mu-law 8kHz)
+// Default configuration for phone calls (24kHz Linear PCM for high quality)
 export const defaultCartesiaConfig: CartesiaConfig = {
   modelId: "sonic-3", // Best quality - natural emotions, laughter
   voiceId: cartesiaVoices.katie, // Friendly fixer - natural sounding
   outputFormat: {
     container: "raw",
-    encoding: "pcm_mulaw",
-    sampleRate: 8000,
+    encoding: "pcm_s16le", // 16-bit Linear PCM (CD quality)
+    sampleRate: 24000, // 24kHz - matches SignalWire L16@24000h codec
   },
 };
 

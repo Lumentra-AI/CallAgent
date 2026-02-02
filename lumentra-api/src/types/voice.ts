@@ -212,8 +212,8 @@ export interface CartesiaConfig {
   voiceId: string;
   outputFormat: {
     container: "raw";
-    encoding: "pcm_mulaw";
-    sampleRate: 8000;
+    encoding: "pcm_mulaw" | "pcm_s16le";
+    sampleRate: 8000 | 16000 | 24000 | 44100 | 48000;
   };
 }
 

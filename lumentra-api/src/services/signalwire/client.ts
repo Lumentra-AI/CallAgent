@@ -37,10 +37,11 @@ export function generateStreamXml(websocketUrl: string): string {
   // SignalWire uses TwiML-compatible XML
   // URL must be XML-escaped since & is used in query params
   const escapedUrl = escapeXmlAttr(websocketUrl);
+  // Use L16@24000h codec for CD-quality audio (vs 8kHz mu-law telephone quality)
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
-    <Stream url="${escapedUrl}">
+    <Stream url="${escapedUrl}" codec="L16@24000h">
       <Parameter name="source" value="lumentra"/>
     </Stream>
   </Connect>

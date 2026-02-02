@@ -127,14 +127,14 @@ export function createStreamingTTS(
 
       // Stream to Cartesia with context for consistent voice
       const message = {
-        model_id: config.modelId || "sonic-english",
+        model_id: config.modelId || "sonic-3",
         transcript: text,
         voice: { mode: "id", id: config.voiceId },
         context_id: contextId,
         output_format: {
           container: "raw",
-          encoding: "pcm_mulaw",
-          sample_rate: config.sampleRate || 8000,
+          encoding: "pcm_s16le", // 16-bit Linear PCM (high quality)
+          sample_rate: config.sampleRate || 24000, // 24kHz for SignalWire L16@24000h
         },
         continue: textBuffer.length > 0,
       };
