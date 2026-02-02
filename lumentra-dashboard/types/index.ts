@@ -615,3 +615,201 @@ export interface DashboardMetric {
   icon: string;
   trend: string;
 }
+
+// ============================================================================
+// SETUP WIZARD TYPES
+// ============================================================================
+
+export type SetupStep =
+  | "business"
+  | "capabilities"
+  | "details"
+  | "integrations"
+  | "assistant"
+  | "phone"
+  | "hours"
+  | "escalation"
+  | "review";
+
+export type TenantStatus = "draft" | "active" | "suspended";
+
+export type PhoneSetupType = "new" | "port" | "forward";
+
+export type PhoneStatus =
+  | "pending"
+  | "active"
+  | "porting"
+  | "porting_with_temp"
+  | "failed";
+
+export type PortStatus =
+  | "draft"
+  | "submitted"
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "completed";
+
+export type IntegrationStatus = "active" | "expired" | "revoked" | "error";
+
+export type IntegrationProvider =
+  | "google_calendar"
+  | "outlook"
+  | "calendly"
+  | "acuity"
+  | "square"
+  | "vagaro"
+  | "mindbody"
+  | "toast"
+  | "opentable";
+
+export type MentionBehavior = "always" | "relevant" | "interested";
+
+export type ContactAvailability = "business_hours" | "always" | "custom";
+
+export type TransferType = "warm" | "cold" | "callback";
+
+export type NoAnswerBehavior =
+  | "next_contact"
+  | "message"
+  | "retry"
+  | "voicemail";
+
+export type BookingStatus = "pending" | "confirmed" | "rejected" | "cancelled";
+
+export interface TenantCapability {
+  id: string;
+  tenant_id: string;
+  capability: string;
+  config: Record<string, unknown>;
+  is_enabled: boolean;
+  created_at: string;
+}
+
+export interface TenantIntegration {
+  id: string;
+  tenant_id: string;
+  provider: IntegrationProvider;
+  status: IntegrationStatus;
+  external_account_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TenantPromotion {
+  id: string;
+  tenant_id: string;
+  offer_text: string;
+  mention_behavior: MentionBehavior;
+  is_active: boolean;
+  starts_at?: string;
+  ends_at?: string;
+  created_at: string;
+}
+
+export interface PhoneConfiguration {
+  id: string;
+  tenant_id: string;
+  phone_number?: string;
+  setup_type: PhoneSetupType;
+  provider: string;
+  provider_sid?: string;
+  status: PhoneStatus;
+  port_request_id?: string;
+  a2p_brand_id?: string;
+  a2p_campaign_id?: string;
+  verified_at?: string;
+  created_at: string;
+}
+
+export interface PortRequest {
+  id: string;
+  tenant_id: string;
+  phone_number: string;
+  current_carrier: string;
+  authorized_name: string;
+  status: PortStatus;
+  loa_signed_at?: string;
+  rejection_reason?: string;
+  estimated_completion?: string;
+  submitted_at?: string;
+  completed_at?: string;
+  created_at: string;
+}
+
+export interface EscalationContact {
+  id: string;
+  tenant_id: string;
+  name: string;
+  phone: string;
+  role?: string;
+  is_primary: boolean;
+  availability: ContactAvailability;
+  availability_hours?: Record<string, unknown>;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface PendingBooking {
+  id: string;
+  tenant_id: string;
+  call_id?: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_email?: string;
+  requested_date?: string;
+  requested_time?: string;
+  service?: string;
+  notes?: string;
+  status: BookingStatus;
+  confirmed_by?: string;
+  confirmed_at?: string;
+  created_at: string;
+}
+
+export interface CapabilityOption {
+  id: string;
+  label: string;
+  description: string;
+  icon: string;
+  category: "core" | "communication" | "advanced";
+  requiresIntegration?: boolean;
+}
+
+export interface TransferBehavior {
+  type: TransferType;
+  no_answer: NoAnswerBehavior;
+}
+
+// Extended Tenant type with new setup wizard fields
+export interface TenantExtended {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  business_name: string;
+  industry: IndustryType;
+  phone_number: string;
+  agent_name: string;
+  agent_personality: AgentPersonality;
+  voice_config: VoiceConfig;
+  greeting_standard: string;
+  greeting_after_hours?: string;
+  greeting_returning?: string;
+  timezone: string;
+  operating_hours: OperatingHours;
+  escalation_enabled: boolean;
+  escalation_phone?: string;
+  escalation_triggers: string[];
+  features: FeatureFlags;
+  is_active: boolean;
+  subscription_tier: SubscriptionTier;
+  // New setup wizard fields
+  setup_step?: SetupStep;
+  setup_completed_at?: string;
+  status: TenantStatus;
+  location_city?: string;
+  location_address?: string;
+  assisted_mode: boolean;
+  after_hours_behavior?: string;
+  transfer_behavior?: TransferBehavior;
+}

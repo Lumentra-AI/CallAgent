@@ -204,3 +204,220 @@ export interface TenantWithStats extends Tenant {
   calls_this_week: number;
   revenue_this_month: number;
 }
+
+// ============================================================================
+// SETUP WIZARD TYPES
+// ============================================================================
+
+export type SetupStep =
+  | "business"
+  | "capabilities"
+  | "details"
+  | "integrations"
+  | "assistant"
+  | "phone"
+  | "hours"
+  | "escalation"
+  | "review";
+
+export type TenantStatus = "draft" | "active" | "suspended";
+
+export type PhoneSetupType = "new" | "port" | "forward";
+
+export type PhoneStatus =
+  | "pending"
+  | "active"
+  | "porting"
+  | "porting_with_temp"
+  | "failed";
+
+export type PortStatus =
+  | "draft"
+  | "submitted"
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "completed";
+
+export type IntegrationStatus = "active" | "expired" | "revoked" | "error";
+
+export type IntegrationProvider =
+  | "google_calendar"
+  | "outlook"
+  | "calendly"
+  | "acuity"
+  | "square"
+  | "vagaro"
+  | "mindbody"
+  | "toast"
+  | "opentable";
+
+export type MentionBehavior = "always" | "relevant" | "interested";
+
+export type ContactAvailability = "business_hours" | "always" | "custom";
+
+export type TransferType = "warm" | "cold" | "callback";
+
+export type NoAnswerBehavior =
+  | "next_contact"
+  | "message"
+  | "retry"
+  | "voicemail";
+
+export type BookingStatus = "pending" | "confirmed" | "rejected" | "cancelled";
+
+export interface TenantCapability {
+  id: string;
+  tenant_id: string;
+  capability: string;
+  config: Record<string, unknown>;
+  is_enabled: boolean;
+  created_at: string;
+}
+
+export interface TenantIntegration {
+  id: string;
+  tenant_id: string;
+  provider: IntegrationProvider;
+  access_token?: string;
+  refresh_token?: string;
+  token_expires_at?: string;
+  scopes?: string;
+  external_account_id?: string;
+  status: IntegrationStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TenantPromotion {
+  id: string;
+  tenant_id: string;
+  offer_text: string;
+  mention_behavior: MentionBehavior;
+  is_active: boolean;
+  starts_at?: string;
+  ends_at?: string;
+  created_at: string;
+}
+
+export interface PhoneConfiguration {
+  id: string;
+  tenant_id: string;
+  phone_number?: string;
+  setup_type: PhoneSetupType;
+  provider: string;
+  provider_sid?: string;
+  status: PhoneStatus;
+  port_request_id?: string;
+  a2p_brand_id?: string;
+  a2p_campaign_id?: string;
+  verified_at?: string;
+  created_at: string;
+}
+
+export interface PortRequest {
+  id: string;
+  tenant_id: string;
+  phone_number: string;
+  current_carrier: string;
+  account_number?: string;
+  pin?: string;
+  authorized_name: string;
+  loa_signed_at?: string;
+  status: PortStatus;
+  rejection_reason?: string;
+  estimated_completion?: string;
+  submitted_at?: string;
+  completed_at?: string;
+  created_at: string;
+}
+
+export interface EscalationContact {
+  id: string;
+  tenant_id: string;
+  name: string;
+  phone: string;
+  role?: string;
+  is_primary: boolean;
+  availability: ContactAvailability;
+  availability_hours?: Record<string, unknown>;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface PendingBooking {
+  id: string;
+  tenant_id: string;
+  call_id?: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_email?: string;
+  requested_date?: string;
+  requested_time?: string;
+  service?: string;
+  notes?: string;
+  status: BookingStatus;
+  confirmed_by?: string;
+  confirmed_at?: string;
+  created_at: string;
+}
+
+export interface TransferBehavior {
+  type: TransferType;
+  no_answer: NoAnswerBehavior;
+}
+
+// Extended Tenant type with new setup wizard fields
+export interface TenantExtended extends Tenant {
+  setup_step?: SetupStep;
+  setup_completed_at?: string;
+  status: TenantStatus;
+  location_city?: string;
+  location_address?: string;
+  assisted_mode: boolean;
+  after_hours_behavior?: string;
+  transfer_behavior?: TransferBehavior;
+}
+
+// ============================================================================
+// API REQUEST TYPES
+// ============================================================================
+
+export interface SaveSetupStepRequest {
+  step: SetupStep;
+  data: Record<string, unknown>;
+}
+
+export interface CreateCapabilityRequest {
+  capability: string;
+  config?: Record<string, unknown>;
+}
+
+export interface CreateEscalationContactRequest {
+  name: string;
+  phone: string;
+  role?: string;
+  is_primary?: boolean;
+  availability?: ContactAvailability;
+  availability_hours?: Record<string, unknown>;
+}
+
+export interface CreatePromotionRequest {
+  offer_text: string;
+  mention_behavior?: MentionBehavior;
+  is_active?: boolean;
+  starts_at?: string;
+  ends_at?: string;
+}
+
+export interface ProvisionPhoneRequest {
+  phone_number: string;
+}
+
+export interface CreatePortRequest {
+  phone_number: string;
+  current_carrier: string;
+  account_number: string;
+  pin?: string;
+  authorized_name: string;
+}
