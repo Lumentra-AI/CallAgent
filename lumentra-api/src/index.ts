@@ -22,6 +22,12 @@ import { voicemailRoutes } from "./routes/voicemails.js";
 import signalwireVoice from "./routes/signalwire-voice.js";
 import trainingDataRoutes from "./routes/training-data.js";
 import { chatRoutes } from "./routes/chat.js";
+import { setupRoutes } from "./routes/setup.js";
+import { capabilitiesRoutes } from "./routes/capabilities.js";
+import { integrationsRoutes } from "./routes/integrations.js";
+import { phoneConfigRoutes } from "./routes/phone-config.js";
+import { escalationRoutes } from "./routes/escalation.js";
+import { promotionsRoutes } from "./routes/promotions.js";
 import {
   handleSignalWireStream,
   isSignalWireStreamRequest,
@@ -29,7 +35,10 @@ import {
 import { initTenantCache } from "./services/database/tenant-cache.js";
 import { startScheduler } from "./jobs/scheduler.js";
 import { authMiddleware, rateLimit } from "./middleware/index.js";
-import { verifyDeepgramApiKey, deepgramClient } from "./services/deepgram/client.js";
+import {
+  verifyDeepgramApiKey,
+  deepgramClient,
+} from "./services/deepgram/client.js";
 
 const app = new Hono();
 
@@ -97,6 +106,13 @@ app.route("/api/notifications", notificationsRoutes);
 app.route("/api/resources", resourcesRoutes);
 app.route("/api/voicemails", voicemailRoutes);
 app.route("/api/training", trainingDataRoutes);
+// Setup wizard routes
+app.route("/api/setup", setupRoutes);
+app.route("/api/capabilities", capabilitiesRoutes);
+app.route("/api/integrations", integrationsRoutes);
+app.route("/api/phone", phoneConfigRoutes);
+app.route("/api/escalation", escalationRoutes);
+app.route("/api/promotions", promotionsRoutes);
 
 // Root
 app.get("/", (c) => {
@@ -133,15 +149,23 @@ async function start() {
   // Verify Deepgram API key at startup
   console.log("[STARTUP] Verifying Deepgram STT connection...");
   if (!deepgramClient) {
-    console.error("[STARTUP] WARNING: Deepgram client not initialized - STT will not work!");
-    console.error("[STARTUP] Check that DEEPGRAM_API_KEY is set correctly in .env");
+    console.error(
+      "[STARTUP] WARNING: Deepgram client not initialized - STT will not work!",
+    );
+    console.error(
+      "[STARTUP] Check that DEEPGRAM_API_KEY is set correctly in .env",
+    );
   } else {
     const dgResult = await verifyDeepgramApiKey();
     if (dgResult.valid) {
       console.log("[STARTUP] Deepgram API key verified successfully");
     } else {
-      console.error(`[STARTUP] WARNING: Deepgram API key verification failed: ${dgResult.error}`);
-      console.error("[STARTUP] STT may not work during calls. Check your API key at https://console.deepgram.com");
+      console.error(
+        `[STARTUP] WARNING: Deepgram API key verification failed: ${dgResult.error}`,
+      );
+      console.error(
+        "[STARTUP] STT may not work during calls. Check your API key at https://console.deepgram.com",
+      );
     }
   }
 
