@@ -1,13 +1,20 @@
 // Audio Buffer Utilities
 // Handles audio format conversions and buffering
 
-// Audio format constants (8kHz mulaw for telephony)
+// Audio format constants for 24kHz Linear16 (high quality)
+export const SAMPLE_RATE = 24000;
+export const CHANNELS = 1;
+export const BITS_PER_SAMPLE = 16;
+export const BYTES_PER_SAMPLE = 2;
+
+// Legacy 8kHz mulaw constants (for reference)
 export const MULAW_SAMPLE_RATE = 8000;
 export const MULAW_CHANNELS = 1;
 export const MULAW_BITS_PER_SAMPLE = 8;
 
-// Chunk size for streaming (20ms of audio at 8kHz)
-export const AUDIO_CHUNK_SIZE = 160; // 8000 * 0.02 = 160 samples
+// Chunk size for streaming (20ms of audio)
+// 24kHz 16-bit: 24000 * 0.02 * 2 bytes = 960 bytes per 20ms
+export const AUDIO_CHUNK_SIZE = 960;
 
 /**
  * Audio buffer that accumulates chunks and emits when ready
@@ -161,8 +168,8 @@ export class JitterBuffer {
  */
 export function audioDurationMs(
   bytes: number,
-  sampleRate: number = MULAW_SAMPLE_RATE,
-  bytesPerSample: number = 1,
+  sampleRate: number = SAMPLE_RATE,
+  bytesPerSample: number = BYTES_PER_SAMPLE,
 ): number {
   const samples = bytes / bytesPerSample;
   return (samples / sampleRate) * 1000;
@@ -173,8 +180,8 @@ export function audioDurationMs(
  */
 export function audioBytes(
   durationMs: number,
-  sampleRate: number = MULAW_SAMPLE_RATE,
-  bytesPerSample: number = 1,
+  sampleRate: number = SAMPLE_RATE,
+  bytesPerSample: number = BYTES_PER_SAMPLE,
 ): number {
   return Math.ceil((durationMs / 1000) * sampleRate * bytesPerSample);
 }

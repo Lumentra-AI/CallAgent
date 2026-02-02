@@ -74,10 +74,10 @@ const PROCESSING_FILLERS = [
   "Let me check...",
 ];
 
-// Filler timing - only speak filler if LLM is genuinely slow
-const FILLER_DELAY_MIN_MS = 800;
-const FILLER_DELAY_MAX_MS = 1200;
-const FILLER_SKIP_CHANCE = 0.5; // 50% chance to skip filler (be more selective)
+// Filler timing - speak filler quickly if LLM is slow
+const FILLER_DELAY_MIN_MS = 500; // Reduced from 800ms for faster perceived response
+const FILLER_DELAY_MAX_MS = 800; // Reduced from 1200ms
+const FILLER_SKIP_CHANCE = 0.3; // 30% chance to skip filler (speak more often)
 
 // Filler responses for tool calls - spoken immediately while tool executes
 const TOOL_FILLERS: Record<string, string> = {

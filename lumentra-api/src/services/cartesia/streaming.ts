@@ -133,8 +133,8 @@ export function createStreamingTTS(
         context_id: contextId,
         output_format: {
           container: "raw",
-          encoding: "pcm_mulaw",
-          sample_rate: config.sampleRate || 8000,
+          encoding: "pcm_s16le", // 16-bit PCM for high quality
+          sample_rate: config.sampleRate || 24000, // 24kHz for clear audio
         },
         continue: textBuffer.length > 0,
       };

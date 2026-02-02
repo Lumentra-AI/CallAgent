@@ -66,8 +66,8 @@ export const defaultDeepgramConfig: DeepgramConfig = {
   interimResults: true,
   utteranceEndMs: 1000, // Minimum allowed value (Deepgram rejects <1000)
   vadEvents: true,
-  encoding: "mulaw", // Standard telephony codec
-  sampleRate: 8000, // 8kHz - standard for phone calls
+  encoding: "linear16", // 16-bit signed PCM (matches SignalWire L16@24000h)
+  sampleRate: 24000, // 24kHz - high quality audio
   channels: 1,
   endpointing: 500, // Silence detection - 500ms balances responsiveness vs cutting off speech
 };
