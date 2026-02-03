@@ -2,6 +2,7 @@ import { ThemeProvider } from "@/context/ThemeContext";
 import { ConfigProvider } from "@/context/ConfigContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { TenantProvider } from "@/context/TenantContext";
+import { SetupProvider } from "@/components/setup/SetupContext";
 
 export default function SetupLayout({
   children,
@@ -12,7 +13,9 @@ export default function SetupLayout({
     <ThemeProvider>
       <AuthProvider>
         <TenantProvider>
-          <ConfigProvider>{children}</ConfigProvider>
+          <ConfigProvider>
+            <SetupProvider>{children}</SetupProvider>
+          </ConfigProvider>
         </TenantProvider>
       </AuthProvider>
     </ThemeProvider>

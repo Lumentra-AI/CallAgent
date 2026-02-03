@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -18,10 +19,13 @@ import {
   MessageSquare,
   HelpCircle,
   MonitorDot,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIndustry } from "@/context/IndustryContext";
 import { useEscalation } from "@/context/EscalationContext";
+import { useTenant } from "@/context/TenantContext";
+import { get } from "@/lib/api/client";
 
 interface NavItem {
   label: string;
@@ -29,18 +33,6 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
   badge?: number;
 }
-
-const NAV_ITEMS: NavItem[] = [
-  { label: "Workstation", href: "/workstation", icon: MonitorDot },
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Contacts", href: "/contacts", icon: Users },
-  { label: "Calls", href: "/calls", icon: Phone },
-  { label: "Escalations", href: "/escalations", icon: PhoneForwarded },
-  { label: "Calendar", href: "/calendar", icon: Calendar },
-  { label: "Analytics", href: "/analytics", icon: BarChart3 },
-  { label: "Resources", href: "/resources", icon: Briefcase },
-  { label: "Notifications", href: "/notifications", icon: Bell },
-];
 
 const BOTTOM_NAV_ITEMS: NavItem[] = [
   { label: "Settings", href: "/settings", icon: Settings },
@@ -52,10 +44,68 @@ interface SidebarProps {
   onToggle?: () => void;
 }
 
+// Extended tenant type for sidebar checks
+interface TenantWithAssistedMode {
+  assisted_mode?: boolean;
+}
+
 export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const { tenant, preset } = useIndustry();
+  const { currentTenant } = useTenant();
   const { waitingCount } = useEscalation();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  // Check if tenant is in assisted mode
+  const extendedTenant = currentTenant as TenantWithAssistedMode | null;
+  const isAssistedMode = extendedTenant?.assisted_mode ?? false;
+
+  // Fetch pending booking count for assisted mode tenants
+  useEffect(() => {
+    if (!isAssistedMode || !currentTenant) return;
+
+    const fetchPendingCount = async () => {
+      try {
+        const response = await get<{
+          bookings: Array<{ id: string }>;
+          total: number;
+        }>("/api/pending-bookings", { status: "pending" });
+        setPendingCount(response.bookings?.length || 0);
+      } catch (err) {
+        console.error("Failed to fetch pending count:", err);
+      }
+    };
+
+    fetchPendingCount();
+
+    // Poll for updates every 30 seconds
+    const interval = setInterval(fetchPendingCount, 30000);
+    return () => clearInterval(interval);
+  }, [isAssistedMode, currentTenant]);
+
+  // Build nav items dynamically
+  const navItems: NavItem[] = [
+    { label: "Workstation", href: "/workstation", icon: MonitorDot },
+    { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    { label: "Contacts", href: "/contacts", icon: Users },
+    { label: "Calls", href: "/calls", icon: Phone },
+    { label: "Escalations", href: "/escalations", icon: PhoneForwarded },
+    // Conditionally add Pending for assisted mode
+    ...(isAssistedMode
+      ? [
+          {
+            label: "Pending",
+            href: "/pending",
+            icon: ClipboardList,
+            badge: pendingCount > 0 ? pendingCount : undefined,
+          },
+        ]
+      : []),
+    { label: "Calendar", href: "/calendar", icon: Calendar },
+    { label: "Analytics", href: "/analytics", icon: BarChart3 },
+    { label: "Resources", href: "/resources", icon: Briefcase },
+    { label: "Notifications", href: "/notifications", icon: Bell },
+  ];
 
   // Map generic labels to industry-specific terminology
   const getLabel = (item: NavItem): string => {
@@ -72,6 +122,9 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const getBadge = (item: NavItem): number | undefined => {
     if (item.label === "Escalations" && waitingCount > 0) {
       return waitingCount;
+    }
+    if (item.label === "Pending" && pendingCount > 0) {
+      return pendingCount;
     }
     return item.badge;
   };
@@ -115,7 +168,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
 
       {/* Main Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto p-3 scrollbar-thin">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const isActive =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;

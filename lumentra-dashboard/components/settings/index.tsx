@@ -2,6 +2,7 @@
 
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 import { useConfig } from "@/context/ConfigContext";
 import type { SettingsTab, Permission } from "@/types";
 import {
@@ -18,6 +19,11 @@ import {
   Sliders,
   ChevronRight,
   Sparkles,
+  Building2,
+  Phone,
+  Zap,
+  Megaphone,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import GeneralTab from "./GeneralTab";
@@ -50,6 +56,7 @@ interface TabConfig {
   requiredPermission?: Permission;
   minAccessTier: AccessTier;
   category: "business" | "agent" | "platform";
+  href?: string; // Optional link to standalone page
 }
 
 const ALL_TABS: TabConfig[] = [
@@ -64,6 +71,16 @@ const ALL_TABS: TabConfig[] = [
     category: "business",
   },
   {
+    id: "business",
+    label: "Business Info",
+    icon: Building2,
+    description: "Name, industry, location",
+    minAccessTier: "admin",
+    requiredPermission: "manage_agent",
+    category: "business",
+    href: "/settings/business",
+  },
+  {
     id: "hours",
     label: "Hours",
     icon: Clock,
@@ -71,6 +88,17 @@ const ALL_TABS: TabConfig[] = [
     minAccessTier: "admin",
     requiredPermission: "manage_hours",
     category: "business",
+    href: "/settings/hours",
+  },
+  {
+    id: "phone",
+    label: "Phone",
+    icon: Phone,
+    description: "Phone number setup",
+    minAccessTier: "admin",
+    requiredPermission: "manage_agent",
+    category: "business",
+    href: "/settings/phone",
   },
   {
     id: "billing",
@@ -93,6 +121,16 @@ const ALL_TABS: TabConfig[] = [
     category: "agent",
   },
   {
+    id: "assistant",
+    label: "Assistant",
+    icon: User,
+    description: "Name, voice, personality",
+    minAccessTier: "admin",
+    requiredPermission: "manage_agent",
+    category: "agent",
+    href: "/settings/assistant",
+  },
+  {
     id: "voice",
     label: "Voice",
     icon: Mic,
@@ -100,6 +138,16 @@ const ALL_TABS: TabConfig[] = [
     minAccessTier: "admin",
     requiredPermission: "manage_voice",
     category: "agent",
+  },
+  {
+    id: "capabilities",
+    label: "Capabilities",
+    icon: Zap,
+    description: "What your assistant handles",
+    minAccessTier: "admin",
+    requiredPermission: "manage_agent",
+    category: "agent",
+    href: "/settings/capabilities",
   },
   {
     id: "greetings",
@@ -127,6 +175,17 @@ const ALL_TABS: TabConfig[] = [
     minAccessTier: "admin",
     requiredPermission: "manage_escalation",
     category: "agent",
+    href: "/settings/escalation",
+  },
+  {
+    id: "promotions",
+    label: "Promotions",
+    icon: Megaphone,
+    description: "Special offers for callers",
+    minAccessTier: "admin",
+    requiredPermission: "manage_agent",
+    category: "agent",
+    href: "/settings/promotions",
   },
   {
     id: "instructions",
@@ -153,9 +212,10 @@ const ALL_TABS: TabConfig[] = [
     label: "Integrations",
     icon: Plug,
     description: "Connected services and APIs",
-    minAccessTier: "developer",
+    minAccessTier: "admin",
     requiredPermission: "manage_integrations",
     category: "platform",
+    href: "/settings/integrations",
   },
   {
     id: "advanced",
@@ -421,46 +481,64 @@ interface TabButtonProps {
 
 function TabButton({ tab, isActive, onClick, isDeveloperTab }: TabButtonProps) {
   const Icon = tab.icon;
+  const hasLink = !!tab.href;
+
+  const buttonContent = (
+    <>
+      <div
+        className={cn(
+          "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+          isActive
+            ? isDeveloperTab
+              ? "bg-amber-500/10"
+              : "bg-primary/10"
+            : "bg-muted group-hover:bg-background",
+        )}
+      >
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 text-sm font-medium">
+          {tab.label}
+          {hasLink && <ExternalLink className="h-3 w-3 opacity-50" />}
+        </div>
+        {isActive && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            className="truncate text-[10px] opacity-70"
+          >
+            {tab.description}
+          </motion.div>
+        )}
+      </div>
+      {isActive && !hasLink && <ChevronRight className="h-4 w-4 opacity-50" />}
+    </>
+  );
+
+  const buttonClasses = cn(
+    "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all",
+    isActive
+      ? isDeveloperTab
+        ? "bg-amber-500/10 text-amber-500"
+        : "bg-primary/10 text-primary"
+      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+  );
+
+  if (hasLink) {
+    return (
+      <li>
+        <Link href={tab.href!} className={buttonClasses}>
+          {buttonContent}
+        </Link>
+      </li>
+    );
+  }
 
   return (
     <li>
-      <button
-        type="button"
-        onClick={onClick}
-        className={cn(
-          "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all",
-          isActive
-            ? isDeveloperTab
-              ? "bg-amber-500/10 text-amber-500"
-              : "bg-primary/10 text-primary"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground",
-        )}
-      >
-        <div
-          className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-            isActive
-              ? isDeveloperTab
-                ? "bg-amber-500/10"
-                : "bg-primary/10"
-              : "bg-muted group-hover:bg-background",
-          )}
-        >
-          <Icon className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium">{tab.label}</div>
-          {isActive && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              className="truncate text-[10px] opacity-70"
-            >
-              {tab.description}
-            </motion.div>
-          )}
-        </div>
-        {isActive && <ChevronRight className="h-4 w-4 opacity-50" />}
+      <button type="button" onClick={onClick} className={buttonClasses}>
+        {buttonContent}
       </button>
     </li>
   );

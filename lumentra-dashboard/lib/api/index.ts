@@ -12,6 +12,9 @@ export {
   del,
   ApiClientError,
   API_BASE,
+  getTenantId,
+  setTenantId,
+  clearTenantId,
   type ApiError,
 } from "./client";
 

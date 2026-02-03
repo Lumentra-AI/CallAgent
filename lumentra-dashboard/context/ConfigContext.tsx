@@ -45,6 +45,7 @@ import {
   fetchDashboardMetrics,
   fetchActivityLog,
   checkApiHealth,
+  getTenantId,
 } from "@/lib/api";
 
 // ============================================================================
@@ -149,12 +150,15 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const loadState = async () => {
       try {
-        // Check if API is available
-        const isApiAvailable = await checkApiHealth();
+        // Check if API is available AND we have a tenant ID
+        const hasTenant = !!getTenantId();
+        const isApiAvailable = hasTenant && (await checkApiHealth());
         setApiEnabled(isApiAvailable);
 
         if (isApiAvailable) {
           console.log("[ConfigContext] API available, using real data");
+        } else if (!hasTenant) {
+          console.log("[ConfigContext] No tenant, using mock data");
         } else {
           console.log("[ConfigContext] API unavailable, using mock data");
         }
@@ -181,6 +185,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
         setConfig(activeConfig);
 
         // Initialize metrics - try API first, fall back to mock
+        // Only call API if we have a tenant
         if (isApiAvailable) {
           try {
             const apiMetrics = await fetchDashboardMetrics();
@@ -202,6 +207,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
         }
 
         // Initialize logs - try API first, fall back to mock
+        // Only call API if we have a tenant
         if (isApiAvailable) {
           try {
             const apiLogs = await fetchActivityLog({ limit: 30 });

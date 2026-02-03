@@ -183,6 +183,25 @@ export type IndustryCategory =
   | "personal_care"
   | "property";
 
+export interface CapabilityQuestion {
+  id: string;
+  label: string;
+  type: "text" | "number" | "select" | "multiselect" | "toggle" | "textarea";
+  required: boolean;
+  options?: { value: string; label: string }[];
+  placeholder?: string;
+  helperText?: string;
+}
+
+export interface CapabilityDefinition {
+  id: string;
+  label: string;
+  description: string;
+  icon: string;
+  category: "core" | "communication" | "advanced";
+  questions: CapabilityQuestion[];
+}
+
 export interface IndustryPreset {
   id: IndustryType;
   category: IndustryCategory;
@@ -196,6 +215,10 @@ export interface IndustryPreset {
   terminology: IndustryTerminology;
   greetingTemplates: string[];
   faqTemplates: FAQTemplate[];
+  // Capability configuration (optional for backward compatibility)
+  availableCapabilities?: string[];
+  defaultCapabilities?: string[];
+  capabilities?: CapabilityDefinition[];
 }
 
 export interface IndustryTerminology {
@@ -551,7 +574,9 @@ export type ViewType =
 
 export type SettingsTab =
   | "general"
+  | "business"
   | "agent"
+  | "assistant"
   | "voice"
   | "greetings"
   | "responses"
@@ -559,6 +584,9 @@ export type SettingsTab =
   | "hours"
   | "escalation"
   | "billing"
+  | "phone"
+  | "capabilities"
+  | "promotions"
   // Admin only tabs
   | "pricing"
   | "integrations"

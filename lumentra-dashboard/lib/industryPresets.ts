@@ -11,6 +11,7 @@ import type {
   GreetingConfig,
   CustomResponses,
   AgentPersonality,
+  CapabilityDefinition,
 } from "@/types";
 
 // ============================================================================
@@ -3189,4 +3190,508 @@ export function getIndustriesByCategory(
 
 export function getPopularIndustries(): IndustryPreset[] {
   return Object.values(INDUSTRY_PRESETS).filter((preset) => preset.popular);
+}
+
+// ============================================================================
+// UNIVERSAL CAPABILITIES
+// These apply to all industries
+// ============================================================================
+
+export const UNIVERSAL_CAPABILITIES: CapabilityDefinition[] = [
+  {
+    id: "faq",
+    label: "Answer FAQs",
+    description: "Answer common questions",
+    icon: "help-circle",
+    category: "communication",
+    questions: [
+      {
+        id: "common_questions",
+        label: "What do callers ask most often?",
+        type: "textarea",
+        required: false,
+        placeholder:
+          "List common questions - we'll help your assistant answer them",
+        helperText:
+          "Examples: Do you accept walk-ins? What are your prices? Do you offer payment plans?",
+      },
+      {
+        id: "pricing_info",
+        label: "Should your assistant discuss pricing?",
+        type: "select",
+        required: false,
+        options: [
+          { value: "none", label: "No - direct to human for pricing" },
+          { value: "general", label: "Yes - provide general pricing info" },
+          { value: "detailed", label: "Yes - provide detailed pricing" },
+        ],
+      },
+      {
+        id: "pricing_details",
+        label: "Pricing information",
+        type: "textarea",
+        required: false,
+        placeholder: 'Enter pricing details or "Prices vary - call for quote"',
+      },
+      {
+        id: "policies",
+        label: "Important policies",
+        type: "textarea",
+        required: false,
+        placeholder: "e.g., Cancellation policy, payment terms, refund policy",
+      },
+    ],
+  },
+  {
+    id: "messages",
+    label: "Take Messages",
+    description: "Capture caller information for callback",
+    icon: "message-square",
+    category: "communication",
+    questions: [
+      {
+        id: "message_fields",
+        label: "Information to collect",
+        type: "multiselect",
+        required: true,
+        options: [
+          { value: "name", label: "Name" },
+          { value: "phone", label: "Phone number" },
+          { value: "email", label: "Email" },
+          { value: "reason", label: "Reason for call" },
+          { value: "best_time", label: "Best time to call back" },
+        ],
+      },
+      {
+        id: "callback_promise",
+        label: "Callback timeframe",
+        type: "select",
+        required: false,
+        options: [
+          { value: "asap", label: "As soon as possible" },
+          { value: "1hour", label: "Within 1 hour" },
+          { value: "same_day", label: "Same business day" },
+          { value: "24hours", label: "Within 24 hours" },
+          { value: "none", label: "Don't promise specific timeframe" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "hours_location",
+    label: "Hours & Location",
+    description: "Provide business hours and directions",
+    icon: "map-pin",
+    category: "communication",
+    questions: [], // Uses data from Hours step and Business step
+  },
+];
+
+// ============================================================================
+// INDUSTRY-SPECIFIC CAPABILITIES
+// ============================================================================
+
+export const RESTAURANT_CAPABILITIES: CapabilityDefinition[] = [
+  {
+    id: "reservations",
+    label: "Take Reservations",
+    description: "Book tables for customers",
+    icon: "calendar",
+    category: "core",
+    questions: [
+      {
+        id: "max_party_size",
+        label: "Maximum party size",
+        type: "number",
+        required: true,
+      },
+      {
+        id: "reservation_hours",
+        label: "Reservation hours",
+        type: "text",
+        required: true,
+        placeholder: "e.g., 11am-9pm",
+      },
+      {
+        id: "deposit_required",
+        label: "Require deposit for large parties?",
+        type: "toggle",
+        required: false,
+      },
+      {
+        id: "deposit_amount",
+        label: "Deposit amount",
+        type: "number",
+        required: false,
+      },
+      {
+        id: "accommodations",
+        label: "Special accommodations available",
+        type: "multiselect",
+        required: false,
+        options: [
+          { value: "outdoor", label: "Outdoor seating" },
+          { value: "high_chair", label: "High chairs" },
+          { value: "wheelchair", label: "Wheelchair accessible" },
+          { value: "private_room", label: "Private dining room" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "takeaway",
+    label: "Takeaway Orders",
+    description: "Handle pickup and delivery orders",
+    icon: "package",
+    category: "core",
+    questions: [
+      {
+        id: "delivery_available",
+        label: "Offer delivery?",
+        type: "toggle",
+        required: true,
+      },
+      {
+        id: "delivery_radius",
+        label: "Delivery radius (miles)",
+        type: "number",
+        required: false,
+      },
+      {
+        id: "min_order",
+        label: "Minimum order amount",
+        type: "number",
+        required: false,
+      },
+      {
+        id: "avg_prep_time",
+        label: "Average prep time (minutes)",
+        type: "number",
+        required: true,
+      },
+    ],
+  },
+  {
+    id: "menu_questions",
+    label: "Answer Menu Questions",
+    description: "Handle dietary and menu inquiries",
+    icon: "utensils",
+    category: "communication",
+    questions: [
+      {
+        id: "dietary_options",
+        label: "Dietary options available",
+        type: "multiselect",
+        required: false,
+        options: [
+          { value: "vegetarian", label: "Vegetarian" },
+          { value: "vegan", label: "Vegan" },
+          { value: "gluten_free", label: "Gluten-free" },
+          { value: "dairy_free", label: "Dairy-free" },
+          { value: "nut_free", label: "Nut-free" },
+          { value: "halal", label: "Halal" },
+          { value: "kosher", label: "Kosher" },
+        ],
+      },
+      {
+        id: "specials_info",
+        label: "How to handle specials inquiries?",
+        type: "select",
+        required: false,
+        options: [
+          { value: "describe", label: "Describe current specials" },
+          { value: "website", label: "Direct to website/menu" },
+          { value: "callback", label: "Have someone call back with details" },
+        ],
+      },
+    ],
+  },
+];
+
+export const HEALTHCARE_CAPABILITIES: CapabilityDefinition[] = [
+  {
+    id: "appointments",
+    label: "Schedule Appointments",
+    description: "Book patient appointments",
+    icon: "calendar",
+    category: "core",
+    questions: [
+      {
+        id: "services",
+        label: "Services offered",
+        type: "textarea",
+        required: true,
+        placeholder: "e.g., Cleaning, Fillings, Root Canal, Whitening",
+      },
+      {
+        id: "default_duration",
+        label: "Default appointment duration",
+        type: "select",
+        required: true,
+        options: [
+          { value: "15", label: "15 minutes" },
+          { value: "30", label: "30 minutes" },
+          { value: "45", label: "45 minutes" },
+          { value: "60", label: "1 hour" },
+          { value: "90", label: "1.5 hours" },
+        ],
+      },
+      {
+        id: "ask_new_patient",
+        label: "Ask if new or returning patient?",
+        type: "toggle",
+        required: false,
+      },
+    ],
+  },
+  {
+    id: "patient_intake",
+    label: "Collect Patient Information",
+    description: "Gather required patient details",
+    icon: "clipboard",
+    category: "core",
+    questions: [
+      {
+        id: "required_fields",
+        label: "Required information",
+        type: "multiselect",
+        required: true,
+        options: [
+          { value: "name", label: "Full name" },
+          { value: "dob", label: "Date of birth" },
+          { value: "phone", label: "Phone number" },
+          { value: "email", label: "Email address" },
+          { value: "insurance", label: "Insurance provider" },
+          { value: "reason", label: "Reason for visit" },
+          { value: "medications", label: "Current medications" },
+        ],
+      },
+      {
+        id: "insurance_accepted",
+        label: "Insurance providers accepted",
+        type: "textarea",
+        required: false,
+        placeholder: 'List providers or type "Most major insurance accepted"',
+      },
+    ],
+  },
+  {
+    id: "insurance_questions",
+    label: "Answer Insurance Questions",
+    description: "Handle insurance and billing inquiries",
+    icon: "file-text",
+    category: "communication",
+    questions: [
+      {
+        id: "insurance_handling",
+        label: "How should insurance questions be handled?",
+        type: "select",
+        required: false,
+        options: [
+          { value: "answer", label: "Answer general questions" },
+          { value: "transfer", label: "Transfer to billing department" },
+          { value: "callback", label: "Take message for billing callback" },
+        ],
+      },
+    ],
+  },
+];
+
+export const HOME_SERVICES_CAPABILITIES: CapabilityDefinition[] = [
+  {
+    id: "service_appointments",
+    label: "Schedule Service Calls",
+    description: "Book service appointments",
+    icon: "wrench",
+    category: "core",
+    questions: [
+      {
+        id: "services",
+        label: "Services offered",
+        type: "textarea",
+        required: true,
+        placeholder:
+          "e.g., Drain cleaning, Pipe repair, Water heater installation",
+      },
+      {
+        id: "required_info",
+        label: "Information needed from caller",
+        type: "multiselect",
+        required: true,
+        options: [
+          { value: "name", label: "Name" },
+          { value: "phone", label: "Phone" },
+          { value: "address", label: "Service address" },
+          { value: "issue", label: "Description of issue" },
+          { value: "access", label: "Access instructions" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "emergency_dispatch",
+    label: "Emergency Dispatch",
+    description: "Handle urgent service calls",
+    icon: "alert-triangle",
+    category: "advanced",
+    questions: [
+      {
+        id: "emergency_criteria",
+        label: "What counts as an emergency?",
+        type: "textarea",
+        required: true,
+        placeholder: "e.g., Burst pipes, No hot water, Gas smell, Flooding",
+      },
+      {
+        id: "emergency_contact_name",
+        label: "Emergency contact name",
+        type: "text",
+        required: true,
+      },
+      {
+        id: "emergency_contact_phone",
+        label: "Emergency contact phone",
+        type: "text",
+        required: true,
+      },
+      {
+        id: "after_hours_emergency",
+        label: "Handle after-hours emergencies?",
+        type: "toggle",
+        required: true,
+      },
+      {
+        id: "emergency_fee",
+        label: "Emergency service fee",
+        type: "text",
+        required: false,
+        placeholder: 'e.g., "$95 dispatch fee" or "No extra charge"',
+      },
+    ],
+  },
+  {
+    id: "quotes",
+    label: "Provide Quotes",
+    description: "Give price estimates for services",
+    icon: "dollar-sign",
+    category: "communication",
+    questions: [
+      {
+        id: "quote_handling",
+        label: "How should quote requests be handled?",
+        type: "select",
+        required: false,
+        options: [
+          { value: "range", label: "Provide general price ranges" },
+          { value: "schedule", label: "Schedule free estimate visit" },
+          { value: "callback", label: "Have estimator call back" },
+        ],
+      },
+      {
+        id: "price_ranges",
+        label: "Common service price ranges",
+        type: "textarea",
+        required: false,
+        placeholder:
+          "e.g., Drain cleaning: $150-300, Water heater install: $800-1500",
+      },
+    ],
+  },
+  {
+    id: "service_area",
+    label: "Service Area Info",
+    description: "Confirm if caller is in service area",
+    icon: "map",
+    category: "communication",
+    questions: [
+      {
+        id: "service_areas",
+        label: "Areas you service",
+        type: "textarea",
+        required: true,
+        placeholder:
+          "e.g., All of Austin and surrounding areas within 30 miles",
+      },
+      {
+        id: "outside_area_handling",
+        label: "If caller is outside service area?",
+        type: "select",
+        required: false,
+        options: [
+          { value: "decline", label: "Politely decline" },
+          { value: "refer", label: "Suggest they search for local provider" },
+          {
+            value: "take_info",
+            label: "Take info and check if exception possible",
+          },
+        ],
+      },
+    ],
+  },
+];
+
+// ============================================================================
+// CAPABILITY HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Get all capabilities available for an industry
+ */
+export function getCapabilitiesForIndustry(
+  industry: IndustryType,
+): CapabilityDefinition[] {
+  const preset = INDUSTRY_PRESETS[industry];
+  if (!preset) return UNIVERSAL_CAPABILITIES;
+
+  // Get industry-specific capabilities based on category
+  let industryCapabilities: CapabilityDefinition[] = [];
+
+  switch (preset.category) {
+    case "hospitality":
+      if (industry === "restaurant" || industry === "catering") {
+        industryCapabilities = RESTAURANT_CAPABILITIES;
+      }
+      break;
+    case "healthcare":
+      industryCapabilities = HEALTHCARE_CAPABILITIES;
+      break;
+    case "property":
+      if (
+        industry === "home_services" ||
+        industry === "hvac" ||
+        industry === "plumbing" ||
+        industry === "electrical" ||
+        industry === "cleaning"
+      ) {
+        industryCapabilities = HOME_SERVICES_CAPABILITIES;
+      }
+      break;
+  }
+
+  // Combine industry-specific with universal capabilities
+  return [...industryCapabilities, ...UNIVERSAL_CAPABILITIES];
+}
+
+/**
+ * Get default capabilities for an industry
+ */
+export function getDefaultCapabilities(industry: IndustryType): string[] {
+  const preset = INDUSTRY_PRESETS[industry];
+  if (preset?.defaultCapabilities) {
+    return preset.defaultCapabilities;
+  }
+
+  // Default to messages and hours_location if not specified
+  return ["messages", "hours_location"];
+}
+
+/**
+ * Get a specific capability definition by ID
+ */
+export function getCapabilityById(
+  industry: IndustryType,
+  capabilityId: string,
+): CapabilityDefinition | undefined {
+  const capabilities = getCapabilitiesForIndustry(industry);
+  return capabilities.find((c) => c.id === capabilityId);
 }

@@ -6,6 +6,7 @@ import TopBar from "./TopBar";
 import SystemHealth from "./SystemHealth";
 import Waveform from "./Waveform";
 import ActivityLog from "./ActivityLog";
+import { SetupIncompleteBanner } from "./SetupIncompleteBanner";
 
 // ============================================================================
 // DASHBOARD LAYOUT - War Room View
@@ -48,4 +49,11 @@ export default function Dashboard() {
 // EXPORTS
 // ============================================================================
 
-export { Sidebar, TopBar, SystemHealth, Waveform, ActivityLog };
+export {
+  Sidebar,
+  TopBar,
+  SystemHealth,
+  Waveform,
+  ActivityLog,
+  SetupIncompleteBanner,
+};

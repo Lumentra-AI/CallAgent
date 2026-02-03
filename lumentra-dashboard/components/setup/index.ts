@@ -1,8 +1,23 @@
-export { SetupConversation } from "./SetupConversation";
-export { SetupProvider, useSetup } from "./SetupContext";
-export { AIGuide } from "./AIGuide";
-export { SetupMessage } from "./SetupMessage";
-export { SetupInput } from "./SetupInput";
-export { SetupIndustryPicker } from "./SetupIndustryPicker";
-export { SetupSummary } from "./SetupSummary";
-export { SetupCanvas } from "./SetupCanvas";
+// Multi-step setup wizard
+export {
+  SetupProvider,
+  useSetup,
+  SETUP_STEPS,
+  STEP_LABELS,
+  canAccessStep,
+  isValidStep,
+} from "./SetupContext";
+export { SetupProgressBar } from "./SetupProgressBar";
+
+// Step components
+export {
+  BusinessStep,
+  CapabilitiesStep,
+  DetailsStep,
+  IntegrationsStep,
+  AssistantStep,
+  PhoneStep,
+  HoursStep,
+  EscalationStep,
+  ReviewStep,
+} from "./steps";
