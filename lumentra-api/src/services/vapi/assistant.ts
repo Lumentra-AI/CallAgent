@@ -181,7 +181,7 @@ export function buildAssistantConfig(
     firstMessage:
       tenant.greeting_standard ||
       `Hello! Thanks for calling ${tenant.business_name}. How can I help you today?`,
-    serverUrl: serverUrl,
+    serverUrl: `${serverUrl}/vapi/webhook`,
     serverUrlSecret: process.env.VAPI_WEBHOOK_SECRET,
     silenceTimeoutSeconds: 30,
     maxDurationSeconds: 1800, // 30 minutes max
