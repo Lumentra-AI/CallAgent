@@ -1,4 +1,5 @@
-import { getSupabase } from "../database/client";
+import { query } from "../database/client.js";
+import { insertOne, updateOne } from "../database/query-helpers.js";
 
 export interface ConversationMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -34,6 +35,10 @@ export interface ConversationLogUpdate {
   tags?: string[];
 }
 
+interface ConversationLogRow {
+  id: string;
+}
+
 class ConversationLogger {
   private activeConversations: Map<
     string,
@@ -41,24 +46,15 @@ class ConversationLogger {
   > = new Map();
 
   async startConversation(input: ConversationLogInput): Promise<string> {
-    const { data, error } = await getSupabase()
-      .from("conversation_logs")
-      .insert({
-        tenant_id: input.tenantId,
-        call_id: input.callId,
-        session_id: input.sessionId,
-        industry: input.industry,
-        scenario_type: input.scenarioType || "general",
-        language: input.language || "en",
-        messages: [],
-      })
-      .select("id")
-      .single();
-
-    if (error) {
-      console.error("[TRAINING] Failed to create conversation log:", error);
-      throw error;
-    }
+    const data = await insertOne<ConversationLogRow>("conversation_logs", {
+      tenant_id: input.tenantId,
+      call_id: input.callId,
+      session_id: input.sessionId,
+      industry: input.industry,
+      scenario_type: input.scenarioType || "general",
+      language: input.language || "en",
+      messages: JSON.stringify([]),
+    });
 
     this.activeConversations.set(input.sessionId, {
       id: data.id,
@@ -130,25 +126,29 @@ class ConversationLogger {
     const conversation = this.activeConversations.get(sessionId);
     if (!conversation) return;
 
-    const { error } = await getSupabase()
-      .from("conversation_logs")
-      .update({
-        messages: conversation.messages,
-        turn_count: conversation.messages.length,
-        user_turns: conversation.messages.filter((m) => m.role === "user")
-          .length,
-        assistant_turns: conversation.messages.filter(
-          (m) => m.role === "assistant",
-        ).length,
-        tool_calls_count: conversation.messages.filter((m) => m.role === "tool")
-          .length,
-        has_tool_calls:
-          conversation.messages.some((m) => m.role === "tool") || false,
-      })
-      .eq("id", conversation.id);
-
-    if (error) {
+    try {
+      await query(
+        `UPDATE conversation_logs
+         SET messages = $1,
+             turn_count = $2,
+             user_turns = $3,
+             assistant_turns = $4,
+             tool_calls_count = $5,
+             has_tool_calls = $6
+         WHERE id = $7`,
+        [
+          JSON.stringify(conversation.messages),
+          conversation.messages.length,
+          conversation.messages.filter((m) => m.role === "user").length,
+          conversation.messages.filter((m) => m.role === "assistant").length,
+          conversation.messages.filter((m) => m.role === "tool").length,
+          conversation.messages.some((m) => m.role === "tool"),
+          conversation.id,
+        ],
+      );
+    } catch (error) {
       console.error("[TRAINING] Failed to flush messages:", error);
+      throw error;
     }
   }
 
@@ -178,53 +178,9 @@ class ConversationLogger {
         m.content.toLowerCase().includes("representative"),
     );
 
-    // Convert camelCase finalData to snake_case for database
-    // The database uses snake_case columns but the interface uses camelCase
-    const snakeCaseFinalData: Record<string, unknown> = {};
-    if (finalData) {
-      if (finalData.durationSeconds !== undefined) {
-        snakeCaseFinalData.duration_seconds = finalData.durationSeconds;
-      }
-      if (finalData.outcomeSuccess !== undefined) {
-        snakeCaseFinalData.outcome_success = finalData.outcomeSuccess;
-      }
-      if (finalData.qualityScore !== undefined) {
-        snakeCaseFinalData.quality_score = finalData.qualityScore;
-      }
-      if (finalData.isComplete !== undefined) {
-        snakeCaseFinalData.is_complete = finalData.isComplete;
-      }
-      if (finalData.hasToolCalls !== undefined) {
-        snakeCaseFinalData.has_tool_calls = finalData.hasToolCalls;
-      }
-      if (finalData.hasEscalation !== undefined) {
-        snakeCaseFinalData.has_escalation = finalData.hasEscalation;
-      }
-      if (finalData.turnCount !== undefined) {
-        snakeCaseFinalData.turn_count = finalData.turnCount;
-      }
-      if (finalData.userTurns !== undefined) {
-        snakeCaseFinalData.user_turns = finalData.userTurns;
-      }
-      if (finalData.assistantTurns !== undefined) {
-        snakeCaseFinalData.assistant_turns = finalData.assistantTurns;
-      }
-      if (finalData.toolCallsCount !== undefined) {
-        snakeCaseFinalData.tool_calls_count = finalData.toolCallsCount;
-      }
-      if (finalData.totalTokensEstimate !== undefined) {
-        snakeCaseFinalData.total_tokens_estimate = finalData.totalTokensEstimate;
-      }
-      if (finalData.tags !== undefined) {
-        snakeCaseFinalData.tags = finalData.tags;
-      }
-      if (finalData.messages !== undefined) {
-        snakeCaseFinalData.messages = finalData.messages;
-      }
-    }
-
-    const updateData = {
-      messages: conversation.messages,
+    // Build update data
+    const updateData: Record<string, unknown> = {
+      messages: JSON.stringify(conversation.messages),
       turn_count: conversation.messages.length,
       user_turns: conversation.messages.filter((m) => m.role === "user").length,
       assistant_turns: conversation.messages.filter(
@@ -237,20 +193,60 @@ class ConversationLogger {
       quality_score: qualityScore,
       total_tokens_estimate: tokenEstimate,
       is_complete: true,
-      ...snakeCaseFinalData,
     };
 
-    const { error } = await getSupabase()
-      .from("conversation_logs")
-      .update(updateData)
-      .eq("id", conversation.id);
+    // Convert camelCase finalData to snake_case for database
+    if (finalData) {
+      if (finalData.durationSeconds !== undefined) {
+        updateData.duration_seconds = finalData.durationSeconds;
+      }
+      if (finalData.outcomeSuccess !== undefined) {
+        updateData.outcome_success = finalData.outcomeSuccess;
+      }
+      if (finalData.qualityScore !== undefined) {
+        updateData.quality_score = finalData.qualityScore;
+      }
+      if (finalData.isComplete !== undefined) {
+        updateData.is_complete = finalData.isComplete;
+      }
+      if (finalData.hasToolCalls !== undefined) {
+        updateData.has_tool_calls = finalData.hasToolCalls;
+      }
+      if (finalData.hasEscalation !== undefined) {
+        updateData.has_escalation = finalData.hasEscalation;
+      }
+      if (finalData.turnCount !== undefined) {
+        updateData.turn_count = finalData.turnCount;
+      }
+      if (finalData.userTurns !== undefined) {
+        updateData.user_turns = finalData.userTurns;
+      }
+      if (finalData.assistantTurns !== undefined) {
+        updateData.assistant_turns = finalData.assistantTurns;
+      }
+      if (finalData.toolCallsCount !== undefined) {
+        updateData.tool_calls_count = finalData.toolCallsCount;
+      }
+      if (finalData.totalTokensEstimate !== undefined) {
+        updateData.total_tokens_estimate = finalData.totalTokensEstimate;
+      }
+      if (finalData.tags !== undefined) {
+        updateData.tags = finalData.tags;
+      }
+      if (finalData.messages !== undefined) {
+        updateData.messages = JSON.stringify(finalData.messages);
+      }
+    }
 
-    if (error) {
-      console.error("[TRAINING] Failed to end conversation:", error);
-    } else {
+    try {
+      await updateOne("conversation_logs", updateData, { id: conversation.id });
+
       console.log(
         `[TRAINING] Ended conversation: ${conversation.id} (${conversation.messages.length} turns, quality: ${qualityScore})`,
       );
+    } catch (error) {
+      console.error("[TRAINING] Failed to end conversation:", error);
+      throw error;
     }
 
     this.activeConversations.delete(sessionId);

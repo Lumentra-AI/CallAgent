@@ -1,86 +1,143 @@
 import { Hono } from "hono";
-import { getSupabase } from "../services/database/client.js";
+import { queryOne, queryAll } from "../services/database/client.js";
 import { getAuthTenantId } from "../middleware/index.js";
 
 export const callsRoutes = new Hono();
+
+// Row types
+interface CallRow {
+  id: string;
+  tenant_id: string;
+  vapi_call_id: string | null;
+  direction: string;
+  status: string;
+  caller_phone: string | null;
+  caller_name: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  outcome_type: string | null;
+  summary: string | null;
+  sentiment_score: number | null;
+  intents_detected: string[] | null;
+  recording_url: string | null;
+  transcript: unknown;
+  metadata: Record<string, unknown> | null;
+  contact_id: string | null;
+  booking_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ContactRow {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  phone: string | null;
+  email: string | null;
+}
+
+interface BookingRow {
+  id: string;
+  booking_date: string;
+  booking_time: string;
+  booking_type: string | null;
+  status: string;
+  confirmation_code: string | null;
+}
 
 /**
  * GET /api/calls
  * List calls with filters
  */
 callsRoutes.get("/", async (c) => {
-  const tenantId = getAuthTenantId(c);
-  const status = c.req.query("status");
-  const outcome = c.req.query("outcome");
-  const startDate = c.req.query("start_date");
-  const endDate = c.req.query("end_date");
-  const search = c.req.query("search");
-  const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
-  const offset = parseInt(c.req.query("offset") || "0", 10);
+  try {
+    const tenantId = getAuthTenantId(c);
+    const status = c.req.query("status");
+    const outcome = c.req.query("outcome");
+    const startDate = c.req.query("start_date");
+    const endDate = c.req.query("end_date");
+    const search = c.req.query("search");
+    const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
+    const offset = parseInt(c.req.query("offset") || "0", 10);
 
-  const db = getSupabase();
+    // Build WHERE conditions
+    const conditions: string[] = ["tenant_id = $1"];
+    const params: unknown[] = [tenantId];
+    let paramIndex = 2;
 
-  let query = db
-    .from("calls")
-    .select(
-      `
-      id,
-      vapi_call_id,
-      direction,
-      status,
-      caller_phone,
-      caller_name,
-      started_at,
-      ended_at,
-      duration_seconds,
-      outcome_type,
-      summary,
-      sentiment_score,
-      intents_detected,
-      recording_url,
-      created_at
-    `,
-      { count: "exact" },
-    )
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+    if (status) {
+      conditions.push(`status = $${paramIndex++}`);
+      params.push(status);
+    }
 
-  if (status) {
-    query = query.eq("status", status);
-  }
+    if (outcome) {
+      conditions.push(`outcome_type = $${paramIndex++}`);
+      params.push(outcome);
+    }
 
-  if (outcome) {
-    query = query.eq("outcome_type", outcome);
-  }
+    if (startDate) {
+      conditions.push(`created_at >= $${paramIndex++}`);
+      params.push(startDate);
+    }
 
-  if (startDate) {
-    query = query.gte("created_at", startDate);
-  }
+    if (endDate) {
+      conditions.push(`created_at <= $${paramIndex++}`);
+      params.push(endDate);
+    }
 
-  if (endDate) {
-    query = query.lte("created_at", endDate);
-  }
+    if (search) {
+      conditions.push(
+        `(caller_phone ILIKE $${paramIndex} OR caller_name ILIKE $${paramIndex})`,
+      );
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
 
-  if (search) {
-    query = query.or(
-      `caller_phone.ilike.%${search}%,caller_name.ilike.%${search}%`,
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+    // Get total count
+    const countResult = await queryOne<{ count: string }>(
+      `SELECT COUNT(*) as count FROM calls ${whereClause}`,
+      params,
     );
-  }
+    const total = parseInt(countResult?.count || "0", 10);
 
-  const { data, count, error } = await query;
+    // Get data with pagination
+    const data = await queryAll<CallRow>(
+      `SELECT
+        id,
+        vapi_call_id,
+        direction,
+        status,
+        caller_phone,
+        caller_name,
+        started_at,
+        ended_at,
+        duration_seconds,
+        outcome_type,
+        summary,
+        sentiment_score,
+        intents_detected,
+        recording_url,
+        created_at
+       FROM calls ${whereClause}
+       ORDER BY created_at DESC
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      [...params, limit, offset],
+    );
 
-  if (error) {
+    return c.json({
+      calls: data || [],
+      total,
+      limit,
+      offset,
+    });
+  } catch (error) {
     console.error("[CALLS] List error:", error);
-    return c.json({ error: error.message }, 500);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
   }
-
-  return c.json({
-    calls: data || [],
-    total: count || 0,
-    limit,
-    offset,
-  });
 });
 
 /**
@@ -88,50 +145,47 @@ callsRoutes.get("/", async (c) => {
  * Get call details with transcript
  */
 callsRoutes.get("/:id", async (c) => {
-  const id = c.req.param("id");
-  const tenantId = getAuthTenantId(c);
-  const db = getSupabase();
+  try {
+    const id = c.req.param("id");
+    const tenantId = getAuthTenantId(c);
 
-  const { data, error } = await db
-    .from("calls")
-    .select("*")
-    .eq("id", id)
-    .eq("tenant_id", tenantId)
-    .single();
+    const data = await queryOne<CallRow>(
+      `SELECT * FROM calls WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId],
+    );
 
-  if (error) {
-    return c.json({ error: "Call not found" }, 404);
+    if (!data) {
+      return c.json({ error: "Call not found" }, 404);
+    }
+
+    // Get linked contact if exists
+    let contact: ContactRow | null = null;
+    if (data.contact_id) {
+      contact = await queryOne<ContactRow>(
+        `SELECT id, first_name, last_name, phone, email FROM contacts WHERE id = $1`,
+        [data.contact_id],
+      );
+    }
+
+    // Get linked booking if exists
+    let booking: BookingRow | null = null;
+    if (data.booking_id) {
+      booking = await queryOne<BookingRow>(
+        `SELECT id, booking_date, booking_time, booking_type, status, confirmation_code
+         FROM bookings WHERE id = $1`,
+        [data.booking_id],
+      );
+    }
+
+    return c.json({
+      ...data,
+      contact,
+      booking,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
   }
-
-  // Get linked contact if exists
-  let contact = null;
-  if (data.contact_id) {
-    const { data: contactData } = await db
-      .from("contacts")
-      .select("id, first_name, last_name, phone, email")
-      .eq("id", data.contact_id)
-      .single();
-    contact = contactData;
-  }
-
-  // Get linked booking if exists
-  let booking = null;
-  if (data.booking_id) {
-    const { data: bookingData } = await db
-      .from("bookings")
-      .select(
-        "id, booking_date, booking_time, booking_type, status, confirmation_code",
-      )
-      .eq("id", data.booking_id)
-      .single();
-    booking = bookingData;
-  }
-
-  return c.json({
-    ...data,
-    contact,
-    booking,
-  });
 });
 
 /**
@@ -139,36 +193,42 @@ callsRoutes.get("/:id", async (c) => {
  * Get call transcript
  */
 callsRoutes.get("/:id/transcript", async (c) => {
-  const id = c.req.param("id");
-  const tenantId = getAuthTenantId(c);
-  const db = getSupabase();
+  try {
+    const id = c.req.param("id");
+    const tenantId = getAuthTenantId(c);
 
-  const { data, error } = await db
-    .from("calls")
-    .select("id, transcript, summary")
-    .eq("id", id)
-    .eq("tenant_id", tenantId)
-    .single();
+    const data = await queryOne<{
+      id: string;
+      transcript: unknown;
+      summary: string | null;
+    }>(
+      `SELECT id, transcript, summary FROM calls WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId],
+    );
 
-  if (error) {
-    return c.json({ error: "Call not found" }, 404);
-  }
-
-  // Parse transcript if it's a string
-  let transcript = data.transcript;
-  if (typeof transcript === "string") {
-    try {
-      transcript = JSON.parse(transcript);
-    } catch {
-      // Keep as string if not valid JSON
+    if (!data) {
+      return c.json({ error: "Call not found" }, 404);
     }
-  }
 
-  return c.json({
-    id: data.id,
-    transcript,
-    summary: data.summary,
-  });
+    // Parse transcript if it's a string
+    let transcript = data.transcript;
+    if (typeof transcript === "string") {
+      try {
+        transcript = JSON.parse(transcript);
+      } catch {
+        // Keep as string if not valid JSON
+      }
+    }
+
+    return c.json({
+      id: data.id,
+      transcript,
+      summary: data.summary,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
 });
 
 /**
@@ -176,82 +236,91 @@ callsRoutes.get("/:id/transcript", async (c) => {
  * Get call statistics
  */
 callsRoutes.get("/stats", async (c) => {
-  const tenantId = getAuthTenantId(c);
-  const db = getSupabase();
+  try {
+    const tenantId = getAuthTenantId(c);
 
-  // Date ranges
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+    // Date ranges
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-  const weekStart = new Date(today);
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const weekStart = new Date(today);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
 
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  // Today's calls
-  const { count: callsToday } = await db
-    .from("calls")
-    .select("*", { count: "exact", head: true })
-    .eq("tenant_id", tenantId)
-    .gte("created_at", today.toISOString())
-    .lt("created_at", tomorrow.toISOString());
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  // This week's calls
-  const { count: callsWeek } = await db
-    .from("calls")
-    .select("*", { count: "exact", head: true })
-    .eq("tenant_id", tenantId)
-    .gte("created_at", weekStart.toISOString());
+    // Execute all queries in parallel
+    const [
+      callsTodayResult,
+      callsWeekResult,
+      callsMonthResult,
+      durationData,
+      outcomeData,
+    ] = await Promise.all([
+      // Today's calls
+      queryOne<{ count: string }>(
+        `SELECT COUNT(*) as count FROM calls
+         WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
+        [tenantId, today.toISOString(), tomorrow.toISOString()],
+      ),
+      // This week's calls
+      queryOne<{ count: string }>(
+        `SELECT COUNT(*) as count FROM calls
+         WHERE tenant_id = $1 AND created_at >= $2`,
+        [tenantId, weekStart.toISOString()],
+      ),
+      // This month's calls
+      queryOne<{ count: string }>(
+        `SELECT COUNT(*) as count FROM calls
+         WHERE tenant_id = $1 AND created_at >= $2`,
+        [tenantId, monthStart.toISOString()],
+      ),
+      // Average duration (last 100 completed calls)
+      queryAll<{ duration_seconds: number }>(
+        `SELECT duration_seconds FROM calls
+         WHERE tenant_id = $1 AND status = 'completed' AND duration_seconds IS NOT NULL
+         ORDER BY created_at DESC LIMIT 100`,
+        [tenantId],
+      ),
+      // Outcome breakdown (last 30 days)
+      queryAll<{ outcome_type: string | null }>(
+        `SELECT outcome_type FROM calls
+         WHERE tenant_id = $1 AND created_at >= $2 AND outcome_type IS NOT NULL`,
+        [tenantId, thirtyDaysAgo.toISOString()],
+      ),
+    ]);
 
-  // This month's calls
-  const { count: callsMonth } = await db
-    .from("calls")
-    .select("*", { count: "exact", head: true })
-    .eq("tenant_id", tenantId)
-    .gte("created_at", monthStart.toISOString());
+    const callsToday = parseInt(callsTodayResult?.count || "0", 10);
+    const callsWeek = parseInt(callsWeekResult?.count || "0", 10);
+    const callsMonth = parseInt(callsMonthResult?.count || "0", 10);
 
-  // Average duration (last 100 completed calls)
-  const { data: durationData } = await db
-    .from("calls")
-    .select("duration_seconds")
-    .eq("tenant_id", tenantId)
-    .eq("status", "completed")
-    .not("duration_seconds", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(100);
+    const avgDuration =
+      durationData && durationData.length > 0
+        ? durationData.reduce((sum, c) => sum + (c.duration_seconds || 0), 0) /
+          durationData.length
+        : 0;
 
-  const avgDuration =
-    durationData && durationData.length > 0
-      ? durationData.reduce((sum, c) => sum + (c.duration_seconds || 0), 0) /
-        durationData.length
-      : 0;
+    const outcomes: Record<string, number> = {};
+    outcomeData?.forEach((call) => {
+      const outcome = call.outcome_type || "unknown";
+      outcomes[outcome] = (outcomes[outcome] || 0) + 1;
+    });
 
-  // Outcome breakdown (last 30 days)
-  const thirtyDaysAgo = new Date(today);
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  const { data: outcomeData } = await db
-    .from("calls")
-    .select("outcome_type")
-    .eq("tenant_id", tenantId)
-    .gte("created_at", thirtyDaysAgo.toISOString())
-    .not("outcome_type", "is", null);
-
-  const outcomes: Record<string, number> = {};
-  outcomeData?.forEach((call) => {
-    const outcome = call.outcome_type || "unknown";
-    outcomes[outcome] = (outcomes[outcome] || 0) + 1;
-  });
-
-  return c.json({
-    callsToday: callsToday || 0,
-    callsWeek: callsWeek || 0,
-    callsMonth: callsMonth || 0,
-    avgDurationSeconds: Math.round(avgDuration),
-    outcomes,
-  });
+    return c.json({
+      callsToday,
+      callsWeek,
+      callsMonth,
+      avgDurationSeconds: Math.round(avgDuration),
+      outcomes,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
 });
 
 /**
@@ -259,120 +328,132 @@ callsRoutes.get("/stats", async (c) => {
  * Get call analytics for charts (time series and breakdown)
  */
 callsRoutes.get("/analytics", async (c) => {
-  const tenantId = getAuthTenantId(c);
-  const days = parseInt(c.req.query("days") || "30", 10);
-  const db = getSupabase();
+  try {
+    const tenantId = getAuthTenantId(c);
+    const days = parseInt(c.req.query("days") || "30", 10);
 
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
-  startDate.setHours(0, 0, 0, 0);
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    startDate.setHours(0, 0, 0, 0);
 
-  // Get all calls in date range
-  const { data: calls, error } = await db
-    .from("calls")
-    .select("created_at, outcome_type, duration_seconds, status")
-    .eq("tenant_id", tenantId)
-    .gte("created_at", startDate.toISOString())
-    .order("created_at", { ascending: true });
+    // Get all calls in date range
+    const calls = await queryAll<{
+      created_at: string;
+      outcome_type: string | null;
+      duration_seconds: number | null;
+      status: string;
+    }>(
+      `SELECT created_at, outcome_type, duration_seconds, status FROM calls
+       WHERE tenant_id = $1 AND created_at >= $2
+       ORDER BY created_at ASC`,
+      [tenantId, startDate.toISOString()],
+    );
 
-  if (error) {
-    return c.json({ error: error.message }, 500);
+    if (!calls) {
+      return c.json({ error: "Failed to fetch calls" }, 500);
+    }
+
+    // Group by date
+    const dailyData: Record<
+      string,
+      {
+        date: string;
+        calls: number;
+        bookings: number;
+        avgDuration: number;
+        durations: number[];
+      }
+    > = {};
+
+    calls.forEach((call) => {
+      const date = new Date(call.created_at).toISOString().split("T")[0];
+      if (!dailyData[date]) {
+        dailyData[date] = {
+          date,
+          calls: 0,
+          bookings: 0,
+          avgDuration: 0,
+          durations: [],
+        };
+      }
+      dailyData[date].calls++;
+      if (call.outcome_type === "booking") {
+        dailyData[date].bookings++;
+      }
+      if (call.duration_seconds) {
+        dailyData[date].durations.push(call.duration_seconds);
+      }
+    });
+
+    // Calculate averages and create array
+    const timeSeries = Object.values(dailyData).map((day) => ({
+      date: day.date,
+      calls: day.calls,
+      bookings: day.bookings,
+      avgDuration:
+        day.durations.length > 0
+          ? Math.round(
+              day.durations.reduce((a, b) => a + b, 0) / day.durations.length,
+            )
+          : 0,
+    }));
+
+    // Outcome breakdown
+    const outcomes: Record<string, number> = {};
+    calls.forEach((call) => {
+      const outcome = call.outcome_type || "unknown";
+      outcomes[outcome] = (outcomes[outcome] || 0) + 1;
+    });
+
+    const outcomeSeries = Object.entries(outcomes).map(([name, value]) => ({
+      name,
+      value,
+    }));
+
+    // Calculate totals
+    const totalCalls = calls.length;
+    const totalBookings = calls.filter(
+      (c) => c.outcome_type === "booking",
+    ).length;
+    const conversionRate =
+      totalCalls > 0 ? (totalBookings / totalCalls) * 100 : 0;
+    const completedCalls = calls.filter((c) => c.duration_seconds);
+    const avgDuration =
+      completedCalls.length > 0
+        ? completedCalls.reduce(
+            (sum, c) => sum + (c.duration_seconds || 0),
+            0,
+          ) / completedCalls.length
+        : 0;
+
+    // Peak hours analysis
+    const hourCounts: Record<number, number> = {};
+    calls.forEach((call) => {
+      const hour = new Date(call.created_at).getHours();
+      hourCounts[hour] = (hourCounts[hour] || 0) + 1;
+    });
+
+    const peakHours = Object.entries(hourCounts)
+      .map(([hour, count]) => ({ hour: parseInt(hour), count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    return c.json({
+      period: { days, startDate: startDate.toISOString() },
+      summary: {
+        totalCalls,
+        totalBookings,
+        conversionRate: Math.round(conversionRate * 10) / 10,
+        avgDurationSeconds: Math.round(avgDuration),
+      },
+      timeSeries,
+      outcomes: outcomeSeries,
+      peakHours,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
   }
-
-  // Group by date
-  const dailyData: Record<
-    string,
-    {
-      date: string;
-      calls: number;
-      bookings: number;
-      avgDuration: number;
-      durations: number[];
-    }
-  > = {};
-
-  calls?.forEach((call) => {
-    const date = new Date(call.created_at).toISOString().split("T")[0];
-    if (!dailyData[date]) {
-      dailyData[date] = {
-        date,
-        calls: 0,
-        bookings: 0,
-        avgDuration: 0,
-        durations: [],
-      };
-    }
-    dailyData[date].calls++;
-    if (call.outcome_type === "booking") {
-      dailyData[date].bookings++;
-    }
-    if (call.duration_seconds) {
-      dailyData[date].durations.push(call.duration_seconds);
-    }
-  });
-
-  // Calculate averages and create array
-  const timeSeries = Object.values(dailyData).map((day) => ({
-    date: day.date,
-    calls: day.calls,
-    bookings: day.bookings,
-    avgDuration:
-      day.durations.length > 0
-        ? Math.round(
-            day.durations.reduce((a, b) => a + b, 0) / day.durations.length,
-          )
-        : 0,
-  }));
-
-  // Outcome breakdown
-  const outcomes: Record<string, number> = {};
-  calls?.forEach((call) => {
-    const outcome = call.outcome_type || "unknown";
-    outcomes[outcome] = (outcomes[outcome] || 0) + 1;
-  });
-
-  const outcomeSeries = Object.entries(outcomes).map(([name, value]) => ({
-    name,
-    value,
-  }));
-
-  // Calculate totals
-  const totalCalls = calls?.length || 0;
-  const totalBookings =
-    calls?.filter((c) => c.outcome_type === "booking").length || 0;
-  const conversionRate =
-    totalCalls > 0 ? (totalBookings / totalCalls) * 100 : 0;
-  const completedCalls = calls?.filter((c) => c.duration_seconds);
-  const avgDuration =
-    completedCalls && completedCalls.length > 0
-      ? completedCalls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0) /
-        completedCalls.length
-      : 0;
-
-  // Peak hours analysis
-  const hourCounts: Record<number, number> = {};
-  calls?.forEach((call) => {
-    const hour = new Date(call.created_at).getHours();
-    hourCounts[hour] = (hourCounts[hour] || 0) + 1;
-  });
-
-  const peakHours = Object.entries(hourCounts)
-    .map(([hour, count]) => ({ hour: parseInt(hour), count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
-
-  return c.json({
-    period: { days, startDate: startDate.toISOString() },
-    summary: {
-      totalCalls,
-      totalBookings,
-      conversionRate: Math.round(conversionRate * 10) / 10,
-      avgDurationSeconds: Math.round(avgDuration),
-    },
-    timeSeries,
-    outcomes: outcomeSeries,
-    peakHours,
-  });
 });
 
 /**
@@ -380,30 +461,29 @@ callsRoutes.get("/analytics", async (c) => {
  * Get most recent calls (for dashboard)
  */
 callsRoutes.get("/recent", async (c) => {
-  const tenantId = getAuthTenantId(c);
-  const limit = Math.min(parseInt(c.req.query("limit") || "10", 10), 50);
-  const db = getSupabase();
+  try {
+    const tenantId = getAuthTenantId(c);
+    const limit = Math.min(parseInt(c.req.query("limit") || "10", 10), 50);
 
-  const { data, error } = await db
-    .from("calls")
-    .select(
-      `
-      id,
-      caller_phone,
-      caller_name,
-      duration_seconds,
-      outcome_type,
-      summary,
-      created_at
-    `,
-    )
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+    const data = await queryAll<CallRow>(
+      `SELECT
+        id,
+        caller_phone,
+        caller_name,
+        duration_seconds,
+        outcome_type,
+        summary,
+        created_at
+       FROM calls
+       WHERE tenant_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [tenantId, limit],
+    );
 
-  if (error) {
-    return c.json({ error: error.message }, 500);
+    return c.json({ calls: data || [] });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
   }
-
-  return c.json({ calls: data || [] });
 });

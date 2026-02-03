@@ -1,7 +1,14 @@
 // Contact Service - Core CRM operations
 // Handles CRUD, search, lookup, metrics, and bulk operations
 
-import { getSupabase } from "../database/client";
+import { queryOne, queryAll } from "../database/client.js";
+import {
+  insertOne,
+  updateOne,
+  updateMany,
+  rpc,
+  paginatedQuery,
+} from "../database/query-helpers.js";
 import { contactCache } from "./contact-cache";
 import { normalizePhoneNumber } from "./phone-utils";
 import {
@@ -30,12 +37,10 @@ export async function createContact(
   tenantId: string,
   input: CreateContactInput,
 ): Promise<Contact> {
-  const db = getSupabase();
   const phoneNormalized = normalizePhoneNumber(input.phone);
 
-  const { data, error } = await db
-    .from("contacts")
-    .insert({
+  try {
+    const data = await insertOne<Contact>("contacts", {
       tenant_id: tenantId,
       phone: input.phone,
       phone_normalized: phoneNormalized,
@@ -51,27 +56,27 @@ export async function createContact(
       custom_fields: input.custom_fields || {},
       status: "active",
       lead_status: "new",
-    })
-    .select()
-    .single();
+    });
 
-  if (error) {
+    // Cache the new contact
+    contactCache.set(tenantId, phoneNormalized, data);
+
+    // Log activity
+    await addActivity(tenantId, data.id, "imported", {
+      description: `Contact created via ${input.source || "manual"}`,
+    });
+
+    return data;
+  } catch (error) {
     // Check for unique constraint violation
-    if (error.code === "23505") {
+    if (
+      error instanceof Error &&
+      (error as { code?: string }).code === "23505"
+    ) {
       throw new Error(`Contact with phone ${input.phone} already exists`);
     }
-    throw new Error(`Failed to create contact: ${error.message}`);
+    throw error;
   }
-
-  // Cache the new contact
-  contactCache.set(tenantId, phoneNormalized, data);
-
-  // Log activity
-  await addActivity(tenantId, data.id, "imported", {
-    description: `Contact created via ${input.source || "manual"}`,
-  });
-
-  return data;
 }
 
 /**
@@ -81,21 +86,10 @@ export async function getContact(
   tenantId: string,
   contactId: string,
 ): Promise<Contact | null> {
-  const db = getSupabase();
-
-  const { data, error } = await db
-    .from("contacts")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .eq("id", contactId)
-    .single();
-
-  if (error) {
-    if (error.code === "PGRST116") {
-      return null; // Not found
-    }
-    throw new Error(`Failed to get contact: ${error.message}`);
-  }
+  const data = await queryOne<Contact>(
+    "SELECT * FROM contacts WHERE tenant_id = $1 AND id = $2",
+    [tenantId, contactId],
+  );
 
   return data;
 }
@@ -108,8 +102,6 @@ export async function updateContact(
   contactId: string,
   input: UpdateContactInput,
 ): Promise<Contact> {
-  const db = getSupabase();
-
   // Get current contact for activity logging
   const current = await getContact(tenantId, contactId);
   if (!current) {
@@ -151,16 +143,13 @@ export async function updateContact(
   if (input.custom_fields !== undefined)
     updateData.custom_fields = input.custom_fields;
 
-  const { data, error } = await db
-    .from("contacts")
-    .update(updateData)
-    .eq("tenant_id", tenantId)
-    .eq("id", contactId)
-    .select()
-    .single();
+  const data = await updateOne<Contact>("contacts", updateData, {
+    tenant_id: tenantId,
+    id: contactId,
+  });
 
-  if (error) {
-    throw new Error(`Failed to update contact: ${error.message}`);
+  if (!data) {
+    throw new Error("Failed to update contact");
   }
 
   // Invalidate cache
@@ -184,22 +173,16 @@ export async function deleteContact(
   tenantId: string,
   contactId: string,
 ): Promise<void> {
-  const db = getSupabase();
-
   const current = await getContact(tenantId, contactId);
   if (!current) {
     throw new Error("Contact not found");
   }
 
-  const { error } = await db
-    .from("contacts")
-    .update({ status: "inactive" })
-    .eq("tenant_id", tenantId)
-    .eq("id", contactId);
-
-  if (error) {
-    throw new Error(`Failed to delete contact: ${error.message}`);
-  }
+  await updateMany(
+    "contacts",
+    { status: "inactive" },
+    { tenant_id: tenantId, id: contactId },
+  );
 
   // Invalidate cache
   contactCache.invalidate(tenantId, current.phone_normalized);
@@ -273,21 +256,10 @@ export async function lookupByPhone(
     return cached;
   }
 
-  const db = getSupabase();
-
-  const { data, error } = await db
-    .from("contacts")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .eq("phone_normalized", phoneNormalized)
-    .single();
-
-  if (error) {
-    if (error.code === "PGRST116") {
-      return null; // Not found
-    }
-    throw new Error(`Failed to lookup contact: ${error.message}`);
-  }
+  const data = await queryOne<Contact>(
+    "SELECT * FROM contacts WHERE tenant_id = $1 AND phone_normalized = $2",
+    [tenantId, phoneNormalized],
+  );
 
   // Cache the result
   if (data) {
@@ -304,21 +276,10 @@ export async function lookupByEmail(
   tenantId: string,
   email: string,
 ): Promise<Contact | null> {
-  const db = getSupabase();
-
-  const { data, error } = await db
-    .from("contacts")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .eq("email", email.toLowerCase().trim())
-    .single();
-
-  if (error) {
-    if (error.code === "PGRST116") {
-      return null;
-    }
-    throw new Error(`Failed to lookup contact: ${error.message}`);
-  }
+  const data = await queryOne<Contact>(
+    "SELECT * FROM contacts WHERE tenant_id = $1 AND email = $2",
+    [tenantId, email.toLowerCase().trim()],
+  );
 
   return data;
 }
@@ -335,100 +296,117 @@ export async function searchContacts(
   filters: ContactFilters = {},
   pagination: PaginationParams = {},
 ): Promise<PaginatedResult<Contact>> {
-  const db = getSupabase();
-
   const limit = pagination.limit || 20;
   const offset = pagination.offset || 0;
   const sortBy = pagination.sort_by || "last_contact_at";
   const sortOrder = pagination.sort_order || "desc";
 
-  let query = db
-    .from("contacts")
-    .select("*", { count: "exact" })
-    .eq("tenant_id", tenantId);
+  // Build dynamic WHERE clause
+  const conditions: string[] = ["tenant_id = $1"];
+  const params: unknown[] = [tenantId];
+  let paramIndex = 2;
 
-  // Apply filters
+  // Search filter (name, email, phone)
   if (filters.search) {
-    query = query.or(
-      `name.ilike.%${filters.search}%,email.ilike.%${filters.search}%,phone.ilike.%${filters.search}%`,
+    const searchPattern = `%${filters.search}%`;
+    conditions.push(
+      `(name ILIKE $${paramIndex} OR email ILIKE $${paramIndex} OR phone ILIKE $${paramIndex})`,
     );
+    params.push(searchPattern);
+    paramIndex++;
   }
 
+  // Status filter
   if (filters.status) {
     const statuses = Array.isArray(filters.status)
       ? filters.status
       : [filters.status];
-    query = query.in("status", statuses);
+    conditions.push(`status = ANY($${paramIndex})`);
+    params.push(statuses);
+    paramIndex++;
   }
 
+  // Lead status filter
   if (filters.lead_status) {
     const leadStatuses = Array.isArray(filters.lead_status)
       ? filters.lead_status
       : [filters.lead_status];
-    query = query.in("lead_status", leadStatuses);
+    conditions.push(`lead_status = ANY($${paramIndex})`);
+    params.push(leadStatuses);
+    paramIndex++;
   }
 
+  // Tags filter (array overlap)
   if (filters.tags && filters.tags.length > 0) {
-    query = query.overlaps("tags", filters.tags);
+    conditions.push(`tags && $${paramIndex}`);
+    params.push(filters.tags);
+    paramIndex++;
   }
 
+  // Source filter
   if (filters.source) {
     const sources = Array.isArray(filters.source)
       ? filters.source
       : [filters.source];
-    query = query.in("source", sources);
+    conditions.push(`source = ANY($${paramIndex})`);
+    params.push(sources);
+    paramIndex++;
   }
 
+  // Has bookings filter
   if (filters.has_bookings !== undefined) {
     if (filters.has_bookings) {
-      query = query.gt("total_bookings", 0);
+      conditions.push("total_bookings > 0");
     } else {
-      query = query.eq("total_bookings", 0);
+      conditions.push("total_bookings = 0");
     }
   }
 
+  // Has calls filter
   if (filters.has_calls !== undefined) {
     if (filters.has_calls) {
-      query = query.gt("total_calls", 0);
+      conditions.push("total_calls > 0");
     } else {
-      query = query.eq("total_calls", 0);
+      conditions.push("total_calls = 0");
     }
   }
 
+  // Date filters
   if (filters.created_after) {
-    query = query.gte("created_at", filters.created_after);
+    conditions.push(`created_at >= $${paramIndex}`);
+    params.push(filters.created_after);
+    paramIndex++;
   }
 
   if (filters.created_before) {
-    query = query.lte("created_at", filters.created_before);
+    conditions.push(`created_at <= $${paramIndex}`);
+    params.push(filters.created_before);
+    paramIndex++;
   }
 
   if (filters.last_contact_after) {
-    query = query.gte("last_contact_at", filters.last_contact_after);
+    conditions.push(`last_contact_at >= $${paramIndex}`);
+    params.push(filters.last_contact_after);
+    paramIndex++;
   }
 
   if (filters.last_contact_before) {
-    query = query.lte("last_contact_at", filters.last_contact_before);
+    conditions.push(`last_contact_at <= $${paramIndex}`);
+    params.push(filters.last_contact_before);
+    paramIndex++;
   }
 
-  // Apply sorting and pagination
-  query = query
-    .order(sortBy, { ascending: sortOrder === "asc" })
-    .range(offset, offset + limit - 1);
+  const whereClause = `WHERE ${conditions.join(" AND ")}`;
 
-  const { data, error, count } = await query;
-
-  if (error) {
-    throw new Error(`Failed to search contacts: ${error.message}`);
-  }
-
-  return {
-    data: data || [],
-    total: count || 0,
+  // Use paginatedQuery with raw WHERE clause
+  return paginatedQuery<Contact>("contacts", {
+    select: "*",
+    whereRaw: { clause: whereClause, params },
+    orderBy: sortBy,
+    orderDir: sortOrder,
     limit,
     offset,
-    has_more: (count || 0) > offset + limit,
-  };
+  });
 }
 
 // ============================================================================
@@ -443,30 +421,17 @@ export async function getContactHistory(
   contactId: string,
   pagination: PaginationParams = {},
 ): Promise<PaginatedResult<ContactActivity>> {
-  const db = getSupabase();
-
   const limit = pagination.limit || 50;
   const offset = pagination.offset || 0;
 
-  const { data, error, count } = await db
-    .from("contact_activity")
-    .select("*", { count: "exact" })
-    .eq("tenant_id", tenantId)
-    .eq("contact_id", contactId)
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
-
-  if (error) {
-    throw new Error(`Failed to get contact history: ${error.message}`);
-  }
-
-  return {
-    data: data || [],
-    total: count || 0,
+  return paginatedQuery<ContactActivity>("contact_activity", {
+    select: "*",
+    where: { tenant_id: tenantId, contact_id: contactId },
+    orderBy: "created_at",
+    orderDir: "desc",
     limit,
     offset,
-    has_more: (count || 0) > offset + limit,
-  };
+  });
 }
 
 /**
@@ -484,26 +449,16 @@ export async function addActivity(
     performedBy?: string;
   } = {},
 ): Promise<ContactActivity> {
-  const db = getSupabase();
-
-  const { data, error } = await db
-    .from("contact_activity")
-    .insert({
-      tenant_id: tenantId,
-      contact_id: contactId,
-      activity_type: activityType,
-      description: details.description,
-      metadata: details.metadata || {},
-      related_id: details.relatedId,
-      related_type: details.relatedType,
-      performed_by: details.performedBy,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error(`Failed to add activity: ${error.message}`);
-  }
+  const data = await insertOne<ContactActivity>("contact_activity", {
+    tenant_id: tenantId,
+    contact_id: contactId,
+    activity_type: activityType,
+    description: details.description,
+    metadata: details.metadata || {},
+    related_id: details.relatedId,
+    related_type: details.relatedType,
+    performed_by: details.performedBy,
+  });
 
   return data;
 }
@@ -528,7 +483,6 @@ export async function updateMetrics(
     | "email",
   amount?: number,
 ): Promise<void> {
-  const db = getSupabase();
   const now = new Date().toISOString();
 
   const updates: Record<string, unknown> = {
@@ -544,14 +498,14 @@ export async function updateMetrics(
       updates.last_booking_at = now;
       break;
     case "booking_completed":
-      // Use raw SQL for incrementing
-      await db.rpc("increment_contact_metric", {
+      // Use RPC for incrementing
+      await rpc("increment_contact_metric", {
         p_contact_id: contactId,
         p_field: "total_completed_bookings",
         p_amount: 1,
       });
       if (amount) {
-        await db.rpc("increment_contact_metric", {
+        await rpc("increment_contact_metric", {
           p_contact_id: contactId,
           p_field: "lifetime_value_cents",
           p_amount: amount,
@@ -559,28 +513,28 @@ export async function updateMetrics(
       }
       return;
     case "booking_cancelled":
-      await db.rpc("increment_contact_metric", {
+      await rpc("increment_contact_metric", {
         p_contact_id: contactId,
         p_field: "total_cancelled_bookings",
         p_amount: 1,
       });
       return;
     case "no_show":
-      await db.rpc("increment_contact_metric", {
+      await rpc("increment_contact_metric", {
         p_contact_id: contactId,
         p_field: "total_no_shows",
         p_amount: 1,
       });
       return;
     case "sms":
-      await db.rpc("increment_contact_metric", {
+      await rpc("increment_contact_metric", {
         p_contact_id: contactId,
         p_field: "total_sms_sent",
         p_amount: 1,
       });
       return;
     case "email":
-      await db.rpc("increment_contact_metric", {
+      await rpc("increment_contact_metric", {
         p_contact_id: contactId,
         p_field: "total_emails_sent",
         p_amount: 1,
@@ -588,14 +542,15 @@ export async function updateMetrics(
       return;
   }
 
-  const { error } = await db
-    .from("contacts")
-    .update(updates)
-    .eq("tenant_id", tenantId)
-    .eq("id", contactId);
-
-  if (error) {
-    console.error(`Failed to update contact metrics: ${error.message}`);
+  try {
+    await updateMany("contacts", updates, {
+      tenant_id: tenantId,
+      id: contactId,
+    });
+  } catch (error) {
+    console.error(
+      `Failed to update contact metrics: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
 }
 
@@ -651,7 +606,6 @@ export async function calculateEngagementDetails(
   tenantId: string,
   contactId: string,
 ): Promise<EngagementResult> {
-  const db = getSupabase();
   const contact = await getContact(tenantId, contactId);
 
   if (!contact) {
@@ -663,20 +617,21 @@ export async function calculateEngagementDetails(
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
   // Get recent calls
-  const { data: recentCalls } = await db
-    .from("calls")
-    .select("created_at, outcome_type")
-    .eq("contact_id", contactId)
-    .eq("tenant_id", tenantId)
-    .gte("created_at", thirtyDaysAgo.toISOString());
+  const recentCalls = await queryAll<{
+    created_at: string;
+    outcome_type: string;
+  }>(
+    `SELECT created_at, outcome_type FROM calls
+     WHERE contact_id = $1 AND tenant_id = $2 AND created_at >= $3`,
+    [contactId, tenantId, thirtyDaysAgo.toISOString()],
+  );
 
   // Get recent bookings
-  const { data: recentBookings } = await db
-    .from("bookings")
-    .select("created_at, status")
-    .eq("contact_id", contactId)
-    .eq("tenant_id", tenantId)
-    .gte("created_at", ninetyDaysAgo.toISOString());
+  const recentBookings = await queryAll<{ created_at: string; status: string }>(
+    `SELECT created_at, status FROM bookings
+     WHERE contact_id = $1 AND tenant_id = $2 AND created_at >= $3`,
+    [contactId, tenantId, ninetyDaysAgo.toISOString()],
+  );
 
   const factors: EngagementFactor[] = [];
 
@@ -773,13 +728,11 @@ export async function calculateEngagementDetails(
   else level = "cold";
 
   // Update database
-  await db
-    .from("contacts")
-    .update({
-      engagement_score: totalScore,
-      engagement_level: level,
-    })
-    .eq("id", contactId);
+  await updateMany(
+    "contacts",
+    { engagement_score: totalScore, engagement_level: level },
+    { id: contactId },
+  );
 
   return { score: totalScore, level, factors };
 }
@@ -796,30 +749,32 @@ export async function getContactNotes(
   contactId: string,
   pagination: PaginationParams = {},
 ): Promise<PaginatedResult<ContactNote>> {
-  const db = getSupabase();
-
   const limit = pagination.limit || 20;
   const offset = pagination.offset || 0;
 
-  const { data, error, count } = await db
-    .from("contact_notes")
-    .select("*", { count: "exact" })
-    .eq("tenant_id", tenantId)
-    .eq("contact_id", contactId)
-    .order("is_pinned", { ascending: false })
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+  // Count total
+  const countResult = await queryOne<{ total: string }>(
+    `SELECT COUNT(*) as total FROM contact_notes
+     WHERE tenant_id = $1 AND contact_id = $2`,
+    [tenantId, contactId],
+  );
+  const total = parseInt(countResult?.total || "0", 10);
 
-  if (error) {
-    throw new Error(`Failed to get contact notes: ${error.message}`);
-  }
+  // Fetch data with custom ordering (pinned first, then by date)
+  const data = await queryAll<ContactNote>(
+    `SELECT * FROM contact_notes
+     WHERE tenant_id = $1 AND contact_id = $2
+     ORDER BY is_pinned DESC, created_at DESC
+     LIMIT $3 OFFSET $4`,
+    [tenantId, contactId, limit, offset],
+  );
 
   return {
     data: data || [],
-    total: count || 0,
+    total,
     limit,
     offset,
-    has_more: (count || 0) > offset + limit,
+    has_more: total > offset + limit,
   };
 }
 
@@ -832,28 +787,18 @@ export async function addNote(
   createdBy?: string,
   createdByName?: string,
 ): Promise<ContactNote> {
-  const db = getSupabase();
-
-  const { data, error } = await db
-    .from("contact_notes")
-    .insert({
-      tenant_id: tenantId,
-      contact_id: input.contact_id,
-      note_type: input.note_type || "general",
-      content: input.content,
-      call_id: input.call_id,
-      booking_id: input.booking_id,
-      is_pinned: input.is_pinned || false,
-      is_private: input.is_private || false,
-      created_by: createdBy,
-      created_by_name: createdByName,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error(`Failed to add note: ${error.message}`);
-  }
+  const data = await insertOne<ContactNote>("contact_notes", {
+    tenant_id: tenantId,
+    contact_id: input.contact_id,
+    note_type: input.note_type || "general",
+    content: input.content,
+    call_id: input.call_id,
+    booking_id: input.booking_id,
+    is_pinned: input.is_pinned || false,
+    is_private: input.is_private || false,
+    created_by: createdBy,
+    created_by_name: createdByName,
+  });
 
   // Log activity
   await addActivity(tenantId, input.contact_id, "note_added", {
@@ -878,8 +823,6 @@ export async function addTag(
   contactId: string,
   tag: string,
 ): Promise<void> {
-  const db = getSupabase();
-
   // Get current tags
   const contact = await getContact(tenantId, contactId);
   if (!contact) {
@@ -893,14 +836,7 @@ export async function addTag(
 
   const newTags = [...contact.tags, tag];
 
-  const { error } = await db
-    .from("contacts")
-    .update({ tags: newTags })
-    .eq("id", contactId);
-
-  if (error) {
-    throw new Error(`Failed to add tag: ${error.message}`);
-  }
+  await updateMany("contacts", { tags: newTags }, { id: contactId });
 
   // Invalidate cache
   contactCache.invalidate(tenantId, contact.phone_normalized);
@@ -920,8 +856,6 @@ export async function removeTag(
   contactId: string,
   tag: string,
 ): Promise<void> {
-  const db = getSupabase();
-
   const contact = await getContact(tenantId, contactId);
   if (!contact) {
     throw new Error("Contact not found");
@@ -929,14 +863,7 @@ export async function removeTag(
 
   const newTags = contact.tags.filter((t) => t !== tag);
 
-  const { error } = await db
-    .from("contacts")
-    .update({ tags: newTags })
-    .eq("id", contactId);
-
-  if (error) {
-    throw new Error(`Failed to remove tag: ${error.message}`);
-  }
+  await updateMany("contacts", { tags: newTags }, { id: contactId });
 
   // Invalidate cache
   contactCache.invalidate(tenantId, contact.phone_normalized);
@@ -956,20 +883,14 @@ export async function bulkAddTag(
   contactIds: string[],
   tag: string,
 ): Promise<number> {
-  const db = getSupabase();
-
-  // Use raw SQL for efficient bulk update
-  const { data, error } = await db.rpc("bulk_add_tag", {
+  // Use RPC for efficient bulk update
+  const result = await rpc<number>("bulk_add_tag", {
     p_tenant_id: tenantId,
     p_contact_ids: contactIds,
     p_tag: tag,
   });
 
-  if (error) {
-    throw new Error(`Failed to bulk add tag: ${error.message}`);
-  }
-
-  return data || 0;
+  return result || 0;
 }
 
 // ============================================================================
@@ -1085,8 +1006,6 @@ export async function mergeContacts(
   primaryId: string,
   secondaryIds: string[],
 ): Promise<Contact> {
-  const db = getSupabase();
-
   // Get all contacts
   const primary = await getContact(tenantId, primaryId);
   if (!primary) {
@@ -1099,28 +1018,32 @@ export async function mergeContacts(
     if (!secondary) continue;
 
     // Move calls to primary
-    await db
-      .from("calls")
-      .update({ contact_id: primaryId })
-      .eq("contact_id", secondaryId);
+    await updateMany(
+      "calls",
+      { contact_id: primaryId },
+      { contact_id: secondaryId },
+    );
 
     // Move bookings to primary
-    await db
-      .from("bookings")
-      .update({ contact_id: primaryId })
-      .eq("contact_id", secondaryId);
+    await updateMany(
+      "bookings",
+      { contact_id: primaryId },
+      { contact_id: secondaryId },
+    );
 
     // Move notes to primary
-    await db
-      .from("contact_notes")
-      .update({ contact_id: primaryId })
-      .eq("contact_id", secondaryId);
+    await updateMany(
+      "contact_notes",
+      { contact_id: primaryId },
+      { contact_id: secondaryId },
+    );
 
     // Move activity to primary
-    await db
-      .from("contact_activity")
-      .update({ contact_id: primaryId })
-      .eq("contact_id", secondaryId);
+    await updateMany(
+      "contact_activity",
+      { contact_id: primaryId },
+      { contact_id: secondaryId },
+    );
 
     // Merge metrics
     const updates: Record<string, unknown> = {
@@ -1160,13 +1083,10 @@ export async function mergeContacts(
       updates.last_contact_at = secondary.last_contact_at;
     }
 
-    await db.from("contacts").update(updates).eq("id", primaryId);
+    await updateMany("contacts", updates, { id: primaryId });
 
     // Soft delete secondary
-    await db
-      .from("contacts")
-      .update({ status: "inactive" })
-      .eq("id", secondaryId);
+    await updateMany("contacts", { status: "inactive" }, { id: secondaryId });
 
     // Log merge activity
     await addActivity(tenantId, primaryId, "merged", {

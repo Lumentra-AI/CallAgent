@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { getSupabase } from "../services/database/client.js";
+import { queryOne, queryAll } from "../services/database/client.js";
 import * as sessionManager from "../services/voice/session-manager.js";
 import { getAuthTenantId } from "../middleware/index.js";
 
@@ -52,89 +52,101 @@ export function logActivity(
  * System health and real-time metrics
  */
 dashboardRoutes.get("/metrics", async (c) => {
-  const tenantId = getAuthTenantId(c);
-  const db = getSupabase();
+  try {
+    const tenantId = getAuthTenantId(c);
 
-  // Get active calls from session manager
-  const activeSessions = sessionManager.getAllSessions();
-  const activeCalls = activeSessions.filter(
-    (s) => s.tenantId === tenantId,
-  ).length;
+    // Get active calls from session manager
+    const activeSessions = sessionManager.getAllSessions();
+    const activeCalls = activeSessions.filter(
+      (s) => s.tenantId === tenantId,
+    ).length;
 
-  // Calculate uptime
-  const uptimeMs = Date.now() - serverStartTime;
-  const uptimePercent = 99.9; // Placeholder - would track actual downtime
+    // Calculate uptime
+    const uptimeMs = Date.now() - serverStartTime;
+    const uptimePercent = 99.9; // Placeholder - would track actual downtime
 
-  // Get today's date range
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+    // Get today's date range
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-  // Today's calls
-  const { count: callsToday } = await db
-    .from("calls")
-    .select("*", { count: "exact", head: true })
-    .eq("tenant_id", tenantId)
-    .gte("created_at", today.toISOString())
-    .lt("created_at", tomorrow.toISOString());
+    // Today's calls count
+    const callsResult = await queryOne<{ count: string }>(
+      `SELECT COUNT(*) as count FROM calls
+       WHERE tenant_id = $1
+       AND created_at >= $2
+       AND created_at < $3`,
+      [tenantId, today.toISOString(), tomorrow.toISOString()],
+    );
+    const callsToday = parseInt(callsResult?.count || "0", 10);
 
-  // Today's bookings
-  const { count: bookingsToday } = await db
-    .from("bookings")
-    .select("*", { count: "exact", head: true })
-    .eq("tenant_id", tenantId)
-    .eq("booking_date", today.toISOString().split("T")[0]);
+    // Today's bookings count
+    const bookingsResult = await queryOne<{ count: string }>(
+      `SELECT COUNT(*) as count FROM bookings
+       WHERE tenant_id = $1
+       AND booking_date = $2`,
+      [tenantId, today.toISOString().split("T")[0]],
+    );
+    const bookingsToday = parseInt(bookingsResult?.count || "0", 10);
 
-  // Average response latency (from recent calls)
-  const { data: latencyData } = await db
-    .from("calls")
-    .select("metadata")
-    .eq("tenant_id", tenantId)
-    .not("metadata", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(20);
+    // Average response latency (from recent calls)
+    const latencyData = await queryAll<{
+      metadata: Record<string, number> | null;
+    }>(
+      `SELECT metadata FROM calls
+       WHERE tenant_id = $1
+       AND metadata IS NOT NULL
+       ORDER BY created_at DESC
+       LIMIT 20`,
+      [tenantId],
+    );
 
-  // Calculate average latency from metadata if available
-  let avgLatency = 340; // Default estimate in ms
-  if (latencyData && latencyData.length > 0) {
-    const latencies = latencyData
-      .map((c) => (c.metadata as Record<string, number>)?.response_latency_ms)
-      .filter((l): l is number => typeof l === "number");
+    // Calculate average latency from metadata if available
+    let avgLatency = 340; // Default estimate in ms
+    if (latencyData && latencyData.length > 0) {
+      const latencies = latencyData
+        .map((c) => c.metadata?.response_latency_ms)
+        .filter((l): l is number => typeof l === "number");
 
-    if (latencies.length > 0) {
-      avgLatency = Math.round(
-        latencies.reduce((a, b) => a + b, 0) / latencies.length,
-      );
+      if (latencies.length > 0) {
+        avgLatency = Math.round(
+          latencies.reduce((a, b) => a + b, 0) / latencies.length,
+        );
+      }
     }
+
+    // Get queued calls (calls in progress but not connected yet)
+    const queuedCalls = activeSessions.filter((s) => !s.streamSid).length;
+
+    return c.json({
+      system: {
+        status: "operational",
+        latencyMs: avgLatency,
+        uptimePercent,
+        uptimeMs,
+      },
+      calls: {
+        active: activeCalls,
+        queued: queuedCalls,
+        today: callsToday,
+      },
+      bookings: {
+        today: bookingsToday,
+      },
+      voice: {
+        stack: "signalwire+deepgram+gemini+cartesia",
+        sttStatus: "connected",
+        llmStatus: "connected",
+        ttsStatus: "connected",
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("[DASHBOARD] Metrics error:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
   }
-
-  // Get queued calls (calls in progress but not connected yet)
-  const queuedCalls = activeSessions.filter((s) => !s.streamSid).length;
-
-  return c.json({
-    system: {
-      status: "operational",
-      latencyMs: avgLatency,
-      uptimePercent,
-      uptimeMs,
-    },
-    calls: {
-      active: activeCalls,
-      queued: queuedCalls,
-      today: callsToday || 0,
-    },
-    bookings: {
-      today: bookingsToday || 0,
-    },
-    voice: {
-      stack: "signalwire+deepgram+gemini+cartesia",
-      sttStatus: "connected",
-      llmStatus: "connected",
-      ttsStatus: "connected",
-    },
-    timestamp: new Date().toISOString(),
-  });
 });
 
 /**
@@ -167,66 +179,87 @@ dashboardRoutes.get("/activity", async (c) => {
  * Aggregated statistics for dashboard cards
  */
 dashboardRoutes.get("/stats", async (c) => {
-  const tenantId = getAuthTenantId(c);
-  const db = getSupabase();
+  try {
+    const tenantId = getAuthTenantId(c);
 
-  // Get date ranges
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+    // Get date ranges
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-  const weekStart = new Date(today);
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const weekStart = new Date(today);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
 
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
-  // Build queries with tenant filter
-  const buildQuery = (table: string, dateField: string, startDate: Date) => {
-    return db
-      .from(table)
-      .select("*", { count: "exact", head: true })
-      .eq("tenant_id", tenantId)
-      .gte(dateField, startDate.toISOString());
-  };
+    // Execute all count queries in parallel
+    const [
+      callsTodayResult,
+      callsWeekResult,
+      callsMonthResult,
+      bookingsTodayResult,
+      bookingsWeekResult,
+      bookingsMonthResult,
+    ] = await Promise.all([
+      queryOne<{ count: string }>(
+        `SELECT COUNT(*) as count FROM calls WHERE tenant_id = $1 AND created_at >= $2`,
+        [tenantId, today.toISOString()],
+      ),
+      queryOne<{ count: string }>(
+        `SELECT COUNT(*) as count FROM calls WHERE tenant_id = $1 AND created_at >= $2`,
+        [tenantId, weekStart.toISOString()],
+      ),
+      queryOne<{ count: string }>(
+        `SELECT COUNT(*) as count FROM calls WHERE tenant_id = $1 AND created_at >= $2`,
+        [tenantId, monthStart.toISOString()],
+      ),
+      queryOne<{ count: string }>(
+        `SELECT COUNT(*) as count FROM bookings WHERE tenant_id = $1 AND created_at >= $2`,
+        [tenantId, today.toISOString()],
+      ),
+      queryOne<{ count: string }>(
+        `SELECT COUNT(*) as count FROM bookings WHERE tenant_id = $1 AND created_at >= $2`,
+        [tenantId, weekStart.toISOString()],
+      ),
+      queryOne<{ count: string }>(
+        `SELECT COUNT(*) as count FROM bookings WHERE tenant_id = $1 AND created_at >= $2`,
+        [tenantId, monthStart.toISOString()],
+      ),
+    ]);
 
-  // Execute all queries in parallel
-  const [
-    { count: callsToday },
-    { count: callsWeek },
-    { count: callsMonth },
-    { count: bookingsToday },
-    { count: bookingsWeek },
-    { count: bookingsMonth },
-  ] = await Promise.all([
-    buildQuery("calls", "created_at", today),
-    buildQuery("calls", "created_at", weekStart),
-    buildQuery("calls", "created_at", monthStart),
-    buildQuery("bookings", "created_at", today),
-    buildQuery("bookings", "created_at", weekStart),
-    buildQuery("bookings", "created_at", monthStart),
-  ]);
+    const callsToday = parseInt(callsTodayResult?.count || "0", 10);
+    const callsWeek = parseInt(callsWeekResult?.count || "0", 10);
+    const callsMonth = parseInt(callsMonthResult?.count || "0", 10);
+    const bookingsToday = parseInt(bookingsTodayResult?.count || "0", 10);
+    const bookingsWeek = parseInt(bookingsWeekResult?.count || "0", 10);
+    const bookingsMonth = parseInt(bookingsMonthResult?.count || "0", 10);
 
-  // Get revenue estimate (assuming average booking value)
-  const avgBookingValue = 150; // Would come from tenant config
-  const estimatedRevenue = {
-    today: (bookingsToday || 0) * avgBookingValue,
-    week: (bookingsWeek || 0) * avgBookingValue,
-    month: (bookingsMonth || 0) * avgBookingValue,
-  };
+    // Get revenue estimate (assuming average booking value)
+    const avgBookingValue = 150; // Would come from tenant config
+    const estimatedRevenue = {
+      today: bookingsToday * avgBookingValue,
+      week: bookingsWeek * avgBookingValue,
+      month: bookingsMonth * avgBookingValue,
+    };
 
-  return c.json({
-    calls: {
-      today: callsToday || 0,
-      week: callsWeek || 0,
-      month: callsMonth || 0,
-    },
-    bookings: {
-      today: bookingsToday || 0,
-      week: bookingsWeek || 0,
-      month: bookingsMonth || 0,
-    },
-    revenue: estimatedRevenue,
-    timestamp: new Date().toISOString(),
-  });
+    return c.json({
+      calls: {
+        today: callsToday,
+        week: callsWeek,
+        month: callsMonth,
+      },
+      bookings: {
+        today: bookingsToday,
+        week: bookingsWeek,
+        month: bookingsMonth,
+      },
+      revenue: estimatedRevenue,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("[DASHBOARD] Stats error:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
 });
 
 /**

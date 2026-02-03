@@ -4,7 +4,8 @@
  * Used for assisted mode when no calendar integration is available
  */
 
-import { getSupabase } from "../database/client.js";
+import { queryOne, queryAll } from "../database/client.js";
+import { insertOne, updateOne } from "../database/query-helpers.js";
 import type { BookingRequest, BookingConfirmation } from "./types.js";
 import type { PendingBooking } from "../../types/database.js";
 
@@ -16,6 +17,49 @@ export interface PendingBookingWithCall extends PendingBooking {
   };
 }
 
+interface PendingBookingRow {
+  id: string;
+  tenant_id: string;
+  call_id: string | null;
+  customer_name: string;
+  customer_phone: string | null;
+  customer_email: string | null;
+  requested_date: string | null;
+  requested_time: string | null;
+  service: string | null;
+  notes: string | null;
+  status: string;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface PendingBookingWithCallRow extends PendingBookingRow {
+  call_id_joined: string | null;
+  call_started_at: string | null;
+  call_transcript: string | null;
+}
+
+interface BookingRow {
+  id: string;
+  tenant_id: string;
+  call_id: string | null;
+  customer_name: string;
+  customer_phone: string | null;
+  customer_email: string | null;
+  booking_date: string;
+  booking_time: string;
+  booking_type: string;
+  duration_minutes: number | null;
+  notes: string | null;
+  status: string;
+  confirmation_code: string | null;
+  source: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /**
  * Create a pending booking
  * Called when direct calendar booking fails or is unavailable
@@ -25,8 +69,6 @@ export async function createPendingBooking(
   booking: BookingRequest,
   callId?: string,
 ): Promise<BookingConfirmation> {
-  const db = getSupabase();
-
   // Parse date and time from ISO string if provided
   const requestedDate = booking.startTime
     ? booking.startTime.split("T")[0]
@@ -35,11 +77,10 @@ export async function createPendingBooking(
     ? booking.startTime.split("T")[1]?.substring(0, 5)
     : null;
 
-  const { data, error } = await db
-    .from("pending_bookings")
-    .insert({
+  try {
+    const data = await insertOne<PendingBookingRow>("pending_bookings", {
       tenant_id: tenantId,
-      call_id: callId,
+      call_id: callId || null,
       customer_name: booking.customerName,
       customer_phone: booking.customerPhone,
       customer_email: booking.customerEmail,
@@ -48,23 +89,22 @@ export async function createPendingBooking(
       service: booking.service,
       notes: booking.notes,
       status: "pending",
-    })
-    .select()
-    .single();
+    });
 
-  if (error) {
+    console.log(`[PENDING_BOOKING] Created pending booking ${data.id}`);
+
+    return {
+      id: data.id,
+      status: "pending",
+      startTime: booking.startTime,
+      endTime: booking.endTime,
+    };
+  } catch (error) {
     console.error("[PENDING_BOOKING] Creation failed:", error);
-    throw new Error(`Failed to create pending booking: ${error.message}`);
+    throw new Error(
+      `Failed to create pending booking: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
-
-  console.log(`[PENDING_BOOKING] Created pending booking ${data.id}`);
-
-  return {
-    id: data.id,
-    status: "pending",
-    startTime: booking.startTime,
-    endTime: booking.endTime,
-  };
 }
 
 /**
@@ -75,23 +115,30 @@ export async function confirmPendingBooking(
   bookingId: string,
   userId: string,
 ): Promise<void> {
-  const db = getSupabase();
+  try {
+    const result = await updateOne<PendingBookingRow>(
+      "pending_bookings",
+      {
+        status: "confirmed",
+        confirmed_by: userId,
+        confirmed_at: new Date().toISOString(),
+      },
+      { id: bookingId },
+    );
 
-  const { error } = await db
-    .from("pending_bookings")
-    .update({
-      status: "confirmed",
-      confirmed_by: userId,
-      confirmed_at: new Date().toISOString(),
-    })
-    .eq("id", bookingId);
+    if (!result) {
+      throw new Error("Pending booking not found");
+    }
 
-  if (error) {
+    console.log(
+      `[PENDING_BOOKING] Confirmed booking ${bookingId} by ${userId}`,
+    );
+  } catch (error) {
     console.error("[PENDING_BOOKING] Confirmation failed:", error);
-    throw new Error(`Failed to confirm pending booking: ${error.message}`);
+    throw new Error(
+      `Failed to confirm pending booking: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
-
-  console.log(`[PENDING_BOOKING] Confirmed booking ${bookingId} by ${userId}`);
 }
 
 /**
@@ -103,39 +150,43 @@ export async function rejectPendingBooking(
   userId: string,
   reason?: string,
 ): Promise<void> {
-  const db = getSupabase();
+  try {
+    const updateData: Record<string, unknown> = {
+      status: "rejected",
+      confirmed_by: userId,
+      confirmed_at: new Date().toISOString(),
+    };
 
-  const updateData: Record<string, unknown> = {
-    status: "rejected",
-    confirmed_by: userId,
-    confirmed_at: new Date().toISOString(),
-  };
+    // Append rejection reason to notes if provided
+    if (reason) {
+      const existing = await queryOne<{ notes: string | null }>(
+        `SELECT notes FROM pending_bookings WHERE id = $1`,
+        [bookingId],
+      );
 
-  // Append rejection reason to notes if provided
-  if (reason) {
-    const { data: existing } = await db
-      .from("pending_bookings")
-      .select("notes")
-      .eq("id", bookingId)
-      .single();
+      const existingNotes = existing?.notes || "";
+      updateData.notes = existingNotes
+        ? `${existingNotes}\n\nRejected: ${reason}`
+        : `Rejected: ${reason}`;
+    }
 
-    const existingNotes = existing?.notes || "";
-    updateData.notes = existingNotes
-      ? `${existingNotes}\n\nRejected: ${reason}`
-      : `Rejected: ${reason}`;
-  }
+    const result = await updateOne<PendingBookingRow>(
+      "pending_bookings",
+      updateData,
+      { id: bookingId },
+    );
 
-  const { error } = await db
-    .from("pending_bookings")
-    .update(updateData)
-    .eq("id", bookingId);
+    if (!result) {
+      throw new Error("Pending booking not found");
+    }
 
-  if (error) {
+    console.log(`[PENDING_BOOKING] Rejected booking ${bookingId} by ${userId}`);
+  } catch (error) {
     console.error("[PENDING_BOOKING] Rejection failed:", error);
-    throw new Error(`Failed to reject pending booking: ${error.message}`);
+    throw new Error(
+      `Failed to reject pending booking: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
-
-  console.log(`[PENDING_BOOKING] Rejected booking ${bookingId} by ${userId}`);
 }
 
 /**
@@ -145,26 +196,57 @@ export async function getPendingBookings(
   tenantId: string,
   status?: string,
 ): Promise<PendingBookingWithCall[]> {
-  const db = getSupabase();
+  try {
+    let sql = `
+      SELECT
+        pb.*,
+        c.id as call_id_joined,
+        c.started_at as call_started_at,
+        c.transcript as call_transcript
+      FROM pending_bookings pb
+      LEFT JOIN calls c ON pb.call_id = c.id
+      WHERE pb.tenant_id = $1
+    `;
+    const params: unknown[] = [tenantId];
 
-  let query = db
-    .from("pending_bookings")
-    .select("*, calls(id, started_at, transcript)")
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: false });
+    if (status) {
+      sql += ` AND pb.status = $2`;
+      params.push(status);
+    }
 
-  if (status) {
-    query = query.eq("status", status);
-  }
+    sql += ` ORDER BY pb.created_at DESC`;
 
-  const { data, error } = await query;
+    const rows = await queryAll<PendingBookingWithCallRow>(sql, params);
 
-  if (error) {
+    return rows.map((row) => ({
+      id: row.id,
+      tenant_id: row.tenant_id,
+      call_id: row.call_id ?? undefined,
+      customer_name: row.customer_name,
+      customer_phone: row.customer_phone ?? "",
+      customer_email: row.customer_email ?? undefined,
+      requested_date: row.requested_date ?? undefined,
+      requested_time: row.requested_time ?? undefined,
+      service: row.service ?? undefined,
+      notes: row.notes ?? undefined,
+      status: row.status as PendingBooking["status"],
+      confirmed_by: row.confirmed_by ?? undefined,
+      confirmed_at: row.confirmed_at ?? undefined,
+      created_at: row.created_at,
+      calls: row.call_id_joined
+        ? {
+            id: row.call_id_joined,
+            started_at: row.call_started_at || "",
+            transcript: row.call_transcript ?? undefined,
+          }
+        : undefined,
+    }));
+  } catch (error) {
     console.error("[PENDING_BOOKING] Failed to get bookings:", error);
-    throw new Error(`Failed to get pending bookings: ${error.message}`);
+    throw new Error(
+      `Failed to get pending bookings: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
-
-  return (data || []) as PendingBookingWithCall[];
 }
 
 /**
@@ -174,25 +256,52 @@ export async function getPendingBookingById(
   bookingId: string,
   tenantId: string,
 ): Promise<PendingBookingWithCall | null> {
-  const db = getSupabase();
+  try {
+    const row = await queryOne<PendingBookingWithCallRow>(
+      `SELECT
+        pb.*,
+        c.id as call_id_joined,
+        c.started_at as call_started_at,
+        c.transcript as call_transcript
+      FROM pending_bookings pb
+      LEFT JOIN calls c ON pb.call_id = c.id
+      WHERE pb.id = $1 AND pb.tenant_id = $2`,
+      [bookingId, tenantId],
+    );
 
-  const { data, error } = await db
-    .from("pending_bookings")
-    .select("*, calls(id, started_at, transcript)")
-    .eq("id", bookingId)
-    .eq("tenant_id", tenantId)
-    .single();
-
-  if (error) {
-    if (error.code === "PGRST116") {
-      // No rows returned
+    if (!row) {
       return null;
     }
-    console.error("[PENDING_BOOKING] Failed to get booking:", error);
-    throw new Error(`Failed to get pending booking: ${error.message}`);
-  }
 
-  return data as PendingBookingWithCall;
+    return {
+      id: row.id,
+      tenant_id: row.tenant_id,
+      call_id: row.call_id ?? undefined,
+      customer_name: row.customer_name,
+      customer_phone: row.customer_phone ?? "",
+      customer_email: row.customer_email ?? undefined,
+      requested_date: row.requested_date ?? undefined,
+      requested_time: row.requested_time ?? undefined,
+      service: row.service ?? undefined,
+      notes: row.notes ?? undefined,
+      status: row.status as PendingBooking["status"],
+      confirmed_by: row.confirmed_by ?? undefined,
+      confirmed_at: row.confirmed_at ?? undefined,
+      created_at: row.created_at,
+      calls: row.call_id_joined
+        ? {
+            id: row.call_id_joined,
+            started_at: row.call_started_at || "",
+            transcript: row.call_transcript ?? undefined,
+          }
+        : undefined,
+    };
+  } catch (error) {
+    console.error("[PENDING_BOOKING] Failed to get booking:", error);
+    throw new Error(
+      `Failed to get pending booking: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
+  }
 }
 
 /**
@@ -205,8 +314,6 @@ export async function convertPendingToConfirmed(
   confirmedDate?: string,
   confirmedTime?: string,
 ): Promise<string> {
-  const db = getSupabase();
-
   // Get the pending booking
   const pending = await getPendingBookingById(bookingId, tenantId);
   if (!pending) {
@@ -224,10 +331,9 @@ export async function convertPendingToConfirmed(
   // Generate confirmation code
   const confirmationCode = generateConfirmationCode();
 
-  // Create the confirmed booking
-  const { data: booking, error: bookingError } = await db
-    .from("bookings")
-    .insert({
+  try {
+    // Create the confirmed booking
+    const booking = await insertOne<BookingRow>("bookings", {
       tenant_id: tenantId,
       call_id: pending.call_id,
       customer_name: pending.customer_name,
@@ -240,26 +346,25 @@ export async function convertPendingToConfirmed(
       status: "confirmed",
       confirmation_code: confirmationCode,
       source: "call",
-    })
-    .select()
-    .single();
+    });
 
-  if (bookingError) {
+    // Update pending booking status
+    await confirmPendingBooking(bookingId, userId);
+
+    console.log(
+      `[PENDING_BOOKING] Converted pending ${bookingId} to confirmed ${booking.id}`,
+    );
+
+    return booking.id;
+  } catch (error) {
     console.error(
       "[PENDING_BOOKING] Failed to create confirmed booking:",
-      bookingError,
+      error,
     );
-    throw new Error(`Failed to create booking: ${bookingError.message}`);
+    throw new Error(
+      `Failed to create booking: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
-
-  // Update pending booking status
-  await confirmPendingBooking(bookingId, userId);
-
-  console.log(
-    `[PENDING_BOOKING] Converted pending ${bookingId} to confirmed ${booking.id}`,
-  );
-
-  return booking.id;
 }
 
 function generateConfirmationCode(): string {

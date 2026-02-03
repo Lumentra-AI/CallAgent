@@ -15,7 +15,7 @@ import { OutlookCalendarService } from "./outlook.js";
 import { CalendlyService } from "./calendly.js";
 import { BuiltinCalendarService } from "./builtin.js";
 import { createPendingBooking } from "./pending.js";
-import { getSupabase } from "../database/client.js";
+import { queryOne } from "../database/client.js";
 import type { TenantIntegration } from "../../types/database.js";
 
 /**
@@ -25,34 +25,31 @@ import type { TenantIntegration } from "../../types/database.js";
 export async function getCalendarService(
   tenantId: string,
 ): Promise<CalendarService> {
-  const db = getSupabase();
-
   // Check if tenant has external integration
-  const { data: integration } = await db
-    .from("tenant_integrations")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .eq("status", "active")
-    .in("provider", ["google_calendar", "outlook", "calendly"])
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const integration = await queryOne<TenantIntegration>(
+    `SELECT *
+     FROM tenant_integrations
+     WHERE tenant_id = $1
+       AND status = $2
+       AND provider = ANY($3)
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    [tenantId, "active", ["google_calendar", "outlook", "calendly"]],
+  );
 
   if (integration) {
-    const typedIntegration = integration as TenantIntegration;
-
-    switch (typedIntegration.provider) {
+    switch (integration.provider) {
       case "google_calendar":
         console.log(`[CALENDAR] Using Google Calendar for tenant ${tenantId}`);
-        return new GoogleCalendarService(typedIntegration);
+        return new GoogleCalendarService(integration);
 
       case "outlook":
         console.log(`[CALENDAR] Using Outlook for tenant ${tenantId}`);
-        return new OutlookCalendarService(typedIntegration);
+        return new OutlookCalendarService(integration);
 
       case "calendly":
         console.log(`[CALENDAR] Using Calendly for tenant ${tenantId}`);
-        return new CalendlyService(typedIntegration);
+        return new CalendlyService(integration);
     }
   }
 

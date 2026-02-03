@@ -15,7 +15,8 @@ import type {
   CreateOrderArgs,
   CreateOrderResult,
 } from "../../types/voice.js";
-import { getSupabase } from "../database/client.js";
+import { query, queryAll } from "../database/client.js";
+import { insertOne } from "../database/query-helpers.js";
 import {
   signalwireConfig,
   signalwireApiUrl,
@@ -207,6 +208,11 @@ export const voiceAgentTools: GroqTool[] = [
 ];
 
 // Tool execution functions
+
+interface BookingTimeRow {
+  booking_time: string;
+}
+
 export async function executeCheckAvailability(
   args: CheckAvailabilityArgs,
   context: ToolExecutionContext,
@@ -218,27 +224,15 @@ export async function executeCheckAvailability(
 
   try {
     // Get existing bookings for the date
-    const supabase = getSupabase();
-    const { data: existingBookings, error } = await supabase
-      .from("bookings")
-      .select("booking_time")
-      .eq("tenant_id", context.tenantId)
-      .eq("booking_date", args.date)
-      .neq("status", "cancelled");
-
-    if (error) {
-      console.error("[TOOLS] Error fetching bookings:", error);
-      return {
-        available: false,
-        message:
-          "I'm having trouble checking availability right now. Please try again.",
-      };
-    }
+    const existingBookings = await queryAll<BookingTimeRow>(
+      `SELECT booking_time FROM bookings
+       WHERE tenant_id = $1 AND booking_date = $2 AND status != 'cancelled'`,
+      [context.tenantId, args.date],
+    );
 
     // Generate available slots (simple 9am-5pm, hourly slots)
     const bookedTimes = new Set(
-      existingBookings?.map((b: { booking_time: string }) => b.booking_time) ||
-        [],
+      existingBookings?.map((b) => b.booking_time) || [],
     );
     const allSlots = [
       "09:00",
@@ -279,6 +273,10 @@ export async function executeCheckAvailability(
   }
 }
 
+interface BookingRow {
+  id: string;
+}
+
 export async function executeCreateBooking(
   args: CreateBookingArgs,
   context: ToolExecutionContext,
@@ -290,33 +288,19 @@ export async function executeCreateBooking(
 
   try {
     const confirmationCode = generateConfirmationCode();
-    const supabase = getSupabase();
 
-    const { data, error } = await supabase
-      .from("bookings")
-      .insert({
-        tenant_id: context.tenantId,
-        customer_name: args.customer_name,
-        customer_phone: args.customer_phone,
-        booking_type: args.service_type || "general",
-        booking_date: args.date,
-        booking_time: args.time,
-        notes: args.notes,
-        status: "confirmed",
-        confirmation_code: confirmationCode,
-        reminder_sent: false,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error("[TOOLS] Error creating booking:", error);
-      return {
-        success: false,
-        message:
-          "I wasn't able to complete the booking. Would you like me to try again?",
-      };
-    }
+    const data = await insertOne<BookingRow>("bookings", {
+      tenant_id: context.tenantId,
+      customer_name: args.customer_name,
+      customer_phone: args.customer_phone,
+      booking_type: args.service_type || "general",
+      booking_date: args.date,
+      booking_time: args.time,
+      notes: args.notes,
+      status: "confirmed",
+      confirmation_code: confirmationCode,
+      reminder_sent: false,
+    });
 
     const formattedTime = formatTimeForVoice(args.time);
     const formattedDate = formatDateForVoice(args.date);
@@ -369,14 +353,10 @@ export async function executeTransferToHuman(
 
   try {
     // Log the escalation in the database
-    const supabase = getSupabase();
-    await supabase
-      .from("calls")
-      .update({
-        outcome_type: "escalation",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("call_sid", context.callSid);
+    await query(
+      `UPDATE calls SET outcome_type = $1, updated_at = $2 WHERE call_sid = $3`,
+      ["escalation", new Date().toISOString(), context.callSid],
+    );
 
     // Initiate the transfer via SignalWire
     const result = await transferCall(
@@ -536,7 +516,6 @@ export async function executeCreateOrder(
 
   try {
     const confirmationCode = `TP-${generateConfirmationCode()}`;
-    const supabase = getSupabase();
 
     // Calculate estimated time based on order type
     const estimatedMinutes = args.order_type === "pickup" ? 20 : 40;
@@ -559,31 +538,18 @@ export async function executeCreateOrder(
       .join(". ");
 
     // Insert order as booking
-    const { data, error } = await supabase
-      .from("bookings")
-      .insert({
-        tenant_id: context.tenantId,
-        customer_name: args.customer_name,
-        customer_phone: customerPhone,
-        booking_type: args.order_type,
-        booking_date: new Date().toISOString().split("T")[0],
-        booking_time: new Date().toTimeString().slice(0, 5),
-        notes: notes,
-        status: "confirmed",
-        confirmation_code: confirmationCode,
-        reminder_sent: false,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error("[TOOLS] Error creating order:", error);
-      return {
-        success: false,
-        message:
-          "I had trouble placing your order. Can you repeat that for me?",
-      };
-    }
+    const data = await insertOne<BookingRow>("bookings", {
+      tenant_id: context.tenantId,
+      customer_name: args.customer_name,
+      customer_phone: customerPhone,
+      booking_type: args.order_type,
+      booking_date: new Date().toISOString().split("T")[0],
+      booking_time: new Date().toTimeString().slice(0, 5),
+      notes: notes,
+      status: "confirmed",
+      confirmation_code: confirmationCode,
+      reminder_sent: false,
+    });
 
     const orderTypeText =
       args.order_type === "pickup"

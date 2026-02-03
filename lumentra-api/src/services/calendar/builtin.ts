@@ -10,7 +10,8 @@ import type {
   BookingConfirmation,
   DateRange,
 } from "./types.js";
-import { getSupabase } from "../database/client.js";
+import { queryOne, queryAll } from "../database/client.js";
+import { insertOne, updateOne } from "../database/query-helpers.js";
 
 interface OperatingHours {
   [day: string]: {
@@ -32,6 +33,24 @@ interface TenantData {
   operating_hours: OperatingHours | null;
 }
 
+interface BookingRow {
+  id: string;
+  tenant_id: string;
+  customer_name: string;
+  customer_phone: string | null;
+  customer_email: string | null;
+  booking_date: string;
+  booking_time: string;
+  booking_type: string;
+  duration_minutes: number | null;
+  notes: string | null;
+  status: string;
+  confirmation_code: string | null;
+  source: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export class BuiltinCalendarService implements CalendarService {
   private tenantId: string;
 
@@ -43,31 +62,30 @@ export class BuiltinCalendarService implements CalendarService {
     _tenantId: string,
     dateRange: DateRange,
   ): Promise<TimeSlot[]> {
-    const db = getSupabase();
-
     // Get existing bookings
     const startDate = dateRange.start.split("T")[0];
     const endDate = dateRange.end.split("T")[0];
 
-    const { data: bookings } = await db
-      .from("bookings")
-      .select("id, booking_date, booking_time, duration_minutes")
-      .eq("tenant_id", this.tenantId)
-      .gte("booking_date", startDate)
-      .lte("booking_date", endDate)
-      .neq("status", "cancelled");
+    const bookings = await queryAll<ExistingBooking>(
+      `SELECT id, booking_date, booking_time, duration_minutes, status
+       FROM bookings
+       WHERE tenant_id = $1
+         AND booking_date >= $2
+         AND booking_date <= $3
+         AND status != $4`,
+      [this.tenantId, startDate, endDate, "cancelled"],
+    );
 
     // Get tenant operating hours
-    const { data: tenant } = await db
-      .from("tenants")
-      .select("operating_hours")
-      .eq("id", this.tenantId)
-      .single();
+    const tenant = await queryOne<TenantData>(
+      `SELECT operating_hours FROM tenants WHERE id = $1`,
+      [this.tenantId],
+    );
 
     return this.generateSlots(
       dateRange,
-      (bookings || []) as ExistingBooking[],
-      (tenant as TenantData | null)?.operating_hours ?? null,
+      bookings,
+      tenant?.operating_hours ?? null,
     );
   }
 
@@ -75,8 +93,6 @@ export class BuiltinCalendarService implements CalendarService {
     _tenantId: string,
     booking: BookingRequest,
   ): Promise<BookingConfirmation> {
-    const db = getSupabase();
-
     // Generate confirmation code
     const confirmationCode = this.generateConfirmationCode();
 
@@ -91,9 +107,8 @@ export class BuiltinCalendarService implements CalendarService {
       (endTime.getTime() - startTime.getTime()) / 60000,
     );
 
-    const { data, error } = await db
-      .from("bookings")
-      .insert({
+    try {
+      const data = await insertOne<BookingRow>("bookings", {
         tenant_id: this.tenantId,
         customer_name: booking.customerName,
         customer_phone: booking.customerPhone,
@@ -106,83 +121,90 @@ export class BuiltinCalendarService implements CalendarService {
         status: "confirmed",
         confirmation_code: confirmationCode,
         source: "call",
-      })
-      .select()
-      .single();
+      });
 
-    if (error) {
+      return {
+        id: data.id,
+        status: "confirmed",
+        startTime: booking.startTime,
+        endTime: booking.endTime,
+      };
+    } catch (error) {
       console.error("[BUILTIN_CALENDAR] Booking creation failed:", error);
-      throw new Error(`Failed to create booking: ${error.message}`);
+      throw new Error(
+        `Failed to create booking: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
-
-    return {
-      id: data.id,
-      status: "confirmed",
-      startTime: booking.startTime,
-      endTime: booking.endTime,
-    };
   }
 
   async cancelBooking(_tenantId: string, bookingId: string): Promise<boolean> {
-    const db = getSupabase();
+    try {
+      const result = await updateOne<BookingRow>(
+        "bookings",
+        {
+          status: "cancelled",
+          updated_at: new Date().toISOString(),
+        },
+        {
+          tenant_id: this.tenantId,
+          id: bookingId,
+        },
+      );
 
-    const { error } = await db
-      .from("bookings")
-      .update({
-        status: "cancelled",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("tenant_id", this.tenantId)
-      .eq("id", bookingId);
+      if (!result) {
+        throw new Error("Booking not found");
+      }
 
-    if (error) {
+      return true;
+    } catch (error) {
       console.error("[BUILTIN_CALENDAR] Booking cancellation failed:", error);
-      throw new Error(`Failed to cancel booking: ${error.message}`);
+      throw new Error(
+        `Failed to cancel booking: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
-
-    return true;
   }
 
   async getBookings(
     _tenantId: string,
     dateRange: DateRange,
   ): Promise<BookingConfirmation[]> {
-    const db = getSupabase();
-
     const startDate = dateRange.start.split("T")[0];
     const endDate = dateRange.end.split("T")[0];
 
-    const { data, error } = await db
-      .from("bookings")
-      .select("id, booking_date, booking_time, duration_minutes, status")
-      .eq("tenant_id", this.tenantId)
-      .gte("booking_date", startDate)
-      .lte("booking_date", endDate)
-      .order("booking_date")
-      .order("booking_time");
+    try {
+      const data = await queryAll<ExistingBooking>(
+        `SELECT id, booking_date, booking_time, duration_minutes, status
+         FROM bookings
+         WHERE tenant_id = $1
+           AND booking_date >= $2
+           AND booking_date <= $3
+         ORDER BY booking_date, booking_time`,
+        [this.tenantId, startDate, endDate],
+      );
 
-    if (error) {
+      return data.map((booking: ExistingBooking) => {
+        const startDateTime = `${booking.booking_date}T${booking.booking_time}:00`;
+        const duration = booking.duration_minutes || 30;
+        const endDateTime = new Date(
+          new Date(startDateTime).getTime() + duration * 60000,
+        ).toISOString();
+
+        return {
+          id: booking.id,
+          status:
+            booking.status === "cancelled"
+              ? ("pending" as const)
+              : ("confirmed" as const),
+          startTime: new Date(startDateTime).toISOString(),
+          endTime: endDateTime,
+        };
+      });
+    } catch (error) {
       console.error("[BUILTIN_CALENDAR] Failed to get bookings:", error);
-      throw new Error(`Failed to get bookings: ${error.message}`);
+      throw new Error(
+        `Failed to get bookings: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
-
-    return (data || []).map((booking: ExistingBooking) => {
-      const startDateTime = `${booking.booking_date}T${booking.booking_time}:00`;
-      const duration = booking.duration_minutes || 30;
-      const endDateTime = new Date(
-        new Date(startDateTime).getTime() + duration * 60000,
-      ).toISOString();
-
-      return {
-        id: booking.id,
-        status:
-          booking.status === "cancelled"
-            ? ("pending" as const)
-            : ("confirmed" as const),
-        startTime: new Date(startDateTime).toISOString(),
-        endTime: endDateTime,
-      };
-    });
   }
 
   /**

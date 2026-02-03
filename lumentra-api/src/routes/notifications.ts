@@ -1,7 +1,12 @@
 // Notifications API Routes
 import { Hono } from "hono";
 import { z } from "zod";
-import { getSupabase } from "../services/database/client.js";
+import { queryOne, queryAll } from "../services/database/client.js";
+import {
+  insertOne,
+  updateOne,
+  upsert,
+} from "../services/database/query-helpers.js";
 import {
   queueNotification,
   processQueue,
@@ -9,6 +14,7 @@ import {
   getDefaultTemplate,
   renderTemplate,
 } from "../services/notifications/notification-service.js";
+import type { NotificationTemplate } from "../types/crm.js";
 
 import { getAuthTenantId } from "../middleware/index.js";
 
@@ -18,40 +24,108 @@ function getTenantId(c: Parameters<typeof getAuthTenantId>[0]): string {
   return getAuthTenantId(c);
 }
 
+// Notification row type
+interface NotificationRow {
+  id: string;
+  tenant_id: string;
+  status: string;
+  channel: string;
+  notification_type: string;
+  contact_id: string | null;
+  booking_id: string | null;
+  recipient: string;
+  recipient_name: string | null;
+  subject: string | null;
+  body: string | null;
+  scheduled_at: string | null;
+  sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface NotificationTemplateRow {
+  id: string;
+  tenant_id: string;
+  name: string;
+  notification_type: string;
+  channel: string;
+  subject_template: string | null;
+  body_template: string;
+  body_html_template: string | null;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+interface NotificationPreferenceRow {
+  id: string;
+  tenant_id: string;
+  notification_type: string;
+  email_enabled: boolean;
+  sms_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // GET /api/notifications
 notificationsRoutes.get("/", async (c) => {
   try {
     const tenantId = getTenantId(c);
     const query = c.req.query();
-    const db = getSupabase();
-
-    let dbQuery = db
-      .from("notifications")
-      .select("*", { count: "exact" })
-      .eq("tenant_id", tenantId);
-
-    if (query.status) dbQuery = dbQuery.eq("status", query.status);
-    if (query.channel) dbQuery = dbQuery.eq("channel", query.channel);
-    if (query.notification_type)
-      dbQuery = dbQuery.eq("notification_type", query.notification_type);
-    if (query.contact_id) dbQuery = dbQuery.eq("contact_id", query.contact_id);
-    if (query.booking_id) dbQuery = dbQuery.eq("booking_id", query.booking_id);
 
     const limit = parseInt(query.limit || "20");
     const offset = parseInt(query.offset || "0");
 
-    const { data, error, count } = await dbQuery
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
+    // Build WHERE conditions
+    const conditions: string[] = ["tenant_id = $1"];
+    const params: unknown[] = [tenantId];
+    let paramIndex = 2;
 
-    if (error) return c.json({ error: error.message }, 500);
+    if (query.status) {
+      conditions.push(`status = $${paramIndex++}`);
+      params.push(query.status);
+    }
+    if (query.channel) {
+      conditions.push(`channel = $${paramIndex++}`);
+      params.push(query.channel);
+    }
+    if (query.notification_type) {
+      conditions.push(`notification_type = $${paramIndex++}`);
+      params.push(query.notification_type);
+    }
+    if (query.contact_id) {
+      conditions.push(`contact_id = $${paramIndex++}`);
+      params.push(query.contact_id);
+    }
+    if (query.booking_id) {
+      conditions.push(`booking_id = $${paramIndex++}`);
+      params.push(query.booking_id);
+    }
+
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+    // Get total count
+    const countResult = await queryOne<{ count: string }>(
+      `SELECT COUNT(*) as count FROM notifications ${whereClause}`,
+      params,
+    );
+    const total = parseInt(countResult?.count || "0", 10);
+
+    // Get data with pagination
+    const data = await queryAll<NotificationRow>(
+      `SELECT * FROM notifications ${whereClause}
+       ORDER BY created_at DESC
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      [...params, limit, offset],
+    );
 
     return c.json({
       data: data || [],
-      total: count || 0,
+      total,
       limit,
       offset,
-      has_more: (count || 0) > offset + limit,
+      has_more: total > offset + limit,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -63,16 +137,14 @@ notificationsRoutes.get("/", async (c) => {
 notificationsRoutes.get("/templates", async (c) => {
   try {
     const tenantId = getTenantId(c);
-    const db = getSupabase();
 
-    const { data, error } = await db
-      .from("notification_templates")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .order("notification_type")
-      .order("channel");
+    const data = await queryAll<NotificationTemplateRow>(
+      `SELECT * FROM notification_templates
+       WHERE tenant_id = $1
+       ORDER BY notification_type, channel`,
+      [tenantId],
+    );
 
-    if (error) return c.json({ error: error.message }, 500);
     return c.json({ templates: data || [] });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -84,14 +156,12 @@ notificationsRoutes.get("/templates", async (c) => {
 notificationsRoutes.get("/preferences", async (c) => {
   try {
     const tenantId = getTenantId(c);
-    const db = getSupabase();
 
-    const { data, error } = await db
-      .from("notification_preferences")
-      .select("*")
-      .eq("tenant_id", tenantId);
+    const data = await queryAll<NotificationPreferenceRow>(
+      `SELECT * FROM notification_preferences WHERE tenant_id = $1`,
+      [tenantId],
+    );
 
-    if (error) return c.json({ error: error.message }, 500);
     return c.json({ preferences: data || [] });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -104,17 +174,15 @@ notificationsRoutes.get("/:id", async (c) => {
   try {
     const tenantId = getTenantId(c);
     const id = c.req.param("id");
-    const db = getSupabase();
 
-    const { data, error } = await db
-      .from("notifications")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .eq("id", id)
-      .single();
+    const data = await queryOne<NotificationRow>(
+      `SELECT * FROM notifications WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, id],
+    );
 
-    if (error?.code === "PGRST116") return c.json({ error: "Not found" }, 404);
-    if (error) return c.json({ error: error.message }, 500);
+    if (!data) {
+      return c.json({ error: "Not found" }, 404);
+    }
 
     return c.json(data);
   } catch (error) {
@@ -179,15 +247,32 @@ notificationsRoutes.post("/preview", async (c) => {
 
     const { template_id, notification_type, channel, variables } = body;
 
-    let template = null;
+    let template: NotificationTemplate | null = null;
     if (template_id) {
-      const db = getSupabase();
-      const { data } = await db
-        .from("notification_templates")
-        .select("*")
-        .eq("id", template_id)
-        .single();
-      template = data;
+      const row = await queryOne<NotificationTemplateRow>(
+        `SELECT * FROM notification_templates WHERE id = $1`,
+        [template_id],
+      );
+      if (row) {
+        // Convert nullable DB fields to optional fields for the type
+        template = {
+          id: row.id,
+          tenant_id: row.tenant_id,
+          name: row.name,
+          notification_type:
+            row.notification_type as NotificationTemplate["notification_type"],
+          channel: row.channel as NotificationTemplate["channel"],
+          subject_template: row.subject_template ?? undefined,
+          body_template: row.body_template,
+          body_html_template: row.body_html_template ?? undefined,
+          is_default: row.is_default,
+          is_active: row.is_active,
+          available_variables: [],
+          preview_data: {},
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        };
+      }
     } else if (notification_type && channel) {
       template = await getDefaultTemplate(tenantId, notification_type, channel);
     }
@@ -209,7 +294,6 @@ notificationsRoutes.post("/templates", async (c) => {
   try {
     const tenantId = getTenantId(c);
     const body = await c.req.json();
-    const db = getSupabase();
 
     const schema = z.object({
       name: z.string(),
@@ -226,13 +310,15 @@ notificationsRoutes.post("/templates", async (c) => {
       return c.json({ error: "Validation failed" }, 400);
     }
 
-    const { data, error } = await db
-      .from("notification_templates")
-      .insert({ tenant_id: tenantId, ...parsed.data, is_active: true })
-      .select()
-      .single();
+    const data = await insertOne<NotificationTemplateRow>(
+      "notification_templates",
+      {
+        tenant_id: tenantId,
+        ...parsed.data,
+        is_active: true,
+      },
+    );
 
-    if (error) return c.json({ error: error.message }, 500);
     return c.json(data, 201);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -246,20 +332,21 @@ notificationsRoutes.put("/templates/:id", async (c) => {
     const tenantId = getTenantId(c);
     const id = c.req.param("id");
     const body = await c.req.json();
-    const db = getSupabase();
 
+    // Remove protected fields
     delete body.id;
     delete body.tenant_id;
 
-    const { data, error } = await db
-      .from("notification_templates")
-      .update(body)
-      .eq("tenant_id", tenantId)
-      .eq("id", id)
-      .select()
-      .single();
+    const data = await updateOne<NotificationTemplateRow>(
+      "notification_templates",
+      body,
+      { tenant_id: tenantId, id },
+    );
 
-    if (error) return c.json({ error: error.message }, 500);
+    if (!data) {
+      return c.json({ error: "Template not found" }, 404);
+    }
+
     return c.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -272,18 +359,13 @@ notificationsRoutes.put("/preferences", async (c) => {
   try {
     const tenantId = getTenantId(c);
     const body = await c.req.json();
-    const db = getSupabase();
 
-    const { data, error } = await db
-      .from("notification_preferences")
-      .upsert(
-        { tenant_id: tenantId, ...body },
-        { onConflict: "tenant_id,notification_type" },
-      )
-      .select()
-      .single();
+    const data = await upsert<NotificationPreferenceRow>(
+      "notification_preferences",
+      { tenant_id: tenantId, ...body },
+      ["tenant_id", "notification_type"],
+    );
 
-    if (error) return c.json({ error: error.message }, 500);
     return c.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

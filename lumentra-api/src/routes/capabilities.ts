@@ -1,8 +1,29 @@
 import { Hono } from "hono";
-import { getSupabase } from "../services/database/client.js";
+import {
+  queryOne,
+  queryAll,
+  transaction,
+} from "../services/database/client.js";
 import { getAuthUserId } from "../middleware/index.js";
+import type { PoolClient } from "pg";
 
 export const capabilitiesRoutes = new Hono();
+
+/** Type definitions for database rows */
+interface MembershipRow {
+  tenant_id: string;
+  role: string;
+}
+
+interface CapabilityRow {
+  id: string;
+  tenant_id: string;
+  capability: string;
+  config: Record<string, unknown>;
+  is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
 // Capability definitions by industry
 const CAPABILITY_OPTIONS: Record<
@@ -570,31 +591,39 @@ capabilitiesRoutes.get("/options/:industry", async (c) => {
  */
 capabilitiesRoutes.get("/", async (c) => {
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+      LIMIT 1
+    `;
+    const membership = await queryOne<{ tenant_id: string }>(membershipSql, [
+      userId,
+    ]);
 
-  if (!membership) {
-    return c.json({ capabilities: [] });
+    if (!membership) {
+      return c.json({ capabilities: [] });
+    }
+
+    const capabilitiesSql = `
+      SELECT *
+      FROM tenant_capabilities
+      WHERE tenant_id = $1
+      ORDER BY created_at ASC
+    `;
+    const capabilities = await queryAll<CapabilityRow>(capabilitiesSql, [
+      membership.tenant_id,
+    ]);
+
+    return c.json({ capabilities: capabilities || [] });
+  } catch (error) {
+    console.error("[CAPABILITIES] Error fetching capabilities:", error);
+    return c.json({ error: "Failed to fetch capabilities" }, 500);
   }
-
-  const { data: capabilities, error } = await db
-    .from("tenant_capabilities")
-    .select("*")
-    .eq("tenant_id", membership.tenant_id)
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
-
-  return c.json({ capabilities: capabilities || [] });
 });
 
 /**
@@ -604,56 +633,64 @@ capabilitiesRoutes.get("/", async (c) => {
 capabilitiesRoutes.put("/", async (c) => {
   const body = await c.req.json();
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
   if (!body.capabilities || !Array.isArray(body.capabilities)) {
     return c.json({ error: "capabilities array is required" }, 400);
   }
 
-  // Get tenant (must be owner or admin)
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant (must be owner or admin)
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
-
-  const tenantId = membership.tenant_id;
-
-  // Delete existing capabilities
-  await db.from("tenant_capabilities").delete().eq("tenant_id", tenantId);
-
-  // Insert new capabilities
-  if (body.capabilities.length > 0) {
-    const capabilities = body.capabilities.map(
-      (cap: { capability: string; config?: Record<string, unknown> }) => ({
-        tenant_id: tenantId,
-        capability: cap.capability,
-        config: cap.config || {},
-        is_enabled: true,
-      }),
-    );
-
-    const { error } = await db.from("tenant_capabilities").insert(capabilities);
-
-    if (error) {
-      return c.json({ error: error.message }, 500);
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
     }
+
+    const tenantId = membership.tenant_id;
+
+    // Delete existing capabilities and insert new ones in a transaction
+    await transaction(async (client: PoolClient) => {
+      // Delete existing capabilities
+      await client.query(
+        "DELETE FROM tenant_capabilities WHERE tenant_id = $1",
+        [tenantId],
+      );
+
+      // Insert new capabilities
+      for (const cap of body.capabilities) {
+        await client.query(
+          `INSERT INTO tenant_capabilities (tenant_id, capability, config, is_enabled)
+           VALUES ($1, $2, $3, $4)`,
+          [tenantId, cap.capability, JSON.stringify(cap.config || {}), true],
+        );
+      }
+    });
+
+    // Return updated list
+    const updatedSql = `
+      SELECT *
+      FROM tenant_capabilities
+      WHERE tenant_id = $1
+      ORDER BY created_at ASC
+    `;
+    const updated = await queryAll<CapabilityRow>(updatedSql, [tenantId]);
+
+    return c.json({ capabilities: updated || [] });
+  } catch (error) {
+    console.error("[CAPABILITIES] Error updating capabilities:", error);
+    return c.json({ error: "Failed to update capabilities" }, 500);
   }
-
-  // Return updated list
-  const { data: updated } = await db
-    .from("tenant_capabilities")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: true });
-
-  return c.json({ capabilities: updated || [] });
 });
 
 /**
@@ -664,38 +701,46 @@ capabilitiesRoutes.put("/:capability", async (c) => {
   const capability = c.req.param("capability");
   const body = await c.req.json();
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  // Get tenant (must be owner or admin)
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant (must be owner or admin)
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
 
-  const { data, error } = await db
-    .from("tenant_capabilities")
-    .update({
-      config: body.config || {},
-      is_enabled: body.is_enabled !== undefined ? body.is_enabled : true,
-    })
-    .eq("tenant_id", membership.tenant_id)
-    .eq("capability", capability)
-    .select()
-    .single();
+    const updateSql = `
+      UPDATE tenant_capabilities
+      SET config = $1, is_enabled = $2
+      WHERE tenant_id = $3 AND capability = $4
+      RETURNING *
+    `;
+    const data = await queryOne<CapabilityRow>(updateSql, [
+      JSON.stringify(body.config || {}),
+      body.is_enabled !== undefined ? body.is_enabled : true,
+      membership.tenant_id,
+      capability,
+    ]);
 
-  if (error) {
-    if (error.code === "PGRST116") {
+    if (!data) {
       return c.json({ error: "Capability not found" }, 404);
     }
-    return c.json({ error: error.message }, 500);
-  }
 
-  return c.json(data);
+    return c.json(data);
+  } catch (error) {
+    console.error("[CAPABILITIES] Error updating capability:", error);
+    return c.json({ error: "Failed to update capability" }, 500);
+  }
 });

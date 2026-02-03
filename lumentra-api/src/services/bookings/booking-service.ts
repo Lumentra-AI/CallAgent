@@ -1,5 +1,11 @@
 // Booking Service - CRM booking management
-import { getSupabase } from "../database/client.js";
+import { queryOne, queryAll } from "../database/client.js";
+import {
+  insertOne,
+  updateOne,
+  rpc,
+  paginatedQuery,
+} from "../database/query-helpers.js";
 import {
   BookingFilters,
   PaginationParams,
@@ -28,26 +34,19 @@ export async function createBooking(
     source?: "call" | "web" | "manual" | "api";
   },
 ): Promise<Booking> {
-  const db = getSupabase();
   const confirmationCode = generateConfirmationCode();
 
-  const { data: booking, error } = await db
-    .from("bookings")
-    .insert({
-      tenant_id: tenantId,
-      ...data,
-      confirmation_code: confirmationCode,
-      status: "pending",
-      reminder_sent: false,
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`Failed to create booking: ${error.message}`);
+  const booking = await insertOne<Booking>("bookings", {
+    tenant_id: tenantId,
+    ...data,
+    confirmation_code: confirmationCode,
+    status: "pending",
+    reminder_sent: false,
+  });
 
   // Update slot booked_count if slot_id provided
   if (data.slot_id) {
-    await db.rpc("increment_slot_booked", { p_slot_id: data.slot_id });
+    await rpc("increment_slot_booked", { p_slot_id: data.slot_id });
   }
 
   return booking;
@@ -57,17 +56,10 @@ export async function getBooking(
   tenantId: string,
   id: string,
 ): Promise<Booking | null> {
-  const db = getSupabase();
-  const { data, error } = await db
-    .from("bookings")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .eq("id", id)
-    .single();
-
-  if (error?.code === "PGRST116") return null;
-  if (error) throw new Error(`Failed to get booking: ${error.message}`);
-  return data;
+  return queryOne<Booking>(
+    "SELECT * FROM bookings WHERE tenant_id = $1 AND id = $2",
+    [tenantId, id],
+  );
 }
 
 export async function updateBooking(
@@ -75,21 +67,20 @@ export async function updateBooking(
   id: string,
   updates: Partial<Booking>,
 ): Promise<Booking> {
-  const db = getSupabase();
   delete (updates as any).id;
   delete (updates as any).tenant_id;
   delete (updates as any).confirmation_code;
 
-  const { data, error } = await db
-    .from("bookings")
-    .update(updates)
-    .eq("tenant_id", tenantId)
-    .eq("id", id)
-    .select()
-    .single();
+  const result = await updateOne<Booking>("bookings", updates, {
+    tenant_id: tenantId,
+    id,
+  });
 
-  if (error) throw new Error(`Failed to update booking: ${error.message}`);
-  return data;
+  if (!result) {
+    throw new Error("Failed to update booking: not found");
+  }
+
+  return result;
 }
 
 export async function cancelBooking(
@@ -102,8 +93,7 @@ export async function cancelBooking(
 
   // Release slot if exists
   if (booking.slot_id) {
-    const db = getSupabase();
-    await db.rpc("decrement_slot_booked", { p_slot_id: booking.slot_id });
+    await rpc("decrement_slot_booked", { p_slot_id: booking.slot_id });
   }
 
   return updateBooking(tenantId, id, {
@@ -124,16 +114,14 @@ export async function rescheduleBooking(
   const booking = await getBooking(tenantId, id);
   if (!booking) throw new Error("Booking not found");
 
-  const db = getSupabase();
-
   // Release old slot
   if (booking.slot_id) {
-    await db.rpc("decrement_slot_booked", { p_slot_id: booking.slot_id });
+    await rpc("decrement_slot_booked", { p_slot_id: booking.slot_id });
   }
 
   // Reserve new slot
   if (newSlotId) {
-    await db.rpc("increment_slot_booked", { p_slot_id: newSlotId });
+    await rpc("increment_slot_booked", { p_slot_id: newSlotId });
   }
 
   return updateBooking(tenantId, id, {
@@ -150,44 +138,65 @@ export async function searchBookings(
   filters: BookingFilters = {},
   pagination: PaginationParams = {},
 ): Promise<PaginatedResult<Booking>> {
-  const db = getSupabase();
   const limit = pagination.limit || 20;
   const offset = pagination.offset || 0;
+  const sortBy = pagination.sort_by || "booking_date";
+  const sortOrder = pagination.sort_order || "asc";
 
-  let query = db
-    .from("bookings")
-    .select("*", { count: "exact" })
-    .eq("tenant_id", tenantId);
+  // Build WHERE clause dynamically
+  const conditions: string[] = ["tenant_id = $1"];
+  const params: unknown[] = [tenantId];
+  let paramIndex = 2;
 
   if (filters.status) {
     const statuses = Array.isArray(filters.status)
       ? filters.status
       : [filters.status];
-    query = query.in("status", statuses);
+    conditions.push(`status = ANY($${paramIndex})`);
+    params.push(statuses);
+    paramIndex++;
   }
-  if (filters.contact_id) query = query.eq("contact_id", filters.contact_id);
-  if (filters.resource_id) query = query.eq("resource_id", filters.resource_id);
-  if (filters.start_date) query = query.gte("booking_date", filters.start_date);
-  if (filters.end_date) query = query.lte("booking_date", filters.end_date);
-  if (filters.booking_type)
-    query = query.eq("booking_type", filters.booking_type);
 
-  const sortBy = pagination.sort_by || "booking_date";
-  const sortOrder = pagination.sort_order || "asc";
-  query = query
-    .order(sortBy, { ascending: sortOrder === "asc" })
-    .range(offset, offset + limit - 1);
+  if (filters.contact_id) {
+    conditions.push(`contact_id = $${paramIndex}`);
+    params.push(filters.contact_id);
+    paramIndex++;
+  }
 
-  const { data, error, count } = await query;
-  if (error) throw new Error(`Failed to search bookings: ${error.message}`);
+  if (filters.resource_id) {
+    conditions.push(`resource_id = $${paramIndex}`);
+    params.push(filters.resource_id);
+    paramIndex++;
+  }
 
-  return {
-    data: data || [],
-    total: count || 0,
+  if (filters.start_date) {
+    conditions.push(`booking_date >= $${paramIndex}`);
+    params.push(filters.start_date);
+    paramIndex++;
+  }
+
+  if (filters.end_date) {
+    conditions.push(`booking_date <= $${paramIndex}`);
+    params.push(filters.end_date);
+    paramIndex++;
+  }
+
+  if (filters.booking_type) {
+    conditions.push(`booking_type = $${paramIndex}`);
+    params.push(filters.booking_type);
+    paramIndex++;
+  }
+
+  const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+  return paginatedQuery<Booking>("bookings", {
+    select: "*",
+    whereRaw: { clause: whereClause, params },
+    orderBy: sortBy,
+    orderDir: sortOrder,
     limit,
     offset,
-    has_more: (count || 0) > offset + limit,
-  };
+  });
 }
 
 export async function getCalendarData(
@@ -195,23 +204,29 @@ export async function getCalendarData(
   startDate: string,
   endDate: string,
 ): Promise<CalendarEvent[]> {
-  const db = getSupabase();
+  const data = await queryAll<{
+    id: string;
+    customer_name: string;
+    customer_phone: string;
+    booking_date: string;
+    booking_time: string;
+    duration_minutes: number | null;
+    status: string;
+    booking_type: string;
+    confirmation_code: string;
+  }>(
+    `SELECT id, customer_name, customer_phone, booking_date, booking_time,
+            duration_minutes, status, booking_type, confirmation_code
+     FROM bookings
+     WHERE tenant_id = $1
+       AND booking_date >= $2
+       AND booking_date <= $3
+       AND status = ANY($4)
+     ORDER BY booking_date, booking_time`,
+    [tenantId, startDate, endDate, ["pending", "confirmed"]],
+  );
 
-  const { data, error } = await db
-    .from("bookings")
-    .select(
-      "id, customer_name, customer_phone, booking_date, booking_time, duration_minutes, status, booking_type, confirmation_code",
-    )
-    .eq("tenant_id", tenantId)
-    .gte("booking_date", startDate)
-    .lte("booking_date", endDate)
-    .in("status", ["pending", "confirmed"])
-    .order("booking_date")
-    .order("booking_time");
-
-  if (error) throw new Error(`Failed to get calendar data: ${error.message}`);
-
-  return (data || []).map((b) => ({
+  return data.map((b) => ({
     id: b.id,
     title: b.customer_name,
     start: `${b.booking_date}T${b.booking_time}`,
@@ -228,17 +243,14 @@ export async function getDaySummary(
   tenantId: string,
   date: string,
 ): Promise<DaySummary> {
-  const db = getSupabase();
+  const bookings = await queryAll<{
+    status: string;
+    amount_cents: number | null;
+  }>(
+    "SELECT status, amount_cents FROM bookings WHERE tenant_id = $1 AND booking_date = $2",
+    [tenantId, date],
+  );
 
-  const { data, error } = await db
-    .from("bookings")
-    .select("status, amount_cents")
-    .eq("tenant_id", tenantId)
-    .eq("booking_date", date);
-
-  if (error) throw new Error(`Failed to get day summary: ${error.message}`);
-
-  const bookings = data || [];
   return {
     date,
     total_bookings: bookings.length,
@@ -278,23 +290,23 @@ export async function getUpcomingBookings(
   tenantId: string,
   hoursAhead: number = 24,
 ): Promise<Booking[]> {
-  const db = getSupabase();
   const now = new Date();
   const future = new Date(now.getTime() + hoursAhead * 60 * 60 * 1000);
 
-  const { data, error } = await db
-    .from("bookings")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .in("status", ["pending", "confirmed"])
-    .gte("booking_date", now.toISOString().split("T")[0])
-    .lte("booking_date", future.toISOString().split("T")[0])
-    .order("booking_date")
-    .order("booking_time");
-
-  if (error)
-    throw new Error(`Failed to get upcoming bookings: ${error.message}`);
-  return data || [];
+  return queryAll<Booking>(
+    `SELECT * FROM bookings
+     WHERE tenant_id = $1
+       AND status = ANY($2)
+       AND booking_date >= $3
+       AND booking_date <= $4
+     ORDER BY booking_date, booking_time`,
+    [
+      tenantId,
+      ["pending", "confirmed"],
+      now.toISOString().split("T")[0],
+      future.toISOString().split("T")[0],
+    ],
+  );
 }
 
 function generateConfirmationCode(): string {

@@ -13,7 +13,7 @@ import type {
   BusyPeriod,
 } from "./types.js";
 import type { TenantIntegration } from "../../types/database.js";
-import { getSupabase } from "../database/client.js";
+import { updateOne } from "../database/query-helpers.js";
 
 interface GraphEvent {
   id: string;
@@ -31,6 +31,19 @@ interface ScheduleInformation {
     start: { dateTime: string; timeZone: string };
     end: { dateTime: string; timeZone: string };
   }>;
+}
+
+interface TenantIntegrationRow {
+  id: string;
+  tenant_id: string;
+  provider: string;
+  access_token: string | null;
+  refresh_token: string | null;
+  token_expires_at: string | null;
+  status: string;
+  config: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export class OutlookCalendarService implements CalendarService {
@@ -219,14 +232,14 @@ export class OutlookCalendarService implements CalendarService {
 
     if (!response.ok) {
       // Mark integration as expired
-      const db = getSupabase();
-      await db
-        .from("tenant_integrations")
-        .update({
+      await updateOne<TenantIntegrationRow>(
+        "tenant_integrations",
+        {
           status: "expired",
           updated_at: new Date().toISOString(),
-        })
-        .eq("id", this.integration.id);
+        },
+        { id: this.integration.id },
+      );
 
       throw new Error("Token refresh failed");
     }
@@ -238,21 +251,21 @@ export class OutlookCalendarService implements CalendarService {
     };
 
     // Update integration with new token
-    const db = getSupabase();
     const expiresAt = tokens.expires_in
       ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
       : null;
 
-    await db
-      .from("tenant_integrations")
-      .update({
+    await updateOne<TenantIntegrationRow>(
+      "tenant_integrations",
+      {
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token || this.integration.refresh_token,
         token_expires_at: expiresAt,
         status: "active",
         updated_at: new Date().toISOString(),
-      })
-      .eq("id", this.integration.id);
+      },
+      { id: this.integration.id },
+    );
 
     // Update internal state
     this.integration.access_token = tokens.access_token;

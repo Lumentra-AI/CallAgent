@@ -1,5 +1,6 @@
 // Resource Service - Staff, Rooms, Equipment management
-import { getSupabase } from "../database/client.js";
+import { queryOne, queryAll } from "../database/client.js";
+import { insertOne, updateOne, deleteRows } from "../database/query-helpers.js";
 import {
   Resource,
   CreateResourceInput,
@@ -11,54 +12,46 @@ import {
 // CRUD
 // ============================================================================
 
+/**
+ * Create a new resource for a tenant
+ */
 export async function createResource(
   tenantId: string,
   input: CreateResourceInput,
 ): Promise<Resource> {
-  const db = getSupabase();
-
-  const { data, error } = await db
-    .from("resources")
-    .insert({
-      tenant_id: tenantId,
-      name: input.name,
-      type: input.type,
-      description: input.description,
-      capacity: input.capacity ?? 1,
-      default_duration_minutes: input.default_duration_minutes ?? 60,
-      accepts_bookings: input.accepts_bookings ?? true,
-      buffer_before_minutes: input.buffer_before_minutes ?? 0,
-      buffer_after_minutes: input.buffer_after_minutes ?? 0,
-      color: input.color,
-      metadata: input.metadata ?? {},
-      is_active: true,
-      sort_order: 0,
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`Failed to create resource: ${error.message}`);
-  return data;
+  return insertOne<Resource>("resources", {
+    tenant_id: tenantId,
+    name: input.name,
+    type: input.type,
+    description: input.description,
+    capacity: input.capacity ?? 1,
+    default_duration_minutes: input.default_duration_minutes ?? 60,
+    accepts_bookings: input.accepts_bookings ?? true,
+    buffer_before_minutes: input.buffer_before_minutes ?? 0,
+    buffer_after_minutes: input.buffer_after_minutes ?? 0,
+    color: input.color,
+    metadata: input.metadata ?? {},
+    is_active: true,
+    sort_order: 0,
+  });
 }
 
+/**
+ * Get a single resource by ID
+ */
 export async function getResource(
   tenantId: string,
   id: string,
 ): Promise<Resource | null> {
-  const db = getSupabase();
-
-  const { data, error } = await db
-    .from("resources")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .eq("id", id)
-    .single();
-
-  if (error?.code === "PGRST116") return null;
-  if (error) throw new Error(`Failed to get resource: ${error.message}`);
-  return data;
+  return queryOne<Resource>(
+    `SELECT * FROM resources WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, id],
+  );
 }
 
+/**
+ * Update a resource
+ */
 export async function updateResource(
   tenantId: string,
   id: string,
@@ -66,54 +59,45 @@ export async function updateResource(
     CreateResourceInput & { is_active?: boolean; sort_order?: number }
   >,
 ): Promise<Resource> {
-  const db = getSupabase();
-
   // Don't allow updating id or tenant_id
   const cleanUpdates: Record<string, unknown> = { ...updates };
   delete cleanUpdates.id;
   delete cleanUpdates.tenant_id;
 
-  const { data, error } = await db
-    .from("resources")
-    .update(cleanUpdates)
-    .eq("tenant_id", tenantId)
-    .eq("id", id)
-    .select()
-    .single();
+  const result = await updateOne<Resource>("resources", cleanUpdates, {
+    tenant_id: tenantId,
+    id,
+  });
 
-  if (error) throw new Error(`Failed to update resource: ${error.message}`);
-  return data;
+  if (!result) {
+    throw new Error("Resource not found");
+  }
+
+  return result;
 }
 
+/**
+ * Soft delete a resource (set is_active to false)
+ */
 export async function deleteResource(
   tenantId: string,
   id: string,
 ): Promise<void> {
-  const db = getSupabase();
-
-  // Soft delete - just set is_active to false
-  const { error } = await db
-    .from("resources")
-    .update({ is_active: false })
-    .eq("tenant_id", tenantId)
-    .eq("id", id);
-
-  if (error) throw new Error(`Failed to delete resource: ${error.message}`);
+  await updateOne(
+    "resources",
+    { is_active: false },
+    { tenant_id: tenantId, id },
+  );
 }
 
+/**
+ * Permanently delete a resource
+ */
 export async function hardDeleteResource(
   tenantId: string,
   id: string,
 ): Promise<void> {
-  const db = getSupabase();
-
-  const { error } = await db
-    .from("resources")
-    .delete()
-    .eq("tenant_id", tenantId)
-    .eq("id", id);
-
-  if (error) throw new Error(`Failed to delete resource: ${error.message}`);
+  await deleteRows("resources", { tenant_id: tenantId, id });
 }
 
 // ============================================================================
@@ -127,60 +111,80 @@ export interface ResourceFilters {
   search?: string;
 }
 
+/**
+ * List resources with filtering and pagination
+ */
 export async function listResources(
   tenantId: string,
   filters: ResourceFilters = {},
   pagination: PaginationParams = {},
 ): Promise<PaginatedResult<Resource>> {
-  const db = getSupabase();
   const limit = pagination.limit || 50;
   const offset = pagination.offset || 0;
+  const sortBy = pagination.sort_by || "sort_order";
+  const sortOrder = pagination.sort_order || "asc";
 
-  let query = db
-    .from("resources")
-    .select("*", { count: "exact" })
-    .eq("tenant_id", tenantId);
+  // Build WHERE clause dynamically
+  const conditions: string[] = ["tenant_id = $1"];
+  const params: unknown[] = [tenantId];
+  let paramIndex = 2;
 
-  // Apply filters
-  if (filters.type) {
+  if (filters.type !== undefined) {
     const types = Array.isArray(filters.type) ? filters.type : [filters.type];
-    query = query.in("type", types);
+    conditions.push(`type = ANY($${paramIndex})`);
+    params.push(types);
+    paramIndex++;
   }
 
   if (filters.is_active !== undefined) {
-    query = query.eq("is_active", filters.is_active);
+    conditions.push(`is_active = $${paramIndex}`);
+    params.push(filters.is_active);
+    paramIndex++;
   }
 
   if (filters.accepts_bookings !== undefined) {
-    query = query.eq("accepts_bookings", filters.accepts_bookings);
+    conditions.push(`accepts_bookings = $${paramIndex}`);
+    params.push(filters.accepts_bookings);
+    paramIndex++;
   }
 
   if (filters.search) {
-    query = query.or(
-      `name.ilike.%${filters.search}%,description.ilike.%${filters.search}%`,
+    conditions.push(
+      `(name ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`,
     );
+    params.push(`%${filters.search}%`);
+    paramIndex++;
   }
 
-  // Sorting
-  const sortBy = pagination.sort_by || "sort_order";
-  const sortOrder = pagination.sort_order || "asc";
-  query = query
-    .order(sortBy, { ascending: sortOrder === "asc" })
-    .range(offset, offset + limit - 1);
+  const whereClause = `WHERE ${conditions.join(" AND ")}`;
+  const orderDirection = sortOrder === "desc" ? "DESC" : "ASC";
 
-  const { data, error, count } = await query;
+  // Count query
+  const countSql = `SELECT COUNT(*) as total FROM resources ${whereClause}`;
+  const countResult = await queryOne<{ total: string }>(countSql, params);
+  const total = parseInt(countResult?.total || "0", 10);
 
-  if (error) throw new Error(`Failed to list resources: ${error.message}`);
+  // Data query
+  const dataSql = `
+    SELECT * FROM resources
+    ${whereClause}
+    ORDER BY ${sortBy} ${orderDirection}
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+  `;
+  const data = await queryAll<Resource>(dataSql, [...params, limit, offset]);
 
   return {
-    data: data || [],
-    total: count || 0,
+    data,
+    total,
     limit,
     offset,
-    has_more: (count || 0) > offset + limit,
+    has_more: total > offset + limit,
   };
 }
 
+/**
+ * Get all active resources for a tenant
+ */
 export async function getActiveResources(
   tenantId: string,
 ): Promise<Resource[]> {
@@ -192,6 +196,9 @@ export async function getActiveResources(
   return result.data;
 }
 
+/**
+ * Get all resources that accept bookings
+ */
 export async function getBookableResources(
   tenantId: string,
 ): Promise<Resource[]> {
@@ -203,6 +210,9 @@ export async function getBookableResources(
   return result.data;
 }
 
+/**
+ * Get resources of a specific type
+ */
 export async function getResourcesByType(
   tenantId: string,
   type: string,
@@ -219,29 +229,42 @@ export async function getResourcesByType(
 // AVAILABILITY INTEGRATION
 // ============================================================================
 
+interface AvailabilitySlotRow {
+  slot_date: string;
+  total_capacity: number;
+  booked_count: number;
+  status: string;
+}
+
+/**
+ * Get resource availability for a date range
+ */
 export async function getResourceAvailability(
   tenantId: string,
   resourceId: string,
   startDate: string,
   endDate: string,
 ): Promise<{ date: string; available_slots: number; total_slots: number }[]> {
-  const db = getSupabase();
+  const sql = `
+    SELECT slot_date, total_capacity, booked_count, status
+    FROM availability_slots
+    WHERE tenant_id = $1
+      AND resource_id = $2
+      AND slot_date >= $3
+      AND slot_date <= $4
+      AND status = 'available'
+  `;
 
-  const { data, error } = await db
-    .from("availability_slots")
-    .select("slot_date, total_capacity, booked_count, status")
-    .eq("tenant_id", tenantId)
-    .eq("resource_id", resourceId)
-    .gte("slot_date", startDate)
-    .lte("slot_date", endDate)
-    .eq("status", "available");
-
-  if (error)
-    throw new Error(`Failed to get resource availability: ${error.message}`);
+  const data = await queryAll<AvailabilitySlotRow>(sql, [
+    tenantId,
+    resourceId,
+    startDate,
+    endDate,
+  ]);
 
   // Group by date
   const byDate: Record<string, { available: number; total: number }> = {};
-  for (const slot of data || []) {
+  for (const slot of data) {
     if (!byDate[slot.slot_date]) {
       byDate[slot.slot_date] = { available: 0, total: 0 };
     }
@@ -265,26 +288,19 @@ export async function getResourceAvailability(
 // SORTING
 // ============================================================================
 
+/**
+ * Reorder resources by updating their sort_order
+ */
 export async function reorderResources(
   tenantId: string,
   resourceIds: string[],
 ): Promise<void> {
-  const db = getSupabase();
-
   // Update sort_order for each resource
-  const updates = resourceIds.map((id, index) => ({
-    id,
-    tenant_id: tenantId,
-    sort_order: index,
-  }));
-
-  for (const update of updates) {
-    const { error } = await db
-      .from("resources")
-      .update({ sort_order: update.sort_order })
-      .eq("tenant_id", tenantId)
-      .eq("id", update.id);
-
-    if (error) throw new Error(`Failed to reorder resources: ${error.message}`);
+  for (let i = 0; i < resourceIds.length; i++) {
+    await updateOne(
+      "resources",
+      { sort_order: i },
+      { tenant_id: tenantId, id: resourceIds[i] },
+    );
   }
 }

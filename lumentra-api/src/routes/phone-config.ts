@@ -1,5 +1,10 @@
 import { Hono } from "hono";
-import { getSupabase } from "../services/database/client.js";
+import { queryOne } from "../services/database/client.js";
+import {
+  insertOne,
+  updateOne,
+  upsert,
+} from "../services/database/query-helpers.js";
 import { getAuthUserId } from "../middleware/index.js";
 import {
   searchAvailableNumbers,
@@ -8,6 +13,39 @@ import {
 } from "../services/signalwire/phone.js";
 
 export const phoneConfigRoutes = new Hono();
+
+/** Type definitions for database rows */
+interface MembershipRow {
+  tenant_id: string;
+  role: string;
+}
+
+interface PhoneConfigRow {
+  id: string;
+  tenant_id: string;
+  phone_number: string | null;
+  setup_type: string;
+  provider: string | null;
+  provider_sid: string | null;
+  status: string;
+  verified_at: string | null;
+  port_request_id: string | null;
+}
+
+interface PortRequestRow {
+  id: string;
+  tenant_id: string;
+  phone_number: string;
+  current_carrier: string;
+  account_number: string | null;
+  pin: string | null;
+  authorized_name: string;
+  status: string;
+  estimated_completion: string | null;
+  rejection_reason: string | null;
+  submitted_at: string | null;
+  completed_at: string | null;
+}
 
 /**
  * GET /api/phone/available
@@ -31,37 +69,51 @@ phoneConfigRoutes.get("/available", async (c) => {
  */
 phoneConfigRoutes.get("/config", async (c) => {
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .maybeSingle();
+  try {
+    const membershipSql = `
+      SELECT tenant_id
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+      LIMIT 1
+    `;
+    const membership = await queryOne<{ tenant_id: string }>(membershipSql, [
+      userId,
+    ]);
 
-  if (!membership) {
-    return c.json({ config: null });
+    if (!membership) {
+      return c.json({ config: null });
+    }
+
+    const configSql = `
+      SELECT *
+      FROM phone_configurations
+      WHERE tenant_id = $1
+      LIMIT 1
+    `;
+    const config = await queryOne<PhoneConfigRow>(configSql, [
+      membership.tenant_id,
+    ]);
+
+    // Get port request if exists
+    let portRequest = null;
+    if (config?.port_request_id) {
+      const portRequestSql = `
+        SELECT *
+        FROM port_requests
+        WHERE id = $1
+      `;
+      portRequest = await queryOne<PortRequestRow>(portRequestSql, [
+        config.port_request_id,
+      ]);
+    }
+
+    return c.json({ config, portRequest });
+  } catch (error) {
+    console.error("[PHONE] Error fetching config:", error);
+    return c.json({ error: "Failed to fetch phone configuration" }, 500);
   }
-
-  const { data: config } = await db
-    .from("phone_configurations")
-    .select("*")
-    .eq("tenant_id", membership.tenant_id)
-    .maybeSingle();
-
-  // Get port request if exists
-  let portRequest = null;
-  if (config?.port_request_id) {
-    const { data } = await db
-      .from("port_requests")
-      .select("*")
-      .eq("id", config.port_request_id)
-      .single();
-    portRequest = data;
-  }
-
-  return c.json({ config, portRequest });
 });
 
 /**
@@ -71,48 +123,52 @@ phoneConfigRoutes.get("/config", async (c) => {
 phoneConfigRoutes.post("/provision", async (c) => {
   const body = await c.req.json();
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
   if (!body.phoneNumber) {
     return c.json({ error: "phoneNumber is required" }, 400);
   }
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
 
-  const tenantId = membership.tenant_id;
+    const tenantId = membership.tenant_id;
 
-  // Provision number with SignalWire
-  const { sid, error: provisionError } = await provisionNumber(
-    body.phoneNumber,
-  );
-
-  if (provisionError || !sid) {
-    return c.json(
-      { error: provisionError || "Failed to provision number" },
-      500,
+    // Provision number with SignalWire
+    const { sid, error: provisionError } = await provisionNumber(
+      body.phoneNumber,
     );
-  }
 
-  // Configure webhooks
-  const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-  const webhookUrl = `${backendUrl}/signalwire/voice`;
-  await configureNumberWebhooks(sid, webhookUrl);
+    if (provisionError || !sid) {
+      return c.json(
+        { error: provisionError || "Failed to provision number" },
+        500,
+      );
+    }
 
-  // Create or update phone configuration
-  const { data: config, error: dbError } = await db
-    .from("phone_configurations")
-    .upsert(
+    // Configure webhooks
+    const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
+    const webhookUrl = `${backendUrl}/signalwire/voice`;
+    await configureNumberWebhooks(sid, webhookUrl);
+
+    // Create or update phone configuration
+    const config = await upsert<PhoneConfigRow>(
+      "phone_configurations",
       {
         tenant_id: tenantId,
         phone_number: body.phoneNumber,
@@ -122,29 +178,28 @@ phoneConfigRoutes.post("/provision", async (c) => {
         status: "active",
         verified_at: new Date().toISOString(),
       },
-      { onConflict: "tenant_id" },
-    )
-    .select()
-    .single();
+      ["tenant_id"],
+    );
 
-  if (dbError) {
-    return c.json({ error: dbError.message }, 500);
+    // Update tenant's phone number
+    await updateOne(
+      "tenants",
+      {
+        phone_number: body.phoneNumber,
+        updated_at: new Date().toISOString(),
+      },
+      { id: tenantId },
+    );
+
+    return c.json({
+      success: true,
+      phoneNumber: body.phoneNumber,
+      configId: config.id,
+    });
+  } catch (error) {
+    console.error("[PHONE] Error provisioning number:", error);
+    return c.json({ error: "Failed to provision phone number" }, 500);
   }
-
-  // Update tenant's phone number
-  await db
-    .from("tenants")
-    .update({
-      phone_number: body.phoneNumber,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", tenantId);
-
-  return c.json({
-    success: true,
-    phoneNumber: body.phoneNumber,
-    configId: config.id,
-  });
 });
 
 /**
@@ -154,7 +209,6 @@ phoneConfigRoutes.post("/provision", async (c) => {
 phoneConfigRoutes.post("/port", async (c) => {
   const body = await c.req.json();
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
   // Validate required fields
   if (!body.phone_number || !body.current_carrier || !body.authorized_name) {
@@ -167,25 +221,29 @@ phoneConfigRoutes.post("/port", async (c) => {
     );
   }
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
 
-  const tenantId = membership.tenant_id;
+    const tenantId = membership.tenant_id;
 
-  // Create port request
-  const { data: portRequest, error: portError } = await db
-    .from("port_requests")
-    .insert({
+    // Create port request
+    const portRequest = await insertOne<PortRequestRow>("port_requests", {
       tenant_id: tenantId,
       phone_number: body.phone_number,
       current_carrier: body.current_carrier,
@@ -193,40 +251,33 @@ phoneConfigRoutes.post("/port", async (c) => {
       pin: body.pin || null, // TODO: Encrypt
       authorized_name: body.authorized_name,
       status: "draft",
-    })
-    .select()
-    .single();
+    });
 
-  if (portError) {
-    return c.json({ error: portError.message }, 500);
-  }
+    // If user wants a temporary number while porting
+    let temporaryNumber = null;
+    let tempSid = null;
+    if (body.use_temp_number) {
+      // Search for a number in the same area code
+      const areaCode = body.phone_number.substring(2, 5);
+      const { numbers } = await searchAvailableNumbers(areaCode);
+      if (numbers.length > 0) {
+        const { sid } = await provisionNumber(numbers[0]);
+        if (sid) {
+          temporaryNumber = numbers[0];
+          tempSid = sid;
 
-  // If user wants a temporary number while porting
-  let temporaryNumber = null;
-  let tempSid = null;
-  if (body.use_temp_number) {
-    // Search for a number in the same area code
-    const areaCode = body.phone_number.substring(2, 5);
-    const { numbers } = await searchAvailableNumbers(areaCode);
-    if (numbers.length > 0) {
-      const { sid } = await provisionNumber(numbers[0]);
-      if (sid) {
-        temporaryNumber = numbers[0];
-        tempSid = sid;
-
-        // Configure webhooks for temp number
-        const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-        const webhookUrl = `${backendUrl}/signalwire/voice`;
-        await configureNumberWebhooks(sid, webhookUrl);
+          // Configure webhooks for temp number
+          const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
+          const webhookUrl = `${backendUrl}/signalwire/voice`;
+          await configureNumberWebhooks(sid, webhookUrl);
+        }
       }
     }
-  }
 
-  // Create phone configuration
-  const status = temporaryNumber ? "porting_with_temp" : "porting";
-  const { data: config, error: configError } = await db
-    .from("phone_configurations")
-    .upsert(
+    // Create phone configuration
+    const status = temporaryNumber ? "porting_with_temp" : "porting";
+    const config = await upsert<PhoneConfigRow>(
+      "phone_configurations",
       {
         tenant_id: tenantId,
         phone_number: temporaryNumber || null,
@@ -236,33 +287,32 @@ phoneConfigRoutes.post("/port", async (c) => {
         status,
         port_request_id: portRequest.id,
       },
-      { onConflict: "tenant_id" },
-    )
-    .select()
-    .single();
+      ["tenant_id"],
+    );
 
-  if (configError) {
-    return c.json({ error: configError.message }, 500);
+    // Update tenant phone number if we have a temp number
+    if (temporaryNumber) {
+      await updateOne(
+        "tenants",
+        {
+          phone_number: temporaryNumber,
+          updated_at: new Date().toISOString(),
+        },
+        { id: tenantId },
+      );
+    }
+
+    return c.json({
+      success: true,
+      portRequestId: portRequest.id,
+      estimatedCompletion: null, // Would come from carrier
+      temporaryNumber,
+      configId: config.id,
+    });
+  } catch (error) {
+    console.error("[PHONE] Error submitting port request:", error);
+    return c.json({ error: "Failed to submit port request" }, 500);
   }
-
-  // Update tenant phone number if we have a temp number
-  if (temporaryNumber) {
-    await db
-      .from("tenants")
-      .update({
-        phone_number: temporaryNumber,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", tenantId);
-  }
-
-  return c.json({
-    success: true,
-    portRequestId: portRequest.id,
-    estimatedCompletion: null, // Would come from carrier
-    temporaryNumber,
-    configId: config.id,
-  });
 });
 
 /**
@@ -272,38 +322,50 @@ phoneConfigRoutes.post("/port", async (c) => {
 phoneConfigRoutes.get("/port/:id/status", async (c) => {
   const id = c.req.param("id");
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+      LIMIT 1
+    `;
+    const membership = await queryOne<{ tenant_id: string }>(membershipSql, [
+      userId,
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const portRequestSql = `
+      SELECT *
+      FROM port_requests
+      WHERE id = $1
+        AND tenant_id = $2
+    `;
+    const portRequest = await queryOne<PortRequestRow>(portRequestSql, [
+      id,
+      membership.tenant_id,
+    ]);
+
+    if (!portRequest) {
+      return c.json({ error: "Port request not found" }, 404);
+    }
+
+    return c.json({
+      status: portRequest.status,
+      estimatedCompletion: portRequest.estimated_completion,
+      rejectionReason: portRequest.rejection_reason,
+      submittedAt: portRequest.submitted_at,
+      completedAt: portRequest.completed_at,
+    });
+  } catch (error) {
+    console.error("[PHONE] Error fetching port status:", error);
+    return c.json({ error: "Failed to fetch port request status" }, 500);
   }
-
-  const { data: portRequest, error } = await db
-    .from("port_requests")
-    .select("*")
-    .eq("id", id)
-    .eq("tenant_id", membership.tenant_id)
-    .single();
-
-  if (error || !portRequest) {
-    return c.json({ error: "Port request not found" }, 404);
-  }
-
-  return c.json({
-    status: portRequest.status,
-    estimatedCompletion: portRequest.estimated_completion,
-    rejectionReason: portRequest.rejection_reason,
-    submittedAt: portRequest.submitted_at,
-    completedAt: portRequest.completed_at,
-  });
 });
 
 /**
@@ -313,53 +375,57 @@ phoneConfigRoutes.get("/port/:id/status", async (c) => {
 phoneConfigRoutes.post("/forward", async (c) => {
   const body = await c.req.json();
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
   if (!body.business_number) {
     return c.json({ error: "business_number is required" }, 400);
   }
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
 
-  const tenantId = membership.tenant_id;
+    const tenantId = membership.tenant_id;
 
-  // Provision a Lumentra number for receiving forwarded calls
-  const areaCode = body.business_number.replace(/\D/g, "").substring(0, 3);
-  const { numbers } = await searchAvailableNumbers(areaCode);
+    // Provision a Lumentra number for receiving forwarded calls
+    const areaCode = body.business_number.replace(/\D/g, "").substring(0, 3);
+    const { numbers } = await searchAvailableNumbers(areaCode);
 
-  if (numbers.length === 0) {
-    return c.json({ error: "No numbers available in that area code" }, 400);
-  }
+    if (numbers.length === 0) {
+      return c.json({ error: "No numbers available in that area code" }, 400);
+    }
 
-  const { sid, error: provisionError } = await provisionNumber(numbers[0]);
+    const { sid, error: provisionError } = await provisionNumber(numbers[0]);
 
-  if (provisionError || !sid) {
-    return c.json(
-      { error: provisionError || "Failed to provision number" },
-      500,
-    );
-  }
+    if (provisionError || !sid) {
+      return c.json(
+        { error: provisionError || "Failed to provision number" },
+        500,
+      );
+    }
 
-  // Configure webhooks
-  const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-  const webhookUrl = `${backendUrl}/signalwire/voice`;
-  await configureNumberWebhooks(sid, webhookUrl);
+    // Configure webhooks
+    const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
+    const webhookUrl = `${backendUrl}/signalwire/voice`;
+    await configureNumberWebhooks(sid, webhookUrl);
 
-  // Create phone configuration
-  const { data: config, error: configError } = await db
-    .from("phone_configurations")
-    .upsert(
+    // Create phone configuration
+    const config = await upsert<PhoneConfigRow>(
+      "phone_configurations",
       {
         tenant_id: tenantId,
         phone_number: numbers[0],
@@ -368,26 +434,21 @@ phoneConfigRoutes.post("/forward", async (c) => {
         provider_sid: sid,
         status: "pending", // Pending until user confirms forwarding is active
       },
-      { onConflict: "tenant_id" },
-    )
-    .select()
-    .single();
+      ["tenant_id"],
+    );
 
-  if (configError) {
-    return c.json({ error: configError.message }, 500);
-  }
+    // Update tenant phone number
+    await updateOne(
+      "tenants",
+      {
+        phone_number: numbers[0],
+        updated_at: new Date().toISOString(),
+      },
+      { id: tenantId },
+    );
 
-  // Update tenant phone number
-  await db
-    .from("tenants")
-    .update({
-      phone_number: numbers[0],
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", tenantId);
-
-  // Generate forwarding instructions
-  const instructions = `To forward calls from ${body.business_number} to your AI assistant:
+    // Generate forwarding instructions
+    const instructions = `To forward calls from ${body.business_number} to your AI assistant:
 
 1. From your business phone, dial *72
 2. When prompted, dial ${numbers[0]}
@@ -399,12 +460,16 @@ To cancel forwarding later:
 
 Note: Forwarding codes may vary by carrier. If *72 doesn't work, contact your phone provider for their specific forwarding instructions.`;
 
-  return c.json({
-    success: true,
-    forwardTo: numbers[0],
-    instructions,
-    configId: config.id,
-  });
+    return c.json({
+      success: true,
+      forwardTo: numbers[0],
+      instructions,
+      configId: config.id,
+    });
+  } catch (error) {
+    console.error("[PHONE] Error setting up forwarding:", error);
+    return c.json({ error: "Failed to set up call forwarding" }, 500);
+  }
 });
 
 /**
@@ -413,33 +478,45 @@ Note: Forwarding codes may vary by carrier. If *72 doesn't work, contact your ph
  */
 phoneConfigRoutes.post("/verify-forward", async (c) => {
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const updateSql = `
+      UPDATE phone_configurations
+      SET status = $1, verified_at = $2
+      WHERE tenant_id = $3 AND setup_type = 'forward'
+      RETURNING id
+    `;
+    const result = await queryOne<{ id: string }>(updateSql, [
+      "active",
+      new Date().toISOString(),
+      membership.tenant_id,
+    ]);
+
+    if (!result) {
+      return c.json({ error: "No forwarding configuration found" }, 404);
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("[PHONE] Error verifying forward:", error);
+    return c.json({ error: "Failed to verify forwarding" }, 500);
   }
-
-  const { error } = await db
-    .from("phone_configurations")
-    .update({
-      status: "active",
-      verified_at: new Date().toISOString(),
-    })
-    .eq("tenant_id", membership.tenant_id)
-    .eq("setup_type", "forward");
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
-
-  return c.json({ success: true });
 });

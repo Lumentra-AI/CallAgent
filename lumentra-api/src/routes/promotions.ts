@@ -1,8 +1,31 @@
 import { Hono } from "hono";
-import { getSupabase } from "../services/database/client.js";
+import { queryOne, queryAll } from "../services/database/client.js";
+import {
+  insertOne,
+  updateOne,
+  deleteRows,
+} from "../services/database/query-helpers.js";
 import { getAuthUserId } from "../middleware/index.js";
 
 export const promotionsRoutes = new Hono();
+
+/** Type definitions for database rows */
+interface MembershipRow {
+  tenant_id: string;
+  role: string;
+}
+
+interface PromotionRow {
+  id: string;
+  tenant_id: string;
+  offer_text: string;
+  mention_behavior: string;
+  is_active: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 /**
  * GET /api/promotions
@@ -11,36 +34,51 @@ export const promotionsRoutes = new Hono();
 promotionsRoutes.get("/", async (c) => {
   const activeOnly = c.req.query("active") === "true";
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .maybeSingle();
+  try {
+    const membershipSql = `
+      SELECT tenant_id
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+      LIMIT 1
+    `;
+    const membership = await queryOne<{ tenant_id: string }>(membershipSql, [
+      userId,
+    ]);
 
-  if (!membership) {
-    return c.json({ promotions: [] });
+    if (!membership) {
+      return c.json({ promotions: [] });
+    }
+
+    let promotionsSql: string;
+    let params: unknown[];
+
+    if (activeOnly) {
+      promotionsSql = `
+        SELECT *
+        FROM tenant_promotions
+        WHERE tenant_id = $1 AND is_active = true
+        ORDER BY created_at DESC
+      `;
+      params = [membership.tenant_id];
+    } else {
+      promotionsSql = `
+        SELECT *
+        FROM tenant_promotions
+        WHERE tenant_id = $1
+        ORDER BY created_at DESC
+      `;
+      params = [membership.tenant_id];
+    }
+
+    const promotions = await queryAll<PromotionRow>(promotionsSql, params);
+
+    return c.json({ promotions: promotions || [] });
+  } catch (error) {
+    console.error("[PROMOTIONS] Error fetching promotions:", error);
+    return c.json({ error: "Failed to fetch promotions" }, 500);
   }
-
-  let query = db
-    .from("tenant_promotions")
-    .select("*")
-    .eq("tenant_id", membership.tenant_id)
-    .order("created_at", { ascending: false });
-
-  if (activeOnly) {
-    query = query.eq("is_active", true);
-  }
-
-  const { data: promotions, error } = await query;
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
-
-  return c.json({ promotions: promotions || [] });
 });
 
 /**
@@ -50,43 +88,44 @@ promotionsRoutes.get("/", async (c) => {
 promotionsRoutes.post("/", async (c) => {
   const body = await c.req.json();
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
   if (!body.offer_text) {
     return c.json({ error: "offer_text is required" }, 400);
   }
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
 
-  const { data: promotion, error } = await db
-    .from("tenant_promotions")
-    .insert({
+    const promotion = await insertOne<PromotionRow>("tenant_promotions", {
       tenant_id: membership.tenant_id,
       offer_text: body.offer_text,
       mention_behavior: body.mention_behavior || "relevant",
       is_active: body.is_active !== undefined ? body.is_active : true,
       starts_at: body.starts_at || null,
       ends_at: body.ends_at || null,
-    })
-    .select()
-    .single();
+    });
 
-  if (error) {
-    return c.json({ error: error.message }, 500);
+    return c.json(promotion, 201);
+  } catch (error) {
+    console.error("[PROMOTIONS] Error creating promotion:", error);
+    return c.json({ error: "Failed to create promotion" }, 500);
   }
-
-  return c.json(promotion, 201);
 });
 
 /**
@@ -96,31 +135,42 @@ promotionsRoutes.post("/", async (c) => {
 promotionsRoutes.get("/:id", async (c) => {
   const id = c.req.param("id");
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .maybeSingle();
+  try {
+    const membershipSql = `
+      SELECT tenant_id
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+      LIMIT 1
+    `;
+    const membership = await queryOne<{ tenant_id: string }>(membershipSql, [
+      userId,
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const promotionSql = `
+      SELECT *
+      FROM tenant_promotions
+      WHERE id = $1 AND tenant_id = $2
+    `;
+    const promotion = await queryOne<PromotionRow>(promotionSql, [
+      id,
+      membership.tenant_id,
+    ]);
+
+    if (!promotion) {
+      return c.json({ error: "Promotion not found" }, 404);
+    }
+
+    return c.json(promotion);
+  } catch (error) {
+    console.error("[PROMOTIONS] Error fetching promotion:", error);
+    return c.json({ error: "Failed to fetch promotion" }, 500);
   }
-
-  const { data: promotion, error } = await db
-    .from("tenant_promotions")
-    .select("*")
-    .eq("id", id)
-    .eq("tenant_id", membership.tenant_id)
-    .single();
-
-  if (error || !promotion) {
-    return c.json({ error: "Promotion not found" }, 404);
-  }
-
-  return c.json(promotion);
 });
 
 /**
@@ -131,52 +181,57 @@ promotionsRoutes.put("/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    // Verify promotion belongs to tenant
+    const existingSql = `
+      SELECT tenant_id
+      FROM tenant_promotions
+      WHERE id = $1
+    `;
+    const existing = await queryOne<{ tenant_id: string }>(existingSql, [id]);
+
+    if (!existing || existing.tenant_id !== membership.tenant_id) {
+      return c.json({ error: "Promotion not found" }, 404);
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (body.offer_text !== undefined) updateData.offer_text = body.offer_text;
+    if (body.mention_behavior !== undefined)
+      updateData.mention_behavior = body.mention_behavior;
+    if (body.is_active !== undefined) updateData.is_active = body.is_active;
+    if (body.starts_at !== undefined) updateData.starts_at = body.starts_at;
+    if (body.ends_at !== undefined) updateData.ends_at = body.ends_at;
+
+    const promotion = await updateOne<PromotionRow>(
+      "tenant_promotions",
+      updateData,
+      { id },
+    );
+
+    return c.json(promotion);
+  } catch (error) {
+    console.error("[PROMOTIONS] Error updating promotion:", error);
+    return c.json({ error: "Failed to update promotion" }, 500);
   }
-
-  // Verify promotion belongs to tenant
-  const { data: existing } = await db
-    .from("tenant_promotions")
-    .select("tenant_id")
-    .eq("id", id)
-    .single();
-
-  if (!existing || existing.tenant_id !== membership.tenant_id) {
-    return c.json({ error: "Promotion not found" }, 404);
-  }
-
-  const updateData: Record<string, unknown> = {};
-  if (body.offer_text !== undefined) updateData.offer_text = body.offer_text;
-  if (body.mention_behavior !== undefined)
-    updateData.mention_behavior = body.mention_behavior;
-  if (body.is_active !== undefined) updateData.is_active = body.is_active;
-  if (body.starts_at !== undefined) updateData.starts_at = body.starts_at;
-  if (body.ends_at !== undefined) updateData.ends_at = body.ends_at;
-
-  const { data: promotion, error } = await db
-    .from("tenant_promotions")
-    .update(updateData)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
-
-  return c.json(promotion);
 });
 
 /**
@@ -186,39 +241,45 @@ promotionsRoutes.put("/:id", async (c) => {
 promotionsRoutes.delete("/:id", async (c) => {
   const id = c.req.param("id");
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    // Verify promotion belongs to tenant
+    const existingSql = `
+      SELECT tenant_id
+      FROM tenant_promotions
+      WHERE id = $1
+    `;
+    const existing = await queryOne<{ tenant_id: string }>(existingSql, [id]);
+
+    if (!existing || existing.tenant_id !== membership.tenant_id) {
+      return c.json({ error: "Promotion not found" }, 404);
+    }
+
+    await deleteRows("tenant_promotions", { id });
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("[PROMOTIONS] Error deleting promotion:", error);
+    return c.json({ error: "Failed to delete promotion" }, 500);
   }
-
-  // Verify promotion belongs to tenant
-  const { data: existing } = await db
-    .from("tenant_promotions")
-    .select("tenant_id")
-    .eq("id", id)
-    .single();
-
-  if (!existing || existing.tenant_id !== membership.tenant_id) {
-    return c.json({ error: "Promotion not found" }, 404);
-  }
-
-  const { error } = await db.from("tenant_promotions").delete().eq("id", id);
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
-
-  return c.json({ success: true });
 });
 
 /**
@@ -228,42 +289,50 @@ promotionsRoutes.delete("/:id", async (c) => {
 promotionsRoutes.post("/:id/toggle", async (c) => {
   const id = c.req.param("id");
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    // Get current state
+    const existingSql = `
+      SELECT tenant_id, is_active
+      FROM tenant_promotions
+      WHERE id = $1
+    `;
+    const existing = await queryOne<{ tenant_id: string; is_active: boolean }>(
+      existingSql,
+      [id],
+    );
+
+    if (!existing || existing.tenant_id !== membership.tenant_id) {
+      return c.json({ error: "Promotion not found" }, 404);
+    }
+
+    const promotion = await updateOne<PromotionRow>(
+      "tenant_promotions",
+      { is_active: !existing.is_active },
+      { id },
+    );
+
+    return c.json(promotion);
+  } catch (error) {
+    console.error("[PROMOTIONS] Error toggling promotion:", error);
+    return c.json({ error: "Failed to toggle promotion" }, 500);
   }
-
-  // Get current state
-  const { data: existing } = await db
-    .from("tenant_promotions")
-    .select("tenant_id, is_active")
-    .eq("id", id)
-    .single();
-
-  if (!existing || existing.tenant_id !== membership.tenant_id) {
-    return c.json({ error: "Promotion not found" }, 404);
-  }
-
-  const { data: promotion, error } = await db
-    .from("tenant_promotions")
-    .update({ is_active: !existing.is_active })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
-
-  return c.json(promotion);
 });

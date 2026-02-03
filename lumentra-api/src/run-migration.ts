@@ -1,8 +1,8 @@
 /**
- * Run migration 014 via Supabase client
+ * Run migration 014 via PostgreSQL client
  */
 import "dotenv/config";
-import { getSupabase } from "./services/database/client.js";
+import { query, closePool } from "./services/database/client.js";
 
 const migration = `
 CREATE TABLE IF NOT EXISTS pending_bookings (
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS pending_bookings (
   service TEXT,
   notes TEXT,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'rejected')),
-  confirmed_by UUID REFERENCES auth.users(id),
+  confirmed_by UUID,
   confirmed_at TIMESTAMPTZ
 );
 
@@ -31,24 +31,30 @@ CREATE INDEX IF NOT EXISTS idx_pending_bookings_call ON pending_bookings(call_id
 async function runMigration() {
   console.log("Running migration 014_pending_bookings...");
 
-  const db = getSupabase();
+  try {
+    // Check if table exists by querying information_schema
+    const result = await query<{ exists: boolean }>(
+      `SELECT EXISTS (
+        SELECT FROM information_schema.tables
+        WHERE table_schema = 'public'
+        AND table_name = 'pending_bookings'
+      ) as exists`,
+    );
 
-  // Use rpc to execute raw SQL (requires db_execute function or similar)
-  // Alternatively, we just test if the table exists by querying it
+    const tableExists = result.rows[0]?.exists;
 
-  const { error } = await db.from("pending_bookings").select("id").limit(1);
-
-  if (error && error.code === "PGRST205") {
-    console.log("Table does not exist. Please run the migration manually:");
-    console.log("\n--- Run this SQL in your Supabase dashboard ---\n");
-    console.log(migration);
-    console.log("\n--- End of SQL ---\n");
+    if (tableExists) {
+      console.log("Table pending_bookings already exists!");
+    } else {
+      console.log("Creating pending_bookings table...");
+      await query(migration);
+      console.log("Migration completed successfully!");
+    }
+  } catch (error) {
+    console.error("Migration failed:", error);
     process.exit(1);
-  } else if (error) {
-    console.log("Error checking table:", error);
-    process.exit(1);
-  } else {
-    console.log("Table pending_bookings already exists!");
+  } finally {
+    await closePool();
   }
 }
 

@@ -3,6 +3,7 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
+import { queryOne, queryAll } from "../services/database/client.js";
 import {
   createContact,
   getContact,
@@ -103,6 +104,31 @@ const createNoteSchema = z.object({
 // Helper to get tenant ID from auth context
 function getTenantId(c: Parameters<typeof getAuthTenantId>[0]): string {
   return getAuthTenantId(c);
+}
+
+// Row types for PostgreSQL queries
+interface BookingRow {
+  id: string;
+  tenant_id: string;
+  contact_id: string | null;
+  booking_date: string;
+  booking_time: string;
+  booking_type: string | null;
+  status: string;
+  confirmation_code: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CallRow {
+  id: string;
+  tenant_id: string;
+  contact_id: string | null;
+  started_at: string | null;
+  duration_seconds: number | null;
+  outcome_type: string | null;
+  summary: string | null;
+  created_at: string;
 }
 
 // ============================================================================
@@ -597,33 +623,32 @@ contactsRoutes.get("/:id/bookings", async (c) => {
     const id = c.req.param("id");
     const query = c.req.query();
 
-    const { getSupabase } = await import("../services/database/client.js");
-    const db = getSupabase();
-
-    let dbQuery = db
-      .from("bookings")
-      .select("*", { count: "exact" })
-      .eq("tenant_id", tenantId)
-      .eq("contact_id", id)
-      .order("booking_date", { ascending: false });
-
-    // Apply pagination
     const limit = parseInt(query.limit || "20");
     const offset = parseInt(query.offset || "0");
-    dbQuery = dbQuery.range(offset, offset + limit - 1);
 
-    const { data, error, count } = await dbQuery;
+    // Get total count
+    const countResult = await queryOne<{ count: string }>(
+      `SELECT COUNT(*) as count FROM bookings
+       WHERE tenant_id = $1 AND contact_id = $2`,
+      [tenantId, id],
+    );
+    const total = parseInt(countResult?.count || "0", 10);
 
-    if (error) {
-      return c.json({ error: error.message }, 500);
-    }
+    // Get bookings with pagination
+    const data = await queryAll<BookingRow>(
+      `SELECT * FROM bookings
+       WHERE tenant_id = $1 AND contact_id = $2
+       ORDER BY booking_date DESC
+       LIMIT $3 OFFSET $4`,
+      [tenantId, id, limit, offset],
+    );
 
     return c.json({
       data: data || [],
-      total: count || 0,
+      total,
       limit,
       offset,
-      has_more: (count || 0) > offset + limit,
+      has_more: total > offset + limit,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -641,33 +666,32 @@ contactsRoutes.get("/:id/calls", async (c) => {
     const id = c.req.param("id");
     const query = c.req.query();
 
-    const { getSupabase } = await import("../services/database/client.js");
-    const db = getSupabase();
-
-    let dbQuery = db
-      .from("calls")
-      .select("*", { count: "exact" })
-      .eq("tenant_id", tenantId)
-      .eq("contact_id", id)
-      .order("started_at", { ascending: false });
-
-    // Apply pagination
     const limit = parseInt(query.limit || "20");
     const offset = parseInt(query.offset || "0");
-    dbQuery = dbQuery.range(offset, offset + limit - 1);
 
-    const { data, error, count } = await dbQuery;
+    // Get total count
+    const countResult = await queryOne<{ count: string }>(
+      `SELECT COUNT(*) as count FROM calls
+       WHERE tenant_id = $1 AND contact_id = $2`,
+      [tenantId, id],
+    );
+    const total = parseInt(countResult?.count || "0", 10);
 
-    if (error) {
-      return c.json({ error: error.message }, 500);
-    }
+    // Get calls with pagination
+    const data = await queryAll<CallRow>(
+      `SELECT * FROM calls
+       WHERE tenant_id = $1 AND contact_id = $2
+       ORDER BY started_at DESC
+       LIMIT $3 OFFSET $4`,
+      [tenantId, id, limit, offset],
+    );
 
     return c.json({
       data: data || [],
-      total: count || 0,
+      total,
       limit,
       offset,
-      has_more: (count || 0) > offset + limit,
+      has_more: total > offset + limit,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

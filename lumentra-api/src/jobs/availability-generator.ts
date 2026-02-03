@@ -1,22 +1,23 @@
 // Availability Slot Generator Job
-import { getSupabase } from "../services/database/client.js";
+import { query, queryAll } from "../services/database/client.js";
 import { generateSlotsFromOperatingHours } from "../services/availability/availability-service.js";
+
+interface TenantId {
+  id: string;
+}
 
 /**
  * Generate availability slots for all tenants for the next 30 days
  * Runs daily at midnight
  */
 export async function generateDailySlots(): Promise<void> {
-  const db = getSupabase();
-
   // Get all active tenants
-  const { data: tenants, error } = await db
-    .from("tenants")
-    .select("id")
-    .eq("is_active", true);
+  const tenants = await queryAll<TenantId>(
+    `SELECT id FROM tenants WHERE is_active = $1`,
+    [true],
+  );
 
-  if (error || !tenants) {
-    console.error("[SLOTS] Failed to get tenants:", error);
+  if (tenants.length === 0) {
     return;
   }
 
@@ -54,24 +55,19 @@ export async function generateDailySlots(): Promise<void> {
  * Removes slots that are past and no longer needed
  */
 export async function cleanupOldSlots(): Promise<void> {
-  const db = getSupabase();
-
   // Delete slots older than 90 days
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - 90);
   const cutoffDateStr = cutoffDate.toISOString().split("T")[0];
 
-  const { error, count } = await db
-    .from("availability_slots")
-    .delete()
-    .lt("slot_date", cutoffDateStr);
+  const result = await query(
+    `DELETE FROM availability_slots WHERE slot_date < $1`,
+    [cutoffDateStr],
+  );
 
-  if (error) {
-    console.error("[SLOTS] Cleanup failed:", error);
-    return;
-  }
+  const count = result.rowCount ?? 0;
 
-  if (count && count > 0) {
+  if (count > 0) {
     console.log(`[SLOTS] Cleaned up ${count} old slots`);
   }
 }

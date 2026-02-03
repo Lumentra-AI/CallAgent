@@ -1,4 +1,5 @@
-import { getSupabase } from "../database/client.js";
+import { queryOne } from "../database/client.js";
+import { insertOne, updateOne } from "../database/query-helpers.js";
 import { getTwilioClient } from "./client.js";
 import { getTemplate } from "./templates.js";
 
@@ -10,6 +11,22 @@ interface QueueSmsParams {
   messageType: "confirmation" | "reminder" | "missed_call" | "custom";
   context: Record<string, string>;
   customBody?: string;
+}
+
+interface SmsInsertRow {
+  id: string;
+}
+
+interface BookingWithTenantRow {
+  id: string;
+  tenant_id: string;
+  customer_name: string;
+  customer_phone: string;
+  booking_date: string;
+  booking_time: string;
+  confirmation_code: string;
+  reminder_sent: boolean;
+  business_name: string | null;
 }
 
 /**
@@ -38,28 +55,17 @@ export async function queueSms(params: QueueSmsParams): Promise<void> {
   // Get message body from template or custom
   const body = customBody || getTemplate(messageType, context);
 
-  const db = getSupabase();
-
   // Create SMS record
-  const { data: smsRecord, error: insertError } = await db
-    .from("sms_messages")
-    .insert({
-      tenant_id: tenantId,
-      booking_id: bookingId,
-      call_id: callId,
-      to_phone: toPhone,
-      from_phone: fromPhone,
-      message_type: messageType,
-      body,
-      status: "pending",
-    })
-    .select("id")
-    .single();
-
-  if (insertError) {
-    console.error("[SMS] Failed to create SMS record:", insertError);
-    return;
-  }
+  const smsRecord = await insertOne<SmsInsertRow>("sms_messages", {
+    tenant_id: tenantId,
+    booking_id: bookingId,
+    call_id: callId,
+    to_phone: toPhone,
+    from_phone: fromPhone,
+    message_type: messageType,
+    body,
+    status: "pending",
+  });
 
   // Try to send immediately
   try {
@@ -77,26 +83,30 @@ export async function queueSms(params: QueueSmsParams): Promise<void> {
     });
 
     // Update record with Twilio SID and status
-    await db
-      .from("sms_messages")
-      .update({
+    await updateOne(
+      "sms_messages",
+      {
         twilio_sid: message.sid,
         status: "sent",
-      })
-      .eq("id", smsRecord.id);
+      },
+      { id: smsRecord.id },
+    );
 
     console.log(`[SMS] Sent to ${toPhone}, SID: ${message.sid}`);
   } catch (error) {
     console.error("[SMS] Failed to send:", error);
 
     // Update record with error
-    await db
-      .from("sms_messages")
-      .update({
+    await updateOne(
+      "sms_messages",
+      {
         status: "failed",
         error_message: error instanceof Error ? error.message : "Unknown error",
-      })
-      .eq("id", smsRecord.id);
+      },
+      { id: smsRecord.id },
+    );
+
+    throw error;
   }
 }
 
@@ -104,18 +114,18 @@ export async function queueSms(params: QueueSmsParams): Promise<void> {
  * Send a booking reminder SMS
  */
 export async function sendReminder(bookingId: string): Promise<boolean> {
-  const db = getSupabase();
+  // Get booking details with tenant info
+  const booking = await queryOne<BookingWithTenantRow>(
+    `SELECT b.*, t.business_name
+     FROM bookings b
+     LEFT JOIN tenants t ON b.tenant_id = t.id
+     WHERE b.id = $1`,
+    [bookingId],
+  );
 
-  // Get booking details
-  const { data: booking, error } = await db
-    .from("bookings")
-    .select("*, tenants(*)")
-    .eq("id", bookingId)
-    .single();
-
-  if (error || !booking) {
+  if (!booking) {
     console.error("[SMS] Booking not found:", bookingId);
-    return false;
+    throw new Error(`Booking not found: ${bookingId}`);
   }
 
   // Check if already reminded
@@ -131,7 +141,7 @@ export async function sendReminder(bookingId: string): Promise<boolean> {
     messageType: "reminder",
     context: {
       customerName: booking.customer_name,
-      businessName: booking.tenants?.business_name || "us",
+      businessName: booking.business_name || "us",
       date: formatDate(booking.booking_date),
       time: formatTime(booking.booking_time),
       confirmationCode: booking.confirmation_code,
@@ -139,13 +149,14 @@ export async function sendReminder(bookingId: string): Promise<boolean> {
   });
 
   // Mark as reminded
-  await db
-    .from("bookings")
-    .update({
+  await updateOne(
+    "bookings",
+    {
       reminder_sent: true,
       reminder_sent_at: new Date().toISOString(),
-    })
-    .eq("id", bookingId);
+    },
+    { id: bookingId },
+  );
 
   return true;
 }

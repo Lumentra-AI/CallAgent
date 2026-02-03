@@ -1,0 +1,25 @@
+# Local development PostgreSQL for testing Supabase migration
+# Usage: docker compose -f docker-compose.local.yml up -d
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: lumentra-postgres-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lumentra
+      POSTGRES_PASSWORD: localdev123456789
+      POSTGRES_DB: lumentra
+    ports:
+      - "5433:5432" # Use 5433 to avoid conflict with any existing PostgreSQL
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lumentra -d lumentra"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

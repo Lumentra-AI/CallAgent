@@ -1,7 +1,8 @@
 // Engagement Score Calculator
 // Calculates engagement level for contacts based on their activity
 
-import { getSupabase } from "../database/client.js";
+import { queryAll } from "../database/client.js";
+import { updateOne } from "../database/query-helpers.js";
 
 export interface EngagementMetrics {
   totalCalls: number;
@@ -38,6 +39,29 @@ const WEIGHTS = {
   loyalty: 10,
 };
 
+interface CallRow {
+  created_at: string;
+  duration_seconds: number | null;
+  outcome_type: string | null;
+}
+
+interface BookingRow {
+  created_at: string;
+  status: string;
+  booking_date: string;
+}
+
+interface ContactIdRow {
+  id: string;
+}
+
+interface ContactRow {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  engagement_score: number | null;
+}
+
 /**
  * Calculate engagement score for a contact
  */
@@ -45,26 +69,27 @@ export async function calculateEngagementScore(
   contactId: string,
   tenantId: string,
 ): Promise<EngagementScore> {
-  const db = getSupabase();
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
   // Get contact's calls
-  const { data: calls } = await db
-    .from("calls")
-    .select("created_at, duration_seconds, outcome_type")
-    .eq("contact_id", contactId)
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: false });
+  const calls = await queryAll<CallRow>(
+    `SELECT created_at, duration_seconds, outcome_type
+     FROM calls
+     WHERE contact_id = $1 AND tenant_id = $2
+     ORDER BY created_at DESC`,
+    [contactId, tenantId],
+  );
 
   // Get contact's bookings
-  const { data: bookings } = await db
-    .from("bookings")
-    .select("created_at, status, booking_date")
-    .eq("contact_id", contactId)
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: false });
+  const bookings = await queryAll<BookingRow>(
+    `SELECT created_at, status, booking_date
+     FROM bookings
+     WHERE contact_id = $1 AND tenant_id = $2
+     ORDER BY created_at DESC`,
+    [contactId, tenantId],
+  );
 
   // Calculate metrics
   const totalCalls = calls?.length || 0;
@@ -210,16 +235,14 @@ export async function updateAllEngagementScores(tenantId: string): Promise<{
   updated: number;
   failed: number;
 }> {
-  const db = getSupabase();
-
   // Get all contacts for tenant
-  const { data: contacts, error } = await db
-    .from("contacts")
-    .select("id")
-    .eq("tenant_id", tenantId);
+  const contacts = await queryAll<ContactIdRow>(
+    "SELECT id FROM contacts WHERE tenant_id = $1",
+    [tenantId],
+  );
 
-  if (error || !contacts) {
-    console.error("[ENGAGEMENT] Failed to fetch contacts:", error);
+  if (!contacts || contacts.length === 0) {
+    console.error("[ENGAGEMENT] No contacts found for tenant:", tenantId);
     return { updated: 0, failed: 0 };
   }
 
@@ -231,14 +254,15 @@ export async function updateAllEngagementScores(tenantId: string): Promise<{
     try {
       const engagement = await calculateEngagementScore(contact.id, tenantId);
 
-      await db
-        .from("contacts")
-        .update({
+      await updateOne(
+        "contacts",
+        {
           engagement_score: engagement.score,
           engagement_level: engagement.level,
           engagement_updated_at: new Date().toISOString(),
-        })
-        .eq("id", contact.id);
+        },
+        { id: contact.id },
+      );
 
       updated++;
     } catch (err) {
@@ -261,22 +285,20 @@ export async function getContactsByEngagementLevel(
   level: EngagementScore["level"],
   limit: number = 50,
 ): Promise<Array<{ id: string; name: string; score: number }>> {
-  const db = getSupabase();
+  const data = await queryAll<ContactRow>(
+    `SELECT id, first_name, last_name, engagement_score
+     FROM contacts
+     WHERE tenant_id = $1 AND engagement_level = $2
+     ORDER BY engagement_score DESC
+     LIMIT $3`,
+    [tenantId, level, limit],
+  );
 
-  const { data, error } = await db
-    .from("contacts")
-    .select("id, first_name, last_name, engagement_score")
-    .eq("tenant_id", tenantId)
-    .eq("engagement_level", level)
-    .order("engagement_score", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    console.error("[ENGAGEMENT] Failed to get contacts by level:", error);
+  if (!data) {
     return [];
   }
 
-  return (data || []).map((c) => ({
+  return data.map((c) => ({
     id: c.id,
     name: `${c.first_name || ""} ${c.last_name || ""}`.trim() || "Unknown",
     score: c.engagement_score || 0,

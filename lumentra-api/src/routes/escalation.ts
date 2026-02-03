@@ -1,9 +1,46 @@
 import { Hono } from "hono";
-import { getSupabase } from "../services/database/client.js";
+import {
+  queryOne,
+  queryAll,
+  transaction,
+} from "../services/database/client.js";
+import {
+  insertOne,
+  updateOne,
+  deleteRows,
+} from "../services/database/query-helpers.js";
 import { getAuthUserId } from "../middleware/index.js";
 import { invalidateTenant } from "../services/database/tenant-cache.js";
+import type { PoolClient } from "pg";
 
 export const escalationRoutes = new Hono();
+
+/** Type definitions for database rows */
+interface MembershipRow {
+  tenant_id: string;
+  role: string;
+}
+
+interface EscalationContactRow {
+  id: string;
+  tenant_id: string;
+  name: string;
+  phone: string;
+  role: string | null;
+  is_primary: boolean;
+  availability: string;
+  availability_hours: Record<string, unknown> | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TenantRow {
+  id: string;
+  escalation_enabled: boolean | null;
+  escalation_triggers: string[] | null;
+  transfer_behavior: Record<string, unknown> | null;
+}
 
 /**
  * GET /api/escalation/contacts
@@ -11,30 +48,38 @@ export const escalationRoutes = new Hono();
  */
 escalationRoutes.get("/contacts", async (c) => {
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .maybeSingle();
+  try {
+    const membershipSql = `
+      SELECT tenant_id
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+      LIMIT 1
+    `;
+    const membership = await queryOne<{ tenant_id: string }>(membershipSql, [
+      userId,
+    ]);
 
-  if (!membership) {
-    return c.json({ contacts: [] });
+    if (!membership) {
+      return c.json({ contacts: [] });
+    }
+
+    const contactsSql = `
+      SELECT *
+      FROM escalation_contacts
+      WHERE tenant_id = $1
+      ORDER BY sort_order ASC
+    `;
+    const contacts = await queryAll<EscalationContactRow>(contactsSql, [
+      membership.tenant_id,
+    ]);
+
+    return c.json({ contacts: contacts || [] });
+  } catch (error) {
+    console.error("[ESCALATION] Error fetching contacts:", error);
+    return c.json({ error: "Failed to fetch escalation contacts" }, 500);
   }
-
-  const { data: contacts, error } = await db
-    .from("escalation_contacts")
-    .select("*")
-    .eq("tenant_id", membership.tenant_id)
-    .order("sort_order", { ascending: true });
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
-
-  return c.json({ contacts: contacts || [] });
 });
 
 /**
@@ -44,66 +89,75 @@ escalationRoutes.get("/contacts", async (c) => {
 escalationRoutes.post("/contacts", async (c) => {
   const body = await c.req.json();
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
   if (!body.name || !body.phone) {
     return c.json({ error: "name and phone are required" }, 400);
   }
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const tenantId = membership.tenant_id;
+
+    // Get current max sort_order
+    const maxOrderSql = `
+      SELECT sort_order
+      FROM escalation_contacts
+      WHERE tenant_id = $1
+      ORDER BY sort_order DESC
+      LIMIT 1
+    `;
+    const existing = await queryOne<{ sort_order: number }>(maxOrderSql, [
+      tenantId,
+    ]);
+    const nextOrder = existing ? existing.sort_order + 1 : 0;
+
+    // If setting as primary, unset other primaries
+    if (body.is_primary) {
+      await updateOne(
+        "escalation_contacts",
+        { is_primary: false },
+        { tenant_id: tenantId },
+      );
+    }
+
+    const contact = await insertOne<EscalationContactRow>(
+      "escalation_contacts",
+      {
+        tenant_id: tenantId,
+        name: body.name,
+        phone: body.phone,
+        role: body.role || null,
+        is_primary: body.is_primary || nextOrder === 0,
+        availability: body.availability || "business_hours",
+        availability_hours: body.availability_hours
+          ? JSON.stringify(body.availability_hours)
+          : null,
+        sort_order: nextOrder,
+      },
+    );
+
+    return c.json(contact, 201);
+  } catch (error) {
+    console.error("[ESCALATION] Error adding contact:", error);
+    return c.json({ error: "Failed to add escalation contact" }, 500);
   }
-
-  const tenantId = membership.tenant_id;
-
-  // Get current max sort_order
-  const { data: existing } = await db
-    .from("escalation_contacts")
-    .select("sort_order")
-    .eq("tenant_id", tenantId)
-    .order("sort_order", { ascending: false })
-    .limit(1);
-
-  const nextOrder =
-    existing && existing.length > 0 ? existing[0].sort_order + 1 : 0;
-
-  // If setting as primary, unset other primaries
-  if (body.is_primary) {
-    await db
-      .from("escalation_contacts")
-      .update({ is_primary: false })
-      .eq("tenant_id", tenantId);
-  }
-
-  const { data: contact, error } = await db
-    .from("escalation_contacts")
-    .insert({
-      tenant_id: tenantId,
-      name: body.name,
-      phone: body.phone,
-      role: body.role || null,
-      is_primary: body.is_primary || nextOrder === 0,
-      availability: body.availability || "business_hours",
-      availability_hours: body.availability_hours || null,
-      sort_order: nextOrder,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
-
-  return c.json(contact, 201);
 });
 
 /**
@@ -114,64 +168,72 @@ escalationRoutes.put("/contacts/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    // Verify contact belongs to tenant
+    const existingSql = `
+      SELECT tenant_id
+      FROM escalation_contacts
+      WHERE id = $1
+    `;
+    const existing = await queryOne<{ tenant_id: string }>(existingSql, [id]);
+
+    if (!existing || existing.tenant_id !== membership.tenant_id) {
+      return c.json({ error: "Contact not found" }, 404);
+    }
+
+    // If setting as primary, unset other primaries
+    if (body.is_primary) {
+      const unsetPrimarySql = `
+        UPDATE escalation_contacts
+        SET is_primary = false
+        WHERE tenant_id = $1 AND id != $2
+      `;
+      await queryOne(unsetPrimarySql, [membership.tenant_id, id]);
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (body.name !== undefined) updateData.name = body.name;
+    if (body.phone !== undefined) updateData.phone = body.phone;
+    if (body.role !== undefined) updateData.role = body.role;
+    if (body.is_primary !== undefined) updateData.is_primary = body.is_primary;
+    if (body.availability !== undefined)
+      updateData.availability = body.availability;
+    if (body.availability_hours !== undefined)
+      updateData.availability_hours = body.availability_hours
+        ? JSON.stringify(body.availability_hours)
+        : null;
+    if (body.sort_order !== undefined) updateData.sort_order = body.sort_order;
+
+    const contact = await updateOne<EscalationContactRow>(
+      "escalation_contacts",
+      updateData,
+      { id },
+    );
+
+    return c.json(contact);
+  } catch (error) {
+    console.error("[ESCALATION] Error updating contact:", error);
+    return c.json({ error: "Failed to update escalation contact" }, 500);
   }
-
-  // Verify contact belongs to tenant
-  const { data: existing } = await db
-    .from("escalation_contacts")
-    .select("tenant_id")
-    .eq("id", id)
-    .single();
-
-  if (!existing || existing.tenant_id !== membership.tenant_id) {
-    return c.json({ error: "Contact not found" }, 404);
-  }
-
-  // If setting as primary, unset other primaries
-  if (body.is_primary) {
-    await db
-      .from("escalation_contacts")
-      .update({ is_primary: false })
-      .eq("tenant_id", membership.tenant_id)
-      .neq("id", id);
-  }
-
-  const updateData: Record<string, unknown> = {};
-  if (body.name !== undefined) updateData.name = body.name;
-  if (body.phone !== undefined) updateData.phone = body.phone;
-  if (body.role !== undefined) updateData.role = body.role;
-  if (body.is_primary !== undefined) updateData.is_primary = body.is_primary;
-  if (body.availability !== undefined)
-    updateData.availability = body.availability;
-  if (body.availability_hours !== undefined)
-    updateData.availability_hours = body.availability_hours;
-  if (body.sort_order !== undefined) updateData.sort_order = body.sort_order;
-
-  const { data: contact, error } = await db
-    .from("escalation_contacts")
-    .update(updateData)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
-
-  return c.json(contact);
 });
 
 /**
@@ -181,82 +243,106 @@ escalationRoutes.put("/contacts/:id", async (c) => {
 escalationRoutes.delete("/contacts/:id", async (c) => {
   const id = c.req.param("id");
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
 
-  // Verify contact belongs to tenant and check if it's the only primary
-  const { data: contact } = await db
-    .from("escalation_contacts")
-    .select("tenant_id, is_primary")
-    .eq("id", id)
-    .single();
+    // Verify contact belongs to tenant and check if it's primary
+    const contactSql = `
+      SELECT tenant_id, is_primary
+      FROM escalation_contacts
+      WHERE id = $1
+    `;
+    const contact = await queryOne<{ tenant_id: string; is_primary: boolean }>(
+      contactSql,
+      [id],
+    );
 
-  if (!contact || contact.tenant_id !== membership.tenant_id) {
-    return c.json({ error: "Contact not found" }, 404);
-  }
+    if (!contact || contact.tenant_id !== membership.tenant_id) {
+      return c.json({ error: "Contact not found" }, 404);
+    }
 
-  // If deleting primary, check if there are other contacts
-  if (contact.is_primary) {
-    const { count } = await db
-      .from("escalation_contacts")
-      .select("*", { count: "exact", head: true })
-      .eq("tenant_id", membership.tenant_id);
+    // If deleting primary, check if there are other contacts
+    if (contact.is_primary) {
+      const countSql = `
+        SELECT COUNT(*) as count
+        FROM escalation_contacts
+        WHERE tenant_id = $1
+      `;
+      const countResult = await queryOne<{ count: string }>(countSql, [
+        membership.tenant_id,
+      ]);
+      const count = parseInt(countResult?.count || "0", 10);
 
-    if (count && count > 1) {
-      // Promote another contact to primary after deletion
-      const { data: nextContact } = await db
-        .from("escalation_contacts")
-        .select("id")
-        .eq("tenant_id", membership.tenant_id)
-        .neq("id", id)
-        .order("sort_order", { ascending: true })
-        .limit(1)
-        .single();
+      if (count > 1) {
+        // Promote another contact to primary after deletion
+        const nextContactSql = `
+          SELECT id
+          FROM escalation_contacts
+          WHERE tenant_id = $1 AND id != $2
+          ORDER BY sort_order ASC
+          LIMIT 1
+        `;
+        const nextContact = await queryOne<{ id: string }>(nextContactSql, [
+          membership.tenant_id,
+          id,
+        ]);
 
-      if (nextContact) {
-        await db
-          .from("escalation_contacts")
-          .update({ is_primary: true })
-          .eq("id", nextContact.id);
+        if (nextContact) {
+          await updateOne(
+            "escalation_contacts",
+            { is_primary: true },
+            { id: nextContact.id },
+          );
+        }
       }
     }
-  }
 
-  const { error } = await db.from("escalation_contacts").delete().eq("id", id);
+    // Delete the contact
+    await deleteRows("escalation_contacts", { id });
 
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
+    // Reorder remaining contacts
+    const remainingSql = `
+      SELECT id
+      FROM escalation_contacts
+      WHERE tenant_id = $1
+      ORDER BY sort_order ASC
+    `;
+    const remaining = await queryAll<{ id: string }>(remainingSql, [
+      membership.tenant_id,
+    ]);
 
-  // Reorder remaining contacts
-  const { data: remaining } = await db
-    .from("escalation_contacts")
-    .select("id")
-    .eq("tenant_id", membership.tenant_id)
-    .order("sort_order", { ascending: true });
-
-  if (remaining) {
-    for (let i = 0; i < remaining.length; i++) {
-      await db
-        .from("escalation_contacts")
-        .update({ sort_order: i })
-        .eq("id", remaining[i].id);
+    if (remaining && remaining.length > 0) {
+      for (let i = 0; i < remaining.length; i++) {
+        await updateOne(
+          "escalation_contacts",
+          { sort_order: i },
+          { id: remaining[i].id },
+        );
+      }
     }
-  }
 
-  return c.json({ success: true });
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("[ESCALATION] Error deleting contact:", error);
+    return c.json({ error: "Failed to delete escalation contact" }, 500);
+  }
 });
 
 /**
@@ -265,57 +351,62 @@ escalationRoutes.delete("/contacts/:id", async (c) => {
  */
 escalationRoutes.get("/triggers", async (c) => {
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .maybeSingle();
+  try {
+    const membershipSql = `
+      SELECT tenant_id
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+      LIMIT 1
+    `;
+    const membership = await queryOne<{ tenant_id: string }>(membershipSql, [
+      userId,
+    ]);
 
-  if (!membership) {
+    if (!membership) {
+      return c.json({
+        triggers: [],
+        transfer_behavior: { type: "warm", no_answer: "message" },
+      });
+    }
+
+    const tenantSql = `
+      SELECT escalation_enabled, escalation_triggers, transfer_behavior
+      FROM tenants
+      WHERE id = $1
+    `;
+    const tenant = await queryOne<TenantRow>(tenantSql, [membership.tenant_id]);
+
+    // Standard triggers that are always available
+    const standardTriggers = [
+      "caller_requests",
+      "frustration",
+      "emergency",
+      "complaint",
+      "unknown",
+      "billing",
+    ];
+
+    // Custom triggers (those in tenant's list that aren't standard)
+    const customTriggers = (tenant?.escalation_triggers || []).filter(
+      (t: string) => !standardTriggers.includes(t),
+    );
+
     return c.json({
-      triggers: [],
-      transfer_behavior: { type: "warm", no_answer: "message" },
+      enabled: tenant?.escalation_enabled ?? true,
+      triggers: tenant?.escalation_triggers || [],
+      standardTriggers,
+      customTriggers,
+      transfer_behavior: tenant?.transfer_behavior || {
+        type: "warm",
+        no_answer: "message",
+      },
     });
+  } catch (error) {
+    console.error("[ESCALATION] Error fetching triggers:", error);
+    return c.json({ error: "Failed to fetch escalation triggers" }, 500);
   }
-
-  const { data: tenant, error } = await db
-    .from("tenants")
-    .select("escalation_enabled, escalation_triggers, transfer_behavior")
-    .eq("id", membership.tenant_id)
-    .single();
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
-
-  // Standard triggers that are always available
-  const standardTriggers = [
-    "caller_requests",
-    "frustration",
-    "emergency",
-    "complaint",
-    "unknown",
-    "billing",
-  ];
-
-  // Custom triggers (those in tenant's list that aren't standard)
-  const customTriggers = (tenant?.escalation_triggers || []).filter(
-    (t: string) => !standardTriggers.includes(t),
-  );
-
-  return c.json({
-    enabled: tenant?.escalation_enabled ?? true,
-    triggers: tenant?.escalation_triggers || [],
-    standardTriggers,
-    customTriggers,
-    transfer_behavior: tenant?.transfer_behavior || {
-      type: "warm",
-      no_answer: "message",
-    },
-  });
 });
 
 /**
@@ -325,43 +416,46 @@ escalationRoutes.get("/triggers", async (c) => {
 escalationRoutes.put("/triggers", async (c) => {
   const body = await c.req.json();
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const updateData: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (body.enabled !== undefined)
+      updateData.escalation_enabled = body.enabled;
+    if (body.triggers !== undefined)
+      updateData.escalation_triggers = body.triggers;
+    if (body.transfer_behavior !== undefined)
+      updateData.transfer_behavior = JSON.stringify(body.transfer_behavior);
+
+    await updateOne("tenants", updateData, { id: membership.tenant_id });
+
+    await invalidateTenant(membership.tenant_id);
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("[ESCALATION] Error updating triggers:", error);
+    return c.json({ error: "Failed to update escalation triggers" }, 500);
   }
-
-  const updateData: Record<string, unknown> = {
-    updated_at: new Date().toISOString(),
-  };
-
-  if (body.enabled !== undefined) updateData.escalation_enabled = body.enabled;
-  if (body.triggers !== undefined)
-    updateData.escalation_triggers = body.triggers;
-  if (body.transfer_behavior !== undefined)
-    updateData.transfer_behavior = body.transfer_behavior;
-
-  const { error } = await db
-    .from("tenants")
-    .update(updateData)
-    .eq("id", membership.tenant_id);
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
-
-  await invalidateTenant(membership.tenant_id);
-
-  return c.json({ success: true });
 });
 
 /**
@@ -371,33 +465,43 @@ escalationRoutes.put("/triggers", async (c) => {
 escalationRoutes.post("/contacts/reorder", async (c) => {
   const body = await c.req.json();
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
   if (!body.order || !Array.isArray(body.order)) {
     return c.json({ error: "order array is required" }, 400);
   }
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    // Update sort order for each contact in a transaction
+    await transaction(async (client: PoolClient) => {
+      for (let i = 0; i < body.order.length; i++) {
+        await client.query(
+          `UPDATE escalation_contacts SET sort_order = $1 WHERE id = $2 AND tenant_id = $3`,
+          [i, body.order[i], membership.tenant_id],
+        );
+      }
+    });
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("[ESCALATION] Error reordering contacts:", error);
+    return c.json({ error: "Failed to reorder contacts" }, 500);
   }
-
-  // Update sort order for each contact
-  for (let i = 0; i < body.order.length; i++) {
-    await db
-      .from("escalation_contacts")
-      .update({ sort_order: i })
-      .eq("id", body.order[i])
-      .eq("tenant_id", membership.tenant_id);
-  }
-
-  return c.json({ success: true });
 });

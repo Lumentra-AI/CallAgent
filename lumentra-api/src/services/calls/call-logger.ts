@@ -1,7 +1,7 @@
 // Call Logger Service
 // Saves call records to the database for review and analytics
 
-import { getSupabase } from "../database/client.js";
+import { insertOne, updateOne } from "../database/query-helpers.js";
 import type { CallSession, ConversationMessage } from "../../types/voice.js";
 
 export interface CallRecord {
@@ -16,7 +16,13 @@ export interface CallRecord {
   duration_seconds: number;
   ended_reason: string | null;
   // Must match database CHECK constraint: ('booking', 'inquiry', 'support', 'escalation', 'hangup')
-  outcome_type: "booking" | "inquiry" | "support" | "escalation" | "hangup" | null;
+  outcome_type:
+    | "booking"
+    | "inquiry"
+    | "support"
+    | "escalation"
+    | "hangup"
+    | null;
   outcome_success: boolean;
   transcript: string | null;
   summary: string | null;
@@ -189,7 +195,11 @@ function determineOutcome(
     .toLowerCase();
 
   // Check for hangup (caller ended without completing)
-  if (endReason === "hangup" || endReason === "caller-hangup" || conversationHistory.length <= 2) {
+  if (
+    endReason === "hangup" ||
+    endReason === "caller-hangup" ||
+    conversationHistory.length <= 2
+  ) {
     return { type: "hangup", success: false };
   }
 
@@ -279,7 +289,6 @@ export async function saveCallRecord(
   endReason: string = "completed",
 ): Promise<void> {
   try {
-    const db = getSupabase();
     const endTime = new Date();
     const durationSeconds = Math.floor(
       (endTime.getTime() - session.startTime.getTime()) / 1000,
@@ -288,7 +297,11 @@ export async function saveCallRecord(
     const transcript = buildTranscript(session.conversationHistory);
     const intents = detectIntents(session.conversationHistory);
     const sentiment = calculateSentiment(session.conversationHistory);
-    const outcome = determineOutcome(session.conversationHistory, intents, endReason);
+    const outcome = determineOutcome(
+      session.conversationHistory,
+      intents,
+      endReason,
+    );
     const summary = generateSummary(
       session.conversationHistory,
       intents,
@@ -325,17 +338,14 @@ export async function saveCallRecord(
       contact_id: null,
     };
 
-    const { error } = await db.from("calls").insert(callRecord);
+    await insertOne("calls", callRecord);
 
-    if (error) {
-      console.error("[CALL-LOGGER] Failed to save call record:", error);
-    } else {
-      console.log(
-        `[CALL-LOGGER] Saved call ${session.callSid}: ${durationSeconds}s, ${outcome.type}, sentiment: ${sentiment.toFixed(2)}`,
-      );
-    }
+    console.log(
+      `[CALL-LOGGER] Saved call ${session.callSid}: ${durationSeconds}s, ${outcome.type}, sentiment: ${sentiment.toFixed(2)}`,
+    );
   } catch (error) {
     console.error("[CALL-LOGGER] Error saving call record:", error);
+    throw error;
   }
 }
 
@@ -347,17 +357,9 @@ export async function updateCallRecord(
   updates: Partial<CallRecord>,
 ): Promise<void> {
   try {
-    const db = getSupabase();
-
-    const { error } = await db
-      .from("calls")
-      .update(updates)
-      .eq("vapi_call_id", callSid);
-
-    if (error) {
-      console.error("[CALL-LOGGER] Failed to update call record:", error);
-    }
+    await updateOne("calls", updates, { vapi_call_id: callSid });
   } catch (error) {
     console.error("[CALL-LOGGER] Error updating call record:", error);
+    throw error;
   }
 }

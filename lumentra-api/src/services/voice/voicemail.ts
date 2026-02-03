@@ -1,7 +1,8 @@
 // Voicemail Service
 // Handles voicemail recording and storage when agent is unavailable
 
-import { getSupabase } from "../database/client.js";
+import { queryOne, queryAll } from "../database/client.js";
+import { insertOne, updateOne } from "../database/query-helpers.js";
 
 export interface VoicemailConfig {
   enabled: boolean;
@@ -112,17 +113,18 @@ export function generateVoicemailTwiML(
 </Response>`;
 }
 
+interface VoicemailInsertRow {
+  id: string;
+}
+
 /**
  * Save voicemail record to database
  */
 export async function saveVoicemail(
   voicemail: VoicemailRecord,
 ): Promise<{ success: boolean; id?: string; error?: string }> {
-  const db = getSupabase();
-
-  const { data, error } = await db
-    .from("voicemails")
-    .insert({
+  try {
+    const data = await insertOne<VoicemailInsertRow>("voicemails", {
       tenant_id: voicemail.tenantId,
       call_sid: voicemail.callSid,
       caller_phone: voicemail.callerPhone,
@@ -133,16 +135,13 @@ export async function saveVoicemail(
       transcript: voicemail.transcript,
       reason: voicemail.reason,
       status: voicemail.status || "pending",
-    })
-    .select("id")
-    .single();
+    });
 
-  if (error) {
+    return { success: true, id: data.id };
+  } catch (error) {
     console.error("[VOICEMAIL] Save error:", error);
-    return { success: false, error: error.message };
+    throw error;
   }
-
-  return { success: true, id: data.id };
 }
 
 /**
@@ -154,23 +153,22 @@ export async function updateVoicemailRecording(
   recordingSid: string,
   durationSeconds: number,
 ): Promise<boolean> {
-  const db = getSupabase();
+  try {
+    await updateOne(
+      "voicemails",
+      {
+        recording_url: recordingUrl,
+        recording_sid: recordingSid,
+        duration_seconds: durationSeconds,
+      },
+      { call_sid: callSid },
+    );
 
-  const { error } = await db
-    .from("voicemails")
-    .update({
-      recording_url: recordingUrl,
-      recording_sid: recordingSid,
-      duration_seconds: durationSeconds,
-    })
-    .eq("call_sid", callSid);
-
-  if (error) {
+    return true;
+  } catch (error) {
     console.error("[VOICEMAIL] Update recording error:", error);
-    return false;
+    throw error;
   }
-
-  return true;
 }
 
 /**
@@ -180,19 +178,33 @@ export async function updateVoicemailTranscript(
   callSid: string,
   transcript: string,
 ): Promise<boolean> {
-  const db = getSupabase();
+  try {
+    await updateOne("voicemails", { transcript }, { call_sid: callSid });
 
-  const { error } = await db
-    .from("voicemails")
-    .update({ transcript })
-    .eq("call_sid", callSid);
-
-  if (error) {
+    return true;
+  } catch (error) {
     console.error("[VOICEMAIL] Update transcript error:", error);
-    return false;
+    throw error;
   }
+}
 
-  return true;
+interface VoicemailDbRow {
+  id: string;
+  tenant_id: string;
+  call_sid: string;
+  caller_phone: string;
+  caller_name: string | null;
+  recording_url: string | null;
+  recording_sid: string | null;
+  duration_seconds: number | null;
+  transcript: string | null;
+  reason: VoicemailReason;
+  status: VoicemailRecord["status"];
+  created_at: string;
+}
+
+interface CountRow {
+  total: string;
 }
 
 /**
@@ -202,32 +214,40 @@ export async function getVoicemails(
   tenantId: string,
   options: { status?: string; limit?: number; offset?: number } = {},
 ): Promise<{ voicemails: VoicemailRecord[]; total: number }> {
-  const db = getSupabase();
   const limit = options.limit || 50;
   const offset = options.offset || 0;
 
-  let query = db
-    .from("voicemails")
-    .select("*", { count: "exact" })
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+  try {
+    let countSql =
+      "SELECT COUNT(*) as total FROM voicemails WHERE tenant_id = $1";
+    let dataSql = `
+      SELECT * FROM voicemails
+      WHERE tenant_id = $1
+    `;
+    const countParams: unknown[] = [tenantId];
+    const dataParams: unknown[] = [tenantId];
 
-  if (options.status) {
-    query = query.eq("status", options.status);
-  }
+    if (options.status) {
+      countSql += " AND status = $2";
+      dataSql += " AND status = $2";
+      countParams.push(options.status);
+      dataParams.push(options.status);
+    }
 
-  const { data, count, error } = await query;
+    dataSql += ` ORDER BY created_at DESC LIMIT $${dataParams.length + 1} OFFSET $${dataParams.length + 2}`;
+    dataParams.push(limit, offset);
 
-  if (error) {
+    const countResult = await queryOne<CountRow>(countSql, countParams);
+    const data = await queryAll<VoicemailDbRow>(dataSql, dataParams);
+
+    return {
+      voicemails: (data || []).map(mapDbToVoicemail),
+      total: parseInt(countResult?.total || "0", 10),
+    };
+  } catch (error) {
     console.error("[VOICEMAIL] Get error:", error);
-    return { voicemails: [], total: 0 };
+    throw error;
   }
-
-  return {
-    voicemails: (data || []).map(mapDbToVoicemail),
-    total: count || 0,
-  };
 }
 
 /**
@@ -237,16 +257,14 @@ export async function updateVoicemailStatus(
   id: string,
   status: VoicemailRecord["status"],
 ): Promise<boolean> {
-  const db = getSupabase();
+  try {
+    await updateOne("voicemails", { status }, { id });
 
-  const { error } = await db.from("voicemails").update({ status }).eq("id", id);
-
-  if (error) {
+    return true;
+  } catch (error) {
     console.error("[VOICEMAIL] Update status error:", error);
-    return false;
+    throw error;
   }
-
-  return true;
 }
 
 // Helper functions
@@ -259,19 +277,19 @@ function escapeXml(str: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function mapDbToVoicemail(row: Record<string, unknown>): VoicemailRecord {
+function mapDbToVoicemail(row: VoicemailDbRow): VoicemailRecord {
   return {
-    id: row.id as string,
-    tenantId: row.tenant_id as string,
-    callSid: row.call_sid as string,
-    callerPhone: row.caller_phone as string,
-    callerName: row.caller_name as string | undefined,
-    recordingUrl: row.recording_url as string | undefined,
-    recordingSid: row.recording_sid as string | undefined,
-    durationSeconds: row.duration_seconds as number | undefined,
-    transcript: row.transcript as string | undefined,
-    reason: row.reason as VoicemailReason,
-    status: row.status as VoicemailRecord["status"],
-    createdAt: row.created_at as string,
+    id: row.id,
+    tenantId: row.tenant_id,
+    callSid: row.call_sid,
+    callerPhone: row.caller_phone,
+    callerName: row.caller_name || undefined,
+    recordingUrl: row.recording_url || undefined,
+    recordingSid: row.recording_sid || undefined,
+    durationSeconds: row.duration_seconds || undefined,
+    transcript: row.transcript || undefined,
+    reason: row.reason,
+    status: row.status,
+    createdAt: row.created_at,
   };
 }

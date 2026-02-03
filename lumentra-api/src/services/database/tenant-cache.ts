@@ -1,4 +1,4 @@
-import { getSupabase } from "./client.js";
+import { queryAll, queryOne } from "./client.js";
 import type { Tenant } from "../../types/database.js";
 
 /**
@@ -44,21 +44,15 @@ export async function initTenantCache(): Promise<void> {
  */
 async function refreshCache(): Promise<void> {
   const startTime = Date.now();
-  const db = getSupabase();
 
-  const { data: tenants, error } = await db
-    .from("tenants")
-    .select("*")
-    .eq("is_active", true);
-
-  if (error) {
-    throw new Error(`Failed to fetch tenants: ${error.message}`);
-  }
+  const tenants = await queryAll<Tenant>(
+    `SELECT * FROM tenants WHERE is_active = true`,
+  );
 
   // Clear and rebuild cache
   tenantCache.clear();
 
-  for (const tenant of tenants || []) {
+  for (const tenant of tenants) {
     // Key by phone number for fast lookup during incoming calls
     if (tenant.phone_number) {
       tenantCache.set(normalizePhone(tenant.phone_number), tenant);
@@ -70,9 +64,7 @@ async function refreshCache(): Promise<void> {
   lastRefresh = new Date();
   const latency = Date.now() - startTime;
 
-  console.log(
-    `[CACHE] Refreshed ${tenants?.length || 0} tenants in ${latency}ms`,
-  );
+  console.log(`[CACHE] Refreshed ${tenants.length} tenants in ${latency}ms`);
 }
 
 /**
@@ -120,23 +112,20 @@ export async function getTenantByPhoneWithFallback(
   console.log("[CACHE] Cache miss, querying database for:", normalized);
 
   try {
-    const db = getSupabase();
-    const { data, error } = await db
-      .from("tenants")
-      .select("*")
-      .eq("phone_number", normalized)
-      .eq("is_active", true)
-      .single();
+    const tenant = await queryOne<Tenant>(
+      `SELECT * FROM tenants WHERE phone_number = $1 AND is_active = true`,
+      [normalized],
+    );
 
-    if (error || !data) {
+    if (!tenant) {
       return null;
     }
 
     // Add to cache for future lookups
-    tenantCache.set(normalizePhone(data.phone_number), data);
-    tenantCache.set(`id:${data.id}`, data);
+    tenantCache.set(normalizePhone(tenant.phone_number), tenant);
+    tenantCache.set(`id:${tenant.id}`, tenant);
 
-    return data;
+    return tenant;
   } catch {
     return null;
   }
@@ -157,16 +146,17 @@ export async function invalidateTenant(tenantId: string): Promise<void> {
 
     // Refresh this tenant from DB
     try {
-      const db = getSupabase();
-      const { data, error } = await db
-        .from("tenants")
-        .select("*")
-        .eq("id", tenantId)
-        .single();
+      const refreshedTenant = await queryOne<Tenant>(
+        `SELECT * FROM tenants WHERE id = $1`,
+        [tenantId],
+      );
 
-      if (!error && data && data.is_active) {
-        tenantCache.set(normalizePhone(data.phone_number), data);
-        tenantCache.set(`id:${data.id}`, data);
+      if (refreshedTenant && refreshedTenant.is_active) {
+        tenantCache.set(
+          normalizePhone(refreshedTenant.phone_number),
+          refreshedTenant,
+        );
+        tenantCache.set(`id:${refreshedTenant.id}`, refreshedTenant);
       }
     } catch {
       // Silent fail - will refresh on next cycle

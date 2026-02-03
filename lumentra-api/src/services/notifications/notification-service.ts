@@ -1,5 +1,6 @@
 // Notification Service - Email and SMS notifications
-import { getSupabase } from "../database/client.js";
+import { queryOne, queryAll } from "../database/client.js";
+import { insertOne, updateOne } from "../database/query-helpers.js";
 import {
   Notification,
   NotificationTemplate,
@@ -96,12 +97,10 @@ export async function sendMissedCallFollowup(
 ): Promise<void> {
   if (contact.do_not_sms) return;
 
-  const db = getSupabase();
-  const { data: tenant } = await db
-    .from("tenants")
-    .select("business_name")
-    .eq("id", tenantId)
-    .single();
+  const tenant = await queryOne<{ business_name: string }>(
+    `SELECT business_name FROM tenants WHERE id = $1`,
+    [tenantId],
+  );
 
   await queueNotification(tenantId, {
     contact_id: contact.id,
@@ -135,8 +134,6 @@ export async function queueNotification(
     scheduled_at?: string;
   },
 ): Promise<Notification> {
-  const db = getSupabase();
-
   // Get template
   const template = await getDefaultTemplate(
     tenantId,
@@ -147,29 +144,23 @@ export async function queueNotification(
   // Render content
   const rendered = renderTemplate(template, data.template_variables || {});
 
-  const { data: notification, error } = await db
-    .from("notifications")
-    .insert({
-      tenant_id: tenantId,
-      contact_id: data.contact_id,
-      channel: data.channel,
-      notification_type: data.notification_type,
-      status: data.scheduled_at ? "pending" : "queued",
-      recipient: data.recipient,
-      recipient_name: data.recipient_name,
-      subject: rendered.subject,
-      body: rendered.body,
-      body_html: rendered.bodyHtml,
-      template_id: template?.id,
-      template_variables: data.template_variables || {},
-      scheduled_at: data.scheduled_at,
-      booking_id: data.booking_id,
-      call_id: data.call_id,
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`Failed to queue notification: ${error.message}`);
+  const notification = await insertOne<Notification>("notifications", {
+    tenant_id: tenantId,
+    contact_id: data.contact_id,
+    channel: data.channel,
+    notification_type: data.notification_type,
+    status: data.scheduled_at ? "pending" : "queued",
+    recipient: data.recipient,
+    recipient_name: data.recipient_name,
+    subject: rendered.subject,
+    body: rendered.body,
+    body_html: rendered.bodyHtml,
+    template_id: template?.id,
+    template_variables: data.template_variables || {},
+    scheduled_at: data.scheduled_at,
+    booking_id: data.booking_id,
+    call_id: data.call_id,
+  });
 
   // If not scheduled, send immediately
   if (!data.scheduled_at) {
@@ -182,21 +173,19 @@ export async function queueNotification(
 export async function processNotification(
   notificationId: string,
 ): Promise<void> {
-  const db = getSupabase();
+  const notification = await queryOne<Notification>(
+    `SELECT * FROM notifications WHERE id = $1`,
+    [notificationId],
+  );
 
-  const { data: notification, error } = await db
-    .from("notifications")
-    .select("*")
-    .eq("id", notificationId)
-    .single();
-
-  if (error || !notification) return;
+  if (!notification) return;
 
   try {
-    await db
-      .from("notifications")
-      .update({ status: "sending" })
-      .eq("id", notificationId);
+    await updateOne(
+      "notifications",
+      { status: "sending" },
+      { id: notificationId },
+    );
 
     if (notification.channel === "sms") {
       await sendSms(notification);
@@ -204,39 +193,35 @@ export async function processNotification(
       await sendEmail(notification);
     }
 
-    await db
-      .from("notifications")
-      .update({ status: "sent", sent_at: new Date().toISOString() })
-      .eq("id", notificationId);
+    await updateOne(
+      "notifications",
+      { status: "sent", sent_at: new Date().toISOString() },
+      { id: notificationId },
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     const retryCount = notification.retry_count + 1;
 
-    await db
-      .from("notifications")
-      .update({
+    await updateOne(
+      "notifications",
+      {
         status: retryCount >= notification.max_retries ? "failed" : "pending",
         error_message: message,
         retry_count: retryCount,
         next_retry_at: new Date(
           Date.now() + retryCount * 5 * 60 * 1000,
         ).toISOString(),
-      })
-      .eq("id", notificationId);
+      },
+      { id: notificationId },
+    );
   }
 }
 
 export async function processQueue(): Promise<number> {
-  const db = getSupabase();
-
-  const { data: notifications, error } = await db
-    .from("notifications")
-    .select("id")
-    .eq("status", "queued")
-    .order("created_at")
-    .limit(50);
-
-  if (error || !notifications) return 0;
+  const notifications = await queryAll<{ id: string }>(
+    `SELECT id FROM notifications WHERE status = $1 ORDER BY created_at LIMIT 50`,
+    ["queued"],
+  );
 
   for (const n of notifications) {
     await processNotification(n.id);
@@ -246,17 +231,14 @@ export async function processQueue(): Promise<number> {
 }
 
 export async function retryFailed(): Promise<number> {
-  const db = getSupabase();
-
-  const { data: notifications, error } = await db
-    .from("notifications")
-    .select("id")
-    .eq("status", "pending")
-    .lt("next_retry_at", new Date().toISOString())
-    .lt("retry_count", 3)
-    .limit(20);
-
-  if (error || !notifications) return 0;
+  const notifications = await queryAll<{ id: string }>(
+    `SELECT id FROM notifications
+     WHERE status = $1
+       AND next_retry_at < $2
+       AND retry_count < $3
+     LIMIT 20`,
+    ["pending", new Date().toISOString(), 3],
+  );
 
   for (const n of notifications) {
     await processNotification(n.id);
@@ -274,24 +256,22 @@ export async function getDefaultTemplate(
   type: NotificationType,
   channel: "email" | "sms",
 ): Promise<NotificationTemplate | null> {
-  const db = getSupabase();
+  const template = await queryOne<NotificationTemplate>(
+    `SELECT * FROM notification_templates
+     WHERE tenant_id = $1
+       AND notification_type = $2
+       AND channel = $3
+       AND is_default = true
+       AND is_active = true`,
+    [tenantId, type, channel],
+  );
 
-  const { data, error } = await db
-    .from("notification_templates")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .eq("notification_type", type)
-    .eq("channel", channel)
-    .eq("is_default", true)
-    .eq("is_active", true)
-    .single();
-
-  if (error?.code === "PGRST116") {
+  if (!template) {
     // Return built-in default
     return getBuiltInTemplate(type, channel);
   }
 
-  return data;
+  return template;
 }
 
 function getBuiltInTemplate(

@@ -1,5 +1,10 @@
 import { Hono } from "hono";
-import { getSupabase } from "../services/database/client.js";
+import { queryOne, queryAll } from "../services/database/client.js";
+import {
+  updateOne,
+  upsert,
+  deleteRows,
+} from "../services/database/query-helpers.js";
 import { getAuthUserId } from "../middleware/index.js";
 import type { IntegrationProvider } from "../types/database.js";
 
@@ -65,36 +70,64 @@ function generateState(): string {
   return result;
 }
 
+/** Type definitions for database rows */
+interface MembershipRow {
+  tenant_id: string;
+  role: string;
+}
+
+interface IntegrationRow {
+  id: string;
+  tenant_id: string;
+  provider: string;
+  status: string;
+  external_account_id: string | null;
+  access_token: string;
+  refresh_token: string | null;
+  token_expires_at: string | null;
+  scopes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /**
  * GET /api/integrations
  * Returns tenant's connected integrations
  */
 integrationsRoutes.get("/", async (c) => {
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+      LIMIT 1
+    `;
+    const membership = await queryOne<{ tenant_id: string }>(membershipSql, [
+      userId,
+    ]);
 
-  if (!membership) {
-    return c.json({ integrations: [] });
+    if (!membership) {
+      return c.json({ integrations: [] });
+    }
+
+    const integrationsSql = `
+      SELECT id, provider, status, external_account_id, created_at, updated_at
+      FROM tenant_integrations
+      WHERE tenant_id = $1
+    `;
+    const integrations = await queryAll<IntegrationRow>(integrationsSql, [
+      membership.tenant_id,
+    ]);
+
+    return c.json({ integrations: integrations || [] });
+  } catch (error) {
+    console.error("[INTEGRATIONS] Error fetching integrations:", error);
+    return c.json({ error: "Failed to fetch integrations" }, 500);
   }
-
-  const { data: integrations, error } = await db
-    .from("tenant_integrations")
-    .select("id, provider, status, external_account_id, created_at, updated_at")
-    .eq("tenant_id", membership.tenant_id);
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
-
-  return c.json({ integrations: integrations || [] });
 });
 
 /**
@@ -150,7 +183,6 @@ integrationsRoutes.get("/providers", async (c) => {
 integrationsRoutes.get("/:provider/authorize", async (c) => {
   const provider = c.req.param("provider") as IntegrationProvider;
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
   // Validate provider
   const config = OAUTH_CONFIGS[provider];
@@ -167,47 +199,57 @@ integrationsRoutes.get("/:provider/authorize", async (c) => {
     );
   }
 
-  // Get tenant
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    // Generate state parameter
+    const state = generateState();
+
+    // Store state with tenant ID (expires in 10 minutes)
+    oauthStates.set(state, {
+      tenantId: membership.tenant_id,
+      provider,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    });
+
+    // Build redirect URI
+    const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
+    const redirectUri = `${backendUrl}/api/integrations/${provider}/callback`;
+
+    // Build authorization URL
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: config.scopes,
+      state,
+      access_type: "offline", // For refresh token (Google)
+      prompt: "consent", // Force consent to get refresh token
+    });
+
+    const authUrl = `${config.authUrl}?${params.toString()}`;
+
+    return c.json({ authUrl });
+  } catch (error) {
+    console.error("[INTEGRATIONS] Error initiating OAuth:", error);
+    return c.json({ error: "Failed to initiate OAuth flow" }, 500);
   }
-
-  // Generate state parameter
-  const state = generateState();
-
-  // Store state with tenant ID (expires in 10 minutes)
-  oauthStates.set(state, {
-    tenantId: membership.tenant_id,
-    provider,
-    expiresAt: Date.now() + 10 * 60 * 1000,
-  });
-
-  // Build redirect URI
-  const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-  const redirectUri = `${backendUrl}/api/integrations/${provider}/callback`;
-
-  // Build authorization URL
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    response_type: "code",
-    scope: config.scopes,
-    state,
-    access_type: "offline", // For refresh token (Google)
-    prompt: "consent", // Force consent to get refresh token
-  });
-
-  const authUrl = `${config.authUrl}?${params.toString()}`;
-
-  return c.json({ authUrl });
 });
 
 /**
@@ -323,11 +365,9 @@ integrationsRoutes.get("/:provider/callback", async (c) => {
       ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
       : null;
 
-    // Store integration in database
-    const db = getSupabase();
-
     // Upsert integration
-    const { error: dbError } = await db.from("tenant_integrations").upsert(
+    await upsert(
+      "tenant_integrations",
       {
         tenant_id: stateData.tenantId,
         provider,
@@ -339,15 +379,8 @@ integrationsRoutes.get("/:provider/callback", async (c) => {
         status: "active",
         updated_at: new Date().toISOString(),
       },
-      {
-        onConflict: "tenant_id,provider",
-      },
+      ["tenant_id", "provider"],
     );
-
-    if (dbError) {
-      console.error(`[OAUTH] Database error for ${provider}:`, dbError);
-      return c.redirect(`${redirectBase}?error=database_error`);
-    }
 
     return c.redirect(`${redirectBase}?success=true&provider=${provider}`);
   } catch (e) {
@@ -363,40 +396,46 @@ integrationsRoutes.get("/:provider/callback", async (c) => {
 integrationsRoutes.delete("/:id", async (c) => {
   const id = c.req.param("id");
   const userId = getAuthUserId(c);
-  const db = getSupabase();
 
-  // Get tenant membership
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
+  try {
+    // Get tenant membership
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
 
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    // Verify integration belongs to tenant
+    const integrationSql = `
+      SELECT id, tenant_id, provider
+      FROM tenant_integrations
+      WHERE id = $1
+    `;
+    const integration = await queryOne<IntegrationRow>(integrationSql, [id]);
+
+    if (!integration || integration.tenant_id !== membership.tenant_id) {
+      return c.json({ error: "Integration not found" }, 404);
+    }
+
+    // Delete integration
+    await deleteRows("tenant_integrations", { id });
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("[INTEGRATIONS] Error deleting integration:", error);
+    return c.json({ error: "Failed to delete integration" }, 500);
   }
-
-  // Verify integration belongs to tenant
-  const { data: integration } = await db
-    .from("tenant_integrations")
-    .select("id, tenant_id, provider")
-    .eq("id", id)
-    .single();
-
-  if (!integration || integration.tenant_id !== membership.tenant_id) {
-    return c.json({ error: "Integration not found" }, 404);
-  }
-
-  // Delete integration
-  const { error } = await db.from("tenant_integrations").delete().eq("id", id);
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
-  }
-
-  return c.json({ success: true });
 });
 
 /**
@@ -406,51 +445,59 @@ integrationsRoutes.delete("/:id", async (c) => {
 integrationsRoutes.post("/:id/refresh", async (c) => {
   const id = c.req.param("id");
   const userId = getAuthUserId(c);
-  const db = getSupabase();
-
-  // Get tenant membership
-  const { data: membership } = await db
-    .from("tenant_members")
-    .select("tenant_id, role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .in("role", ["owner", "admin"])
-    .maybeSingle();
-
-  if (!membership) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
-
-  // Get integration
-  const { data: integration } = await db
-    .from("tenant_integrations")
-    .select("*")
-    .eq("id", id)
-    .eq("tenant_id", membership.tenant_id)
-    .single();
-
-  if (!integration) {
-    return c.json({ error: "Integration not found" }, 404);
-  }
-
-  if (!integration.refresh_token) {
-    return c.json({ error: "No refresh token available" }, 400);
-  }
-
-  // Get OAuth config
-  const config = OAUTH_CONFIGS[integration.provider];
-  if (!config) {
-    return c.json({ error: "Unsupported provider" }, 400);
-  }
-
-  const clientId = process.env[config.clientIdEnv];
-  const clientSecret = process.env[config.clientSecretEnv];
-
-  if (!clientId || !clientSecret) {
-    return c.json({ error: "Server configuration error" }, 500);
-  }
 
   try {
+    // Get tenant membership
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
+
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    // Get integration
+    const integrationSql = `
+      SELECT *
+      FROM tenant_integrations
+      WHERE id = $1
+        AND tenant_id = $2
+    `;
+    const integration = await queryOne<IntegrationRow>(integrationSql, [
+      id,
+      membership.tenant_id,
+    ]);
+
+    if (!integration) {
+      return c.json({ error: "Integration not found" }, 404);
+    }
+
+    if (!integration.refresh_token) {
+      return c.json({ error: "No refresh token available" }, 400);
+    }
+
+    // Get OAuth config
+    const config = OAUTH_CONFIGS[integration.provider];
+    if (!config) {
+      return c.json({ error: "Unsupported provider" }, 400);
+    }
+
+    const clientId = process.env[config.clientIdEnv];
+    const clientSecret = process.env[config.clientSecretEnv];
+
+    if (!clientId || !clientSecret) {
+      return c.json({ error: "Server configuration error" }, 500);
+    }
+
     // Refresh token
     const tokenResponse = await fetch(config.tokenUrl, {
       method: "POST",
@@ -467,13 +514,14 @@ integrationsRoutes.post("/:id/refresh", async (c) => {
 
     if (!tokenResponse.ok) {
       // Token refresh failed - mark integration as expired
-      await db
-        .from("tenant_integrations")
-        .update({
+      await updateOne(
+        "tenant_integrations",
+        {
           status: "expired",
           updated_at: new Date().toISOString(),
-        })
-        .eq("id", id);
+        },
+        { id },
+      );
 
       return c.json({ error: "Token refresh failed", status: "expired" }, 400);
     }
@@ -489,16 +537,17 @@ integrationsRoutes.post("/:id/refresh", async (c) => {
       ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
       : null;
 
-    await db
-      .from("tenant_integrations")
-      .update({
+    await updateOne(
+      "tenant_integrations",
+      {
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token || integration.refresh_token,
         token_expires_at: expiresAt,
         status: "active",
         updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+      },
+      { id },
+    );
 
     return c.json({ success: true, status: "active" });
   } catch (e) {
