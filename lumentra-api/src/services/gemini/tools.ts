@@ -15,7 +15,8 @@ import type {
   CreateOrderArgs,
   CreateOrderResult,
 } from "../../types/voice.js";
-import { getSupabase } from "../database/client.js";
+import { query, queryOne, queryAll } from "../database/client.js";
+import { insertOne } from "../database/query-helpers.js";
 import {
   signalwireConfig,
   signalwireApiUrl,
@@ -174,6 +175,10 @@ export const voiceAgentFunctions: FunctionDeclaration[] = [
 
 // Tool execution functions - reused from groq/tools.ts
 
+interface BookingTimeRow {
+  booking_time: string;
+}
+
 export async function executeCheckAvailability(
   args: CheckAvailabilityArgs,
   context: ToolExecutionContext,
@@ -184,26 +189,14 @@ export async function executeCheckAvailability(
   );
 
   try {
-    const supabase = getSupabase();
-    const { data: existingBookings, error } = await supabase
-      .from("bookings")
-      .select("booking_time")
-      .eq("tenant_id", context.tenantId)
-      .eq("booking_date", args.date)
-      .neq("status", "cancelled");
-
-    if (error) {
-      console.error("[TOOLS] Error fetching bookings:", error);
-      return {
-        available: false,
-        message:
-          "I'm having trouble checking availability right now. Please try again.",
-      };
-    }
+    const existingBookings = await queryAll<BookingTimeRow>(
+      `SELECT booking_time FROM bookings
+       WHERE tenant_id = $1 AND booking_date = $2 AND status != 'cancelled'`,
+      [context.tenantId, args.date],
+    );
 
     const bookedTimes = new Set(
-      existingBookings?.map((b: { booking_time: string }) => b.booking_time) ||
-        [],
+      existingBookings?.map((b) => b.booking_time) || [],
     );
     const allSlots = [
       "09:00",
@@ -243,6 +236,14 @@ export async function executeCheckAvailability(
   }
 }
 
+interface CallIdRow {
+  id: string;
+}
+
+interface BookingRow {
+  id: string;
+}
+
 export async function executeCreateBooking(
   args: CreateBookingArgs,
   context: ToolExecutionContext,
@@ -254,48 +255,33 @@ export async function executeCreateBooking(
 
   try {
     const confirmationCode = generateConfirmationCode();
-    const supabase = getSupabase();
 
     // Try to find the call record for linking (may not exist yet during call)
     let callId: string | null = null;
     if (context.callSid) {
-      const { data: callRecord } = await supabase
-        .from("calls")
-        .select("id")
-        .eq("vapi_call_id", context.callSid)
-        .single();
+      const callRecord = await queryOne<CallIdRow>(
+        "SELECT id FROM calls WHERE vapi_call_id = $1",
+        [context.callSid],
+      );
       callId = callRecord?.id || null;
     }
 
-    const { data, error } = await supabase
-      .from("bookings")
-      .insert({
-        tenant_id: context.tenantId,
-        customer_name: args.customer_name,
-        customer_phone: args.customer_phone,
-        booking_type: args.service_type || "general",
-        booking_date: args.date,
-        booking_time: args.time,
-        notes: args.notes
-          ? `${args.notes} (Call: ${context.callSid})`
-          : `Booked via call ${context.callSid}`,
-        status: "confirmed",
-        confirmation_code: confirmationCode,
-        reminder_sent: false,
-        source: "call",
-        call_id: callId,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error("[TOOLS] Error creating booking:", error);
-      return {
-        success: false,
-        message:
-          "I wasn't able to complete the booking. Would you like me to try again?",
-      };
-    }
+    const data = await insertOne<BookingRow>("bookings", {
+      tenant_id: context.tenantId,
+      customer_name: args.customer_name,
+      customer_phone: args.customer_phone,
+      booking_type: args.service_type || "general",
+      booking_date: args.date,
+      booking_time: args.time,
+      notes: args.notes
+        ? `${args.notes} (Call: ${context.callSid})`
+        : `Booked via call ${context.callSid}`,
+      status: "confirmed",
+      confirmation_code: confirmationCode,
+      reminder_sent: false,
+      source: "call",
+      call_id: callId,
+    });
 
     const formattedTime = formatTimeForVoice(args.time);
     const formattedDate = formatDateForVoice(args.date);
@@ -333,27 +319,37 @@ export async function executeTransferToHuman(
     };
   }
 
-  if (!signalwireApiUrl || !context.callSid) {
-    console.warn("[TOOLS] SignalWire not configured or no callSid");
-    return {
-      transferred: false,
-      message:
-        "I'm having trouble completing the transfer. Can I take a message instead?",
-    };
-  }
-
-  const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3100";
+  const voiceProvider = process.env.VOICE_PROVIDER || "vapi";
 
   try {
-    const supabase = getSupabase();
-    await supabase
-      .from("calls")
-      .update({
-        outcome_type: "escalation",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("call_sid", context.callSid);
+    // Update call outcome
+    await query(
+      `UPDATE calls SET outcome_type = $1, updated_at = $2 WHERE vapi_call_id = $3`,
+      ["escalation", new Date().toISOString(), context.callSid],
+    );
 
+    // For Vapi: Just return success - Vapi will request transfer destination via webhook
+    if (voiceProvider === "vapi") {
+      console.log(
+        `[TOOLS] Vapi transfer - returning success, Vapi will handle transfer to ${context.escalationPhone}`,
+      );
+      return {
+        transferred: true,
+        message: "Transferring you now. Please hold.",
+      };
+    }
+
+    // For SignalWire custom stack: Call the SignalWire API directly
+    if (!signalwireApiUrl || !context.callSid) {
+      console.warn("[TOOLS] SignalWire not configured or no callSid");
+      return {
+        transferred: false,
+        message:
+          "I'm having trouble completing the transfer. Can I take a message instead?",
+      };
+    }
+
+    const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3100";
     const result = await transferCall(
       context.callSid,
       context.escalationPhone,
@@ -390,7 +386,21 @@ export async function executeEndCall(
 ): Promise<EndCallResult> {
   console.log(`[TOOLS] end_call called for tenant ${context.tenantId}:`, args);
 
+  const voiceProvider = process.env.VOICE_PROVIDER || "vapi";
+
   try {
+    // For Vapi: Just return success - Vapi has endCallFunctionEnabled and handles the hang up
+    if (voiceProvider === "vapi") {
+      console.log(
+        `[TOOLS] Vapi end_call - returning success, Vapi will handle hang up`,
+      );
+      return {
+        ended: true,
+        message: "Call ended.",
+      };
+    }
+
+    // For SignalWire custom stack: Call the SignalWire API directly
     if (
       !signalwireApiUrl ||
       !signalwireConfig.projectId ||
@@ -507,7 +517,6 @@ export async function executeCreateOrder(
 
   try {
     const confirmationCode = `TP-${generateConfirmationCode()}`;
-    const supabase = getSupabase();
 
     const estimatedMinutes = args.order_type === "pickup" ? 20 : 40;
     const readyTime = new Date(Date.now() + estimatedMinutes * 60 * 1000);
@@ -527,31 +536,18 @@ export async function executeCreateOrder(
       .filter(Boolean)
       .join(". ");
 
-    const { data, error } = await supabase
-      .from("bookings")
-      .insert({
-        tenant_id: context.tenantId,
-        customer_name: args.customer_name,
-        customer_phone: customerPhone,
-        booking_type: args.order_type,
-        booking_date: new Date().toISOString().split("T")[0],
-        booking_time: new Date().toTimeString().slice(0, 5),
-        notes: notes,
-        status: "confirmed",
-        confirmation_code: confirmationCode,
-        reminder_sent: false,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error("[TOOLS] Error creating order:", error);
-      return {
-        success: false,
-        message:
-          "I had trouble placing your order. Can you repeat that for me?",
-      };
-    }
+    const data = await insertOne<BookingRow>("bookings", {
+      tenant_id: context.tenantId,
+      customer_name: args.customer_name,
+      customer_phone: customerPhone,
+      booking_type: args.order_type,
+      booking_date: new Date().toISOString().split("T")[0],
+      booking_time: new Date().toTimeString().slice(0, 5),
+      notes: notes,
+      status: "confirmed",
+      confirmation_code: confirmationCode,
+      reminder_sent: false,
+    });
 
     const orderTypeText =
       args.order_type === "pickup"

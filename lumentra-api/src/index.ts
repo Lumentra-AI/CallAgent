@@ -20,6 +20,7 @@ import { notificationsRoutes } from "./routes/notifications.js";
 import { resourcesRoutes } from "./routes/resources.js";
 import { voicemailRoutes } from "./routes/voicemails.js";
 import signalwireVoice from "./routes/signalwire-voice.js";
+import vapiRoutes from "./routes/vapi.js";
 import trainingDataRoutes from "./routes/training-data.js";
 import { chatRoutes } from "./routes/chat.js";
 import { setupRoutes } from "./routes/setup.js";
@@ -34,6 +35,7 @@ import {
   isSignalWireStreamRequest,
 } from "./routes/signalwire-stream.js";
 import { initTenantCache } from "./services/database/tenant-cache.js";
+import { initDatabase, closePool } from "./services/database/client.js";
 import { startScheduler } from "./jobs/scheduler.js";
 import { authMiddleware, rateLimit } from "./middleware/index.js";
 import {
@@ -91,6 +93,7 @@ app.get("/signalwire/stream", (c) => {
 // Public routes (no auth required)
 app.route("/health", healthRoutes);
 app.route("/signalwire", signalwireVoice);
+app.route("/vapi", vapiRoutes); // Vapi webhooks (no auth - verified by signature)
 app.route("/api/chat", chatRoutes); // Chat widget is public
 
 // Auth middleware for protected /api/* routes
@@ -147,6 +150,10 @@ const port = parseInt(process.env.PORT || "3001", 10);
 
 async function start() {
   console.log("[STARTUP] Initializing Lumentra API...");
+
+  // Initialize database connection pool
+  initDatabase();
+  console.log("[STARTUP] Database pool initialized");
 
   // Verify Deepgram API key at startup
   console.log("[STARTUP] Verifying Deepgram STT connection...");
@@ -210,6 +217,17 @@ async function start() {
   });
 
   console.log("[STARTUP] WebSocket server initialized for media streams");
+
+  // Graceful shutdown handlers
+  const shutdown = async (signal: string) => {
+    console.log(`[SHUTDOWN] Received ${signal}, closing connections...`);
+    await closePool();
+    console.log("[SHUTDOWN] Database pool closed");
+    process.exit(0);
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 start().catch((err) => {

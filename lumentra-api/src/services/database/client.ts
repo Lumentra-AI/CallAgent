@@ -1,70 +1,56 @@
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
-
-let supabase: SupabaseClient | null = null;
-
 /**
- * Get or create Supabase client
- * Uses connection pooling for better performance
+ * Database Client
+ *
+ * This module provides the database interface for the application.
+ * Uses PostgreSQL with connection pooling via the 'pg' package.
  */
-export function getSupabase(): SupabaseClient {
-  if (!supabase) {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    // Prefer service role key for backend operations (bypasses RLS)
-    const supabaseKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error(
-        "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY/SUPABASE_ANON_KEY",
-      );
-    }
+import {
+  initPool,
+  getPool,
+  query,
+  queryOne,
+  queryAll,
+  queryCount,
+  transaction,
+  checkHealth,
+  closePool,
+} from "./pool.js";
 
-    supabase = createClient(supabaseUrl, supabaseKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-      db: {
-        schema: "public",
-      },
-    });
-
-    console.log("[DB] Supabase client initialized");
-  }
-
-  return supabase;
-}
+// Re-export pool functions
+export {
+  initPool,
+  getPool,
+  query,
+  queryOne,
+  queryAll,
+  queryCount,
+  transaction,
+  closePool,
+};
 
 /**
  * Get database connection status
+ * Compatible with existing health check interface
  */
 export async function getDbStatus(): Promise<{
   connected: boolean;
   latency?: number;
   error?: string;
 }> {
-  try {
-    const startTime = Date.now();
-    const db = getSupabase();
+  const health = await checkHealth();
+  return {
+    connected: health.connected,
+    latency: health.latency,
+    error: health.error,
+  };
+}
 
-    // Simple query to test connection
-    const { error } = await db.from("tenants").select("id").limit(1);
-
-    if (error) {
-      return {
-        connected: false,
-        error: error.message,
-      };
-    }
-
-    return {
-      connected: true,
-      latency: Date.now() - startTime,
-    };
-  } catch (err) {
-    return {
-      connected: false,
-      error: err instanceof Error ? err.message : "Unknown error",
-    };
-  }
+/**
+ * Initialize database connection
+ * Call this at application startup
+ */
+export function initDatabase(): void {
+  initPool();
+  console.log("[DB] Database client initialized");
 }
