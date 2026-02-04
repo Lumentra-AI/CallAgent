@@ -100,13 +100,32 @@ async function handleAssistantRequest(c: any, body: any) {
     body.message?.customer?.number ||
     body.call?.customer?.number;
 
-  // If no direct phone number but we have phoneNumberId, use configured VAPI_PHONE_NUMBER
-  // This works because phoneNumberId maps to our known Vapi phone number
+  // If no direct phone number but we have phoneNumberId, look it up from Vapi API
   if (!phoneNumber && phoneNumberId) {
-    phoneNumber = process.env.VAPI_PHONE_NUMBER;
-    console.log(
-      `[VAPI] Using configured phone number ${phoneNumber} for phoneNumberId: ${phoneNumberId}`,
-    );
+    try {
+      const vapiResponse = await fetch(
+        `https://api.vapi.ai/phone-number/${phoneNumberId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.VAPI_API_KEY}`,
+          },
+        },
+      );
+      if (vapiResponse.ok) {
+        const vapiPhone = (await vapiResponse.json()) as { number: string };
+        phoneNumber = vapiPhone.number;
+        console.log(
+          `[VAPI] Resolved phoneNumberId ${phoneNumberId} to ${phoneNumber}`,
+        );
+      } else {
+        console.error(
+          `[VAPI] Failed to resolve phoneNumberId ${phoneNumberId}:`,
+          await vapiResponse.text(),
+        );
+      }
+    } catch (err) {
+      console.error(`[VAPI] Error resolving phoneNumberId:`, err);
+    }
   }
 
   console.log(
