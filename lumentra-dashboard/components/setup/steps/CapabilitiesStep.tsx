@@ -209,11 +209,7 @@ export function CapabilitiesStep() {
         }
         description={capability.description}
         header={
-          <button
-            type="button"
-            onClick={() => toggleCapability(capability.id)}
-            className="flex h-full w-full items-center justify-between"
-          >
+          <div className="flex h-full w-full items-center justify-between">
             <div
               className={cn(
                 "flex h-12 w-12 items-center justify-center rounded-xl transition-colors",
@@ -229,7 +225,7 @@ export function CapabilitiesStep() {
                 <Check className="h-5 w-5 text-primary-foreground" />
               </div>
             )}
-          </button>
+          </div>
         }
         icon={null}
       />
@@ -237,21 +233,30 @@ export function CapabilitiesStep() {
 
     if (isSelected) {
       return (
-        <ShineBorder
+        <div
           key={capability.id}
-          borderRadius={12}
-          borderWidth={2}
-          duration={8}
-          color={["#6366f1", "#8b5cf6", "#a855f7"]}
-          className="w-full min-w-0 p-0"
+          className="w-full cursor-pointer"
+          onClick={() => toggleCapability(capability.id)}
         >
-          {cardContent}
-        </ShineBorder>
+          <ShineBorder
+            borderRadius={12}
+            borderWidth={2}
+            duration={8}
+            color={["#6366f1", "#8b5cf6", "#a855f7"]}
+            className="w-full min-w-0 p-0"
+          >
+            {cardContent}
+          </ShineBorder>
+        </div>
       );
     }
 
     return (
-      <div key={capability.id} className="w-full">
+      <div
+        key={capability.id}
+        className="w-full cursor-pointer"
+        onClick={() => toggleCapability(capability.id)}
+      >
         {cardContent}
       </div>
     );
