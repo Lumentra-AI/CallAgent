@@ -34,7 +34,6 @@ import type { SetupStep } from "@/types";
 import { BentoGrid, BentoGridItem } from "@/components/aceternity/bento-grid";
 import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
 import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShimmerButton } from "@/components/magicui/shimmer-button";
 import { ShineBorder } from "@/components/magicui/shine-border";
 import { NumberTicker } from "@/components/magicui/number-ticker";
 
@@ -405,22 +404,11 @@ export function ReviewStep() {
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <ShimmerButton
+        <Button
           onClick={handleLaunch}
           disabled={!allComplete || isLaunching}
-          shimmerColor="#ffffff"
-          shimmerSize="0.08em"
-          shimmerDuration="2s"
-          borderRadius="8px"
-          background={
-            allComplete
-              ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)"
-              : "hsl(var(--muted))"
-          }
-          className={cn(
-            "px-8 py-4 text-base font-semibold",
-            !allComplete && "cursor-not-allowed opacity-50",
-          )}
+          size="lg"
+          className="rounded-full bg-white px-8 py-4 text-base font-semibold text-black shadow-sm transition-all hover:bg-white/90 active:scale-[0.98]"
         >
           {isLaunching ? (
             "Launching..."
@@ -430,7 +418,7 @@ export function ReviewStep() {
               Launch Your Assistant
             </span>
           )}
-        </ShimmerButton>
+        </Button>
       </div>
 
       {/* Test call modal */}
@@ -458,16 +446,14 @@ export function ReviewStep() {
               <Button variant="outline" onClick={() => setShowTestModal(false)}>
                 Cancel
               </Button>
-              <ShimmerButton
+              <Button
                 onClick={handleTestCall}
                 disabled={!testPhoneNumber || testingCall}
-                shimmerColor="#ffffff"
-                borderRadius="6px"
-                background="hsl(var(--primary))"
-                className="px-4 py-2 text-sm"
+                size="lg"
+                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow-sm transition-all hover:bg-white/90 active:scale-[0.98]"
               >
                 {testingCall ? "Calling..." : "Call me"}
-              </ShimmerButton>
+              </Button>
             </div>
           </div>
         </ModalContent>

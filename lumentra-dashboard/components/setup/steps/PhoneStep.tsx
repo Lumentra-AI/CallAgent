@@ -25,7 +25,6 @@ import type { PhoneSetupType } from "@/types";
 import { WobbleCard } from "@/components/aceternity/wobble-card";
 import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
 import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShimmerButton } from "@/components/magicui/shimmer-button";
 import { ShineBorder } from "@/components/magicui/shine-border";
 
 // Texas area codes first, then common US codes
@@ -545,20 +544,14 @@ export function PhoneStep() {
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <ShimmerButton
+        <Button
           onClick={handleContinue}
           disabled={!canContinue || isSubmitting}
-          shimmerColor="#ffffff"
-          shimmerSize="0.05em"
-          borderRadius="8px"
-          background={canContinue ? "hsl(var(--primary))" : "hsl(var(--muted))"}
-          className={cn(
-            "px-8 py-3 text-sm font-medium",
-            !canContinue && "cursor-not-allowed opacity-50",
-          )}
+          size="lg"
+          className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-black shadow-sm transition-all hover:bg-white/90 active:scale-[0.98]"
         >
           {isSubmitting ? "Saving..." : "Continue"}
-        </ShimmerButton>
+        </Button>
       </div>
     </div>
   );

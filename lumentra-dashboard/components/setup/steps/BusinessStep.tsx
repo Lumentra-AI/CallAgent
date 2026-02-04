@@ -18,7 +18,7 @@ import type { IndustryType, IndustryCategory } from "@/types";
 import { WobbleCard } from "@/components/aceternity/wobble-card";
 import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
 import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShimmerButton } from "@/components/magicui/shimmer-button";
+import { Button } from "@/components/ui/button";
 import { ShineBorder } from "@/components/magicui/shine-border";
 
 export function BusinessStep() {
@@ -329,22 +329,15 @@ export function BusinessStep() {
         </div>
       </div>
 
-      {/* Continue button with shimmer effect */}
       <div className="relative z-10 flex justify-end pt-4">
-        <ShimmerButton
+        <Button
           onClick={handleContinue}
           disabled={!canContinue || isSubmitting}
-          shimmerColor="#ffffff"
-          shimmerSize="0.05em"
-          borderRadius="8px"
-          background={canContinue ? "hsl(var(--primary))" : "hsl(var(--muted))"}
-          className={cn(
-            "px-8 py-3 text-sm font-medium",
-            !canContinue && "cursor-not-allowed opacity-50",
-          )}
+          size="lg"
+          className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-black shadow-sm transition-all hover:bg-white/90 active:scale-[0.98]"
         >
           {isSubmitting ? "Saving..." : "Continue"}
-        </ShimmerButton>
+        </Button>
       </div>
     </div>
   );
