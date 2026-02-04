@@ -124,11 +124,11 @@ const PROCESSING_FILLERS = [
   "Let me check...",
 ];
 
-// Filler timing - speak filler quickly if LLM is slow
-// With intent check disabled, we can fire fillers earlier
-const FILLER_DELAY_MIN_MS = 300; // Was 500ms - fire faster now
-const FILLER_DELAY_MAX_MS = 500; // Was 800ms - reduced
-const FILLER_SKIP_CHANCE = 0.2; // 20% chance to skip (speak fillers 80% of the time)
+// Filler timing - DISABLED: Let LLM decide when to use natural pauses via Sonic-3 tags
+// The LLM can use <break>, [laughter], etc. contextually via master voice prompt
+const FILLER_DELAY_MIN_MS = 300; // Unused - fillers disabled
+const FILLER_DELAY_MAX_MS = 500; // Unused - fillers disabled
+const FILLER_SKIP_CHANCE = 1.0; // Skip all code-based fillers - LLM handles naturalness
 
 // Filler responses for tool calls - spoken immediately while tool executes
 const TOOL_FILLERS: Record<string, string> = {

@@ -17,6 +17,7 @@ import {
 } from "../fallback/chain.js";
 import type { EscalationState } from "../escalation/escalation-manager.js";
 import { getIndustryConfig } from "../../config/industry-prompts.js";
+import { MASTER_VOICE_PROMPT } from "../../config/master-voice-prompt.js";
 
 interface ChatResponse {
   text: string;
@@ -41,7 +42,14 @@ export function buildSystemPrompt(
   // Get industry-specific configuration
   const industryConfig = getIndustryConfig(industry);
 
-  let prompt = `You are ${agentName}, the receptionist at ${businessName}.
+  // Start with master voice prompt (HOW to speak) - cannot be overridden by tenants
+  let prompt = MASTER_VOICE_PROMPT;
+
+  prompt += `
+
+---
+
+You are ${agentName}, the receptionist at ${businessName}.
 
 ## Your Role
 ${industryConfig.roleDescription} You ARE the front desk - speak as a real person, not an assistant or AI.
