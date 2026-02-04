@@ -172,6 +172,7 @@ export class TurnManager {
 
   // Barge-in debounce - only interrupt TTS once per playback
   private bargeInHandled = false;
+  private ttsStartTime: number | null = null; // Track when TTS started playing
 
   // Race condition protection - prevents double processing of same transcript
   private processingLock = false;
@@ -374,6 +375,20 @@ export class TurnManager {
     // Check for barge-in (interrupt TTS) - only once per TTS playback
     const session = sessionManager.getSession(this.callSid);
     if (session?.isPlaying && !this.bargeInHandled) {
+      // BARGE-IN DELAY: Prevent false positives from echo/VAD sensitivity
+      // Don't allow interruption for first 800ms of TTS playback
+      const MIN_TTS_DURATION_MS = 800;
+      const ttsDuration = this.ttsStartTime
+        ? Date.now() - this.ttsStartTime
+        : 999999;
+
+      if (ttsDuration < MIN_TTS_DURATION_MS) {
+        console.log(
+          `[TURN] Ignoring potential false-positive barge-in (TTS played for ${ttsDuration}ms, need ${MIN_TTS_DURATION_MS}ms)`,
+        );
+        return;
+      }
+
       console.log(`[TURN] Barge-in detected, interrupting TTS`);
       this.bargeInHandled = true; // Prevent repeated interrupts
       sessionManager.requestInterrupt(this.callSid);
@@ -700,6 +715,7 @@ export class TurnManager {
 
     sessionManager.setPlaying(this.callSid, true);
     this.bargeInHandled = false; // Reset barge-in flag for new TTS playback
+    this.ttsStartTime = Date.now(); // Track when TTS started for barge-in delay
     this.tts.speakChunk(text, isContinuation);
   }
 
@@ -714,6 +730,7 @@ export class TurnManager {
 
     sessionManager.setPlaying(this.callSid, true);
     this.bargeInHandled = false; // Reset barge-in flag for new TTS playback
+    this.ttsStartTime = Date.now(); // Track when TTS started for barge-in delay
     this.tts.speak(text);
   }
 
