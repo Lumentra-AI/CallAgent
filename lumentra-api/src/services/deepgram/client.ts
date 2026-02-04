@@ -75,20 +75,24 @@ export async function verifyDeepgramApiKey(): Promise<{
 // BALANCE: Not too fast (cuts off speakers) vs not too slow (awkward pauses)
 //
 // MODEL CHOICE for live streaming (latency vs accuracy trade-off):
-// - nova-2-phonecall: Previous gen, phonecall-optimized for low-bandwidth
-// - nova-3-general: Latest gen, best accuracy for accents/dialects (no phonecall variant exists)
+// - nova-2-phonecall: Optimized for phone calls - handles compression, low-bandwidth, background noise
+//   * WER: 8.4% streaming, fastest inference (29.8 s/hr)
+//   * Deepgram recommendation: "best bet for phonecall accuracy"
+//   * Cost: $0.0043/min
+// - nova-3-general: Latest gen, 54% better accuracy (6.84% WER), better for accents
+//   * But NOT phonecall-optimized, cost: $0.0066/min (53% more expensive)
 // - nova-3-medical: Latest gen, optimized for medical vocabulary
 //
 // NOTE: Whisper models are NOT supported for live streaming on Deepgram
 // They only work for batch/pre-recorded transcription
 //
-// Nova-3 variants: Only "general" and "medical" exist (no "phonecall" variant)
-//
-// Using nova-3-general: Best for live calls with South Asian accents
+// Using nova-2-phonecall: Best for phone calls (SignalWire/Twilio integration)
+// Upgrade to nova-3-general if accent accuracy needs justify 53% higher cost
 // Set DEEPGRAM_MODEL env var to override
 export const defaultDeepgramConfig: DeepgramConfig = {
   model:
-    (process.env.DEEPGRAM_MODEL as DeepgramConfig["model"]) || "nova-3-general",
+    (process.env.DEEPGRAM_MODEL as DeepgramConfig["model"]) ||
+    "nova-2-phonecall",
   language: "en", // "en" allows accent flexibility vs "en-US" which expects American
   punctuate: true,
   interimResults: true,
