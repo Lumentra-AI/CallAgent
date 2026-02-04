@@ -184,6 +184,9 @@ export class TurnManager {
   // Abort controller - cancels in-flight LLM requests on cleanup
   private abortController: AbortController | null = null;
 
+  // Greeting protection - prevents interruption of initial greeting
+  private greetingInProgress = false;
+
   constructor(
     callSid: string,
     tenant: Tenant,
@@ -328,7 +331,11 @@ export class TurnManager {
     }
 
     // Speak greeting and log it
+    // CRITICAL: Mark greeting as in-progress to prevent interruption
+    this.greetingInProgress = true;
     await this.speak(this.tenant.greeting_standard);
+    this.greetingInProgress = false;
+
     addAssistantTurn(this.callSid, this.tenant.greeting_standard).catch((err) =>
       console.error("[TRAINING] Failed to log greeting:", err),
     );
@@ -378,6 +385,14 @@ export class TurnManager {
     // Check for barge-in (interrupt TTS) - only once per TTS playback
     const session = sessionManager.getSession(this.callSid);
     if (session?.isPlaying && !this.bargeInHandled) {
+      // CRITICAL: Never interrupt the initial greeting
+      if (this.greetingInProgress) {
+        console.log(
+          `[TURN] Ignoring speech during greeting - user must hear who they're talking to`,
+        );
+        return;
+      }
+
       // BARGE-IN DELAY: Prevent false positives from echo/VAD sensitivity
       // Don't allow interruption for first 800ms of TTS playback
       const MIN_TTS_DURATION_MS = 800;
