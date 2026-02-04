@@ -181,6 +181,12 @@ export class TurnManager {
   // Utterance accumulation - tracks when we started collecting fragments
   private accumulationStartTime: number | null = null;
 
+  // Cleanup guard - prevents duplicate cleanup execution
+  private isCleanedUp = false;
+
+  // Abort controller - cancels in-flight LLM requests on cleanup
+  private abortController: AbortController | null = null;
+
   constructor(
     callSid: string,
     tenant: Tenant,
@@ -510,6 +516,9 @@ export class TurnManager {
     const startTime = Date.now();
     console.log(`[TURN] Processing: "${transcript}"`);
 
+    // Create abort controller for this request
+    this.abortController = new AbortController();
+
     // Clear transcript buffer
     this.state = clearTranscript(this.state);
 
@@ -550,6 +559,12 @@ export class TurnManager {
       this.startFillerTimer(transcript);
 
       for await (const chunk of stream) {
+        // Check if call was terminated
+        if (!this.shouldContinueProcessing()) {
+          console.log(`[TURN] Stopping stream processing for ${this.callSid}`);
+          break;
+        }
+
         // Handle errors
         if (chunk.type === "error") {
           console.error(`[TURN] Stream error: ${chunk.error}`);
@@ -617,6 +632,14 @@ export class TurnManager {
           // Continue streaming from tool result
           let isFirstToolResultChunk = true;
           for await (const resultChunk of toolResultStream) {
+            // Check if call was terminated
+            if (!this.shouldContinueProcessing()) {
+              console.log(
+                `[TURN] Stopping tool result streaming for ${this.callSid}`,
+              );
+              break;
+            }
+
             if (resultChunk.type === "text" && resultChunk.content) {
               fullResponse += resultChunk.content;
 
@@ -689,8 +712,8 @@ export class TurnManager {
           `(provider: ${currentProvider}, total: ${totalLatency}ms)`,
       );
 
-      // Add assistant response to history
-      if (fullResponse) {
+      // Add assistant response to history (check session exists first)
+      if (fullResponse && this.shouldContinueProcessing()) {
         sessionManager.addMessage(this.callSid, "assistant", fullResponse);
 
         // Log assistant turn for training data
@@ -732,10 +755,38 @@ export class TurnManager {
   }
 
   /**
+   * Check if processing should continue (call not aborted)
+   */
+  private shouldContinueProcessing(): boolean {
+    if (this.isCleanedUp) {
+      console.log(
+        `[TURN] Call ${this.callSid} cleaned up, stopping processing`,
+      );
+      return false;
+    }
+    if (this.abortController?.signal.aborted) {
+      console.log(
+        `[TURN] Request aborted for ${this.callSid}, stopping processing`,
+      );
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * Speak a chunk of text using streaming TTS
    */
   private speakChunk(text: string, isContinuation: boolean): void {
     if (!this.tts || !text.trim()) return;
+
+    // Check if session still exists (call may have ended)
+    const session = sessionManager.getSession(this.callSid);
+    if (!session) {
+      console.log(
+        `[TURN] Session ${this.callSid} no longer exists, skipping TTS`,
+      );
+      return;
+    }
 
     sessionManager.setPlaying(this.callSid, true);
     this.bargeInHandled = false; // Reset barge-in flag for new TTS playback
@@ -749,6 +800,15 @@ export class TurnManager {
   private async speak(text: string): Promise<void> {
     if (!this.tts) {
       console.warn(`[TURN] TTS not initialized`);
+      return;
+    }
+
+    // Check if session still exists (call may have ended)
+    const session = sessionManager.getSession(this.callSid);
+    if (!session) {
+      console.log(
+        `[TURN] Session ${this.callSid} no longer exists, skipping TTS`,
+      );
       return;
     }
 
@@ -839,7 +899,22 @@ export class TurnManager {
   }
 
   async cleanup(endReason: string = "completed"): Promise<void> {
+    if (this.isCleanedUp) {
+      console.log(
+        `[TURN] Already cleaned up ${this.callSid}, skipping duplicate cleanup`,
+      );
+      return;
+    }
+    this.isCleanedUp = true;
+
     console.log(`[TURN] Cleaning up turn manager for ${this.callSid}`);
+
+    // Cancel any in-flight LLM requests FIRST
+    if (this.abortController) {
+      console.log(`[TURN] Aborting in-flight LLM request for ${this.callSid}`);
+      this.abortController.abort();
+      this.abortController = null;
+    }
 
     if (this.silenceTimer) {
       clearTimeout(this.silenceTimer);
