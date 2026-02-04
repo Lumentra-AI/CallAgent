@@ -1,0 +1,280 @@
+# Lumentra Infrastructure Stack
+# Deploy via Coolify as Docker Compose
+#
+# CRITICAL PRE-DEPLOYMENT CHECKLIST:
+# 1. Disable "Delete Unused Volumes" in Coolify Server Settings > Docker Cleanup
+# 2. Mount Hetzner volume to /mnt/volume-ash-1 (see Hetzner console for commands)
+# 3. Create directory structure: mkdir -p /mnt/volume-ash-1/{postgresql,minio,backups}
+# 4. Set permissions: chown -R 999:999 /mnt/volume-ash-1/postgresql && chown -R 1000:1000 /mnt/volume-ash-1/minio
+
+services:
+  # =============================================================================
+  # PostgreSQL 16 - Primary Database
+  # =============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: lumentra-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lumentra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-lumentra}
+      # Performance tuning for 8GB RAM server
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      # CRITICAL: Use explicit host path on Hetzner volume for persistence
+      - /mnt/volume-ash-1/postgresql:/var/lib/postgresql/data
+      # Initial schema load
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Internal only - no external exposure
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-lumentra} -d ${POSTGRES_DB:-lumentra}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    # PostgreSQL performance config via command
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=768MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "default_statistics_target=100"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "work_mem=4MB"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "log_statement=mod"
+      - "-c"
+      - "log_min_duration_statement=100"
+    networks:
+      - lumentra-infra
+
+  # =============================================================================
+  # Authentik 2025.10+ - Identity Provider (No Redis Required!)
+  # =============================================================================
+  # NOTE: Authentik 2025.10 removed Redis dependency - all caching via PostgreSQL
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2025.2
+    container_name: lumentra-authentik-server
+    restart: unless-stopped
+    command: server
+    environment:
+      # Database connection - use container name
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__PORT: 5432
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME:-authentik}
+      AUTHENTIK_POSTGRESQL__USER: ${POSTGRES_USER:-lumentra}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      # Secret key - MUST be random 64+ chars
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?AUTHENTIK_SECRET_KEY is required - generate with openssl rand -hex 32}
+      # Email via Resend SMTP (Hetzner blocks standard SMTP ports)
+      AUTHENTIK_EMAIL__HOST: ${SMTP_HOST:-smtp.resend.com}
+      AUTHENTIK_EMAIL__PORT: ${SMTP_PORT:-587}
+      AUTHENTIK_EMAIL__USERNAME: ${SMTP_USERNAME:-resend}
+      AUTHENTIK_EMAIL__PASSWORD: ${SMTP_PASSWORD:-}
+      AUTHENTIK_EMAIL__USE_TLS: "true"
+      AUTHENTIK_EMAIL__FROM: ${SMTP_FROM:-noreply@lumentra.ai}
+      # Error reporting (optional)
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      # Disable anonymous telemetry
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "false"
+    volumes:
+      - authentik_media:/media
+      - authentik_templates:/templates
+    ports:
+      # CRITICAL: Coolify template doesn't expose this by default!
+      - "9000:9000"
+      - "9443:9443"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    networks:
+      - lumentra-infra
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2025.2
+    container_name: lumentra-authentik-worker
+    restart: unless-stopped
+    command: worker
+    environment:
+      # Same config as server
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__PORT: 5432
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME:-authentik}
+      AUTHENTIK_POSTGRESQL__USER: ${POSTGRES_USER:-lumentra}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?AUTHENTIK_SECRET_KEY is required}
+      AUTHENTIK_EMAIL__HOST: ${SMTP_HOST:-smtp.resend.com}
+      AUTHENTIK_EMAIL__PORT: ${SMTP_PORT:-587}
+      AUTHENTIK_EMAIL__USERNAME: ${SMTP_USERNAME:-resend}
+      AUTHENTIK_EMAIL__PASSWORD: ${SMTP_PASSWORD:-}
+      AUTHENTIK_EMAIL__USE_TLS: "true"
+      AUTHENTIK_EMAIL__FROM: ${SMTP_FROM:-noreply@lumentra.ai}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+    volumes:
+      - authentik_media:/media
+      - authentik_templates:/templates
+      - authentik_certs:/certs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 256M
+    networks:
+      - lumentra-infra
+
+  # =============================================================================
+  # MinIO - S3-Compatible Object Storage
+  # =============================================================================
+  # WARNING: MinIO is in maintenance mode as of Dec 2025
+  # Consider alternatives (SeaweedFS, Garage, R2) for new projects
+
+  minio:
+    image: minio/minio:latest
+    container_name: lumentra-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required - min 8 chars}
+      # Console redirect URL for HTTPS
+      MINIO_BROWSER_REDIRECT_URL: ${MINIO_BROWSER_REDIRECT_URL:-https://storage.lumentra.ai}
+    volumes:
+      # CRITICAL: Use explicit host path on Hetzner volume
+      - /mnt/volume-ash-1/minio:/data
+    ports:
+      # S3 API
+      - "9002:9000"
+      # Web Console
+      - "9003:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    networks:
+      - lumentra-infra
+
+  # =============================================================================
+  # MinIO Bucket Initialization (runs once)
+  # =============================================================================
+  minio-init:
+    image: minio/mc:latest
+    container_name: lumentra-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Waiting for MinIO to be ready...';
+      sleep 5;
+      mc alias set lumentra http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      mc mb --ignore-existing lumentra/voicemails;
+      mc mb --ignore-existing lumentra/attachments;
+      mc mb --ignore-existing lumentra/exports;
+      mc mb --ignore-existing lumentra/temp;
+      mc anonymous set download lumentra/exports;
+      echo 'Buckets created successfully';
+      exit 0;
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    networks:
+      - lumentra-infra
+
+  # =============================================================================
+  # Authentik Database Initialization
+  # =============================================================================
+  # Creates separate database for Authentik within same PostgreSQL instance
+  authentik-db-init:
+    image: postgres:16-alpine
+    container_name: lumentra-authentik-db-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-lumentra}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      AUTHENTIK_DB_NAME: ${AUTHENTIK_DB_NAME:-authentik}
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Creating Authentik database if not exists...';
+      psql -tc \"SELECT 1 FROM pg_database WHERE datname = '$${AUTHENTIK_DB_NAME}'\" | grep -q 1 || psql -c \"CREATE DATABASE $${AUTHENTIK_DB_NAME}\";
+      echo 'Authentik database ready';
+      exit 0;
+      "
+    networks:
+      - lumentra-infra
+
+# =============================================================================
+# Named Volumes (for Authentik media/templates - not on Hetzner volume)
+# =============================================================================
+volumes:
+  authentik_media:
+    name: lumentra-authentik-media
+  authentik_templates:
+    name: lumentra-authentik-templates
+  authentik_certs:
+    name: lumentra-authentik-certs
+
+# =============================================================================
+# Network
+# =============================================================================
+networks:
+  lumentra-infra:
+    name: lumentra-infrastructure
+    driver: bridge
