@@ -614,7 +614,8 @@ export class TurnManager {
             [{ id, name, result }],
           );
 
-          // Continue streaming from tool result (tool filler already spoken, so continue)
+          // Continue streaming from tool result
+          let isFirstToolResultChunk = true;
           for await (const resultChunk of toolResultStream) {
             if (resultChunk.type === "text" && resultChunk.content) {
               fullResponse += resultChunk.content;
@@ -622,8 +623,9 @@ export class TurnManager {
               // Buffer and speak sentences as they complete
               const sentences = sentenceBuffer.add(resultChunk.content);
               for (const sentence of sentences) {
-                // Tool filler was spoken, so always continue
-                this.speakChunk(sentence, true);
+                // First chunk starts fresh (filler is separate), subsequent chunks continue
+                this.speakChunk(sentence, !isFirstToolResultChunk);
+                isFirstToolResultChunk = false;
                 isFirstChunk = false;
               }
             } else if (resultChunk.type === "done") {
