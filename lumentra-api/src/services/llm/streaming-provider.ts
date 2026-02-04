@@ -129,15 +129,52 @@ function toGeminiContents(messages: ConversationMessage[]): Content[] {
   return contents;
 }
 
+/**
+ * Validate and clean conversation history to prevent OpenAI format errors
+ * Removes orphaned tool messages that don't have a preceding assistant message with tool_calls
+ */
+function validateConversationHistory(
+  messages: ConversationMessage[],
+): ConversationMessage[] {
+  const cleaned: ConversationMessage[] = [];
+  let lastAssistantHadToolCalls = false;
+
+  for (const msg of messages) {
+    if (msg.role === "assistant") {
+      // Track if this assistant message has tool_calls
+      lastAssistantHadToolCalls = !!(msg.toolCalls && msg.toolCalls.length > 0);
+      cleaned.push(msg);
+    } else if (msg.role === "tool") {
+      // Only keep tool message if previous assistant had tool_calls
+      if (lastAssistantHadToolCalls) {
+        cleaned.push(msg);
+      } else {
+        console.warn(
+          `[STREAM] Skipping orphaned tool message: ${msg.toolName} (no preceding tool_calls)`,
+        );
+      }
+    } else {
+      // user or system messages
+      lastAssistantHadToolCalls = false; // Reset tracking
+      cleaned.push(msg);
+    }
+  }
+
+  return cleaned;
+}
+
 // Convert conversation to OpenAI/Groq format
 function toOpenAIMessages(
   messages: ConversationMessage[],
   systemPrompt: string,
 ): ChatCompletionMessageParam[] {
+  // First, validate and clean the conversation history
+  const validatedMessages = validateConversationHistory(messages);
+
   const result: ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
   ];
-  for (const msg of messages) {
+  for (const msg of validatedMessages) {
     if (msg.role === "system") continue;
     if (msg.role === "user") {
       result.push({ role: "user", content: msg.content });

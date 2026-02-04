@@ -92,15 +92,31 @@ export function addMessage(
   session.lastActivityTime = new Date();
 
   // Keep conversation history reasonable (last 20 turns)
+  // CRITICAL: Tool-call-aware trimming to prevent OpenAI format errors
   if (session.conversationHistory.length > 20) {
-    // Keep system message if present, then trim oldest
+    // Keep system message if present
     const systemMsg = session.conversationHistory.find(
       (m) => m.role === "system",
     );
-    session.conversationHistory = session.conversationHistory.slice(-19);
-    if (systemMsg && session.conversationHistory[0].role !== "system") {
-      session.conversationHistory.unshift(systemMsg);
+
+    // Trim to last 19 messages
+    let trimmed = session.conversationHistory.slice(-19);
+
+    // Check if first message is a tool message (orphaned from its tool_calls parent)
+    while (trimmed.length > 0 && trimmed[0].role === "tool") {
+      // Remove orphaned tool messages at the start
+      console.log(
+        `[SESSION] Removing orphaned tool message: ${trimmed[0].toolName}`,
+      );
+      trimmed = trimmed.slice(1);
     }
+
+    // Restore system message at the beginning if it exists
+    if (systemMsg && trimmed[0]?.role !== "system") {
+      trimmed.unshift(systemMsg);
+    }
+
+    session.conversationHistory = trimmed;
   }
 }
 
