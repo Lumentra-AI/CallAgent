@@ -54,7 +54,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   // Redirect to setup if user has no tenants
   useEffect(() => {
     if (!authLoading && !tenantLoading && user && tenants.length === 0) {
-      router.push("/setup");
+      router.replace("/setup");
     }
   }, [authLoading, tenantLoading, user, tenants, router]);
 

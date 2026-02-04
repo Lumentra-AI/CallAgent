@@ -24,7 +24,7 @@ export default function LoginPage() {
   const { signIn } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/dashboard";
+  const redirect = searchParams.get("redirect") || "/setup";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
