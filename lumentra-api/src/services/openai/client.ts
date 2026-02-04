@@ -11,8 +11,8 @@ export const openaiClient = OPENAI_API_KEY
   : null;
 
 // Model configuration
-// GPT-4o mini: Fast, cheap, good function calling
-const MODEL_NAME = process.env.OPENAI_MODEL || "gpt-4o-mini";
+// GPT-4.1 mini: Fast, excellent instruction following, 1M token context
+const MODEL_NAME = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
 if (openaiClient) {
   console.log(`[OPENAI] Initialized with model: ${MODEL_NAME}`);

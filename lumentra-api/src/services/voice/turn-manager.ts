@@ -37,15 +37,65 @@ import {
   endConversationLog,
 } from "../training/conversation-logger.js";
 import { saveCallRecord } from "../calls/call-logger.js";
-import { checkUtteranceCompleteness } from "../gemini/intent-check.js";
+// import { checkUtteranceCompleteness } from "../gemini/intent-check.js"; // Replaced with fast rule-based check
 import { createSentenceBuffer } from "./sentence-buffer.js";
 import type { Tenant } from "../../types/database.js";
 import type WebSocket from "ws";
 
-// Configuration - REDUCED for lower latency
-const SILENCE_THRESHOLD_MS = 100; // Was 300 - reduced for faster response
-const INCOMPLETE_WAIT_MS = 400; // Was 1200 - reduced for faster response
+// Configuration - BALANCED for natural conversation
+// Trade-off: faster response vs waiting for complete thoughts
+const SILENCE_THRESHOLD_MS = 400; // Wait after final transcript before processing
+const INCOMPLETE_WAIT_MS = 600; // Extra wait for incomplete utterances
+const MAX_ACCUMULATION_MS = 3000; // Max time to accumulate before forcing process
 const MIN_TRANSCRIPT_LENGTH = 3; // Minimum characters before processing
+
+/**
+ * Utterance completeness check
+ * Returns: 'complete' | 'incomplete' | 'maybe'
+ * - complete: Process immediately
+ * - incomplete: Wait for more input
+ * - maybe: Wait a bit, then process
+ */
+function checkUtteranceCompleteness(
+  text: string,
+): "complete" | "incomplete" | "maybe" {
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+
+  // Very short - wait for more
+  if (trimmed.length < 4) return "incomplete";
+
+  // Ends with sentence-ending punctuation - complete!
+  if (/[.!?]$/.test(trimmed)) return "complete";
+
+  // Common complete short responses (exact matches)
+  const definitelyComplete = [
+    /^(yes|yeah|yep|yup|no|nope|nah|okay|ok|sure|thanks|thank you|bye|goodbye|hello|hi|hey)$/i,
+    /^(that's all|that's it|nothing else|no thanks|yes please|no thank you)$/i,
+    /^(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s*(night|nights|day|days|person|people|guest|guests)?$/i,
+    /^(tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i,
+    /^(just me|just one|for one|for two)$/i,
+  ];
+  if (definitelyComplete.some((p) => p.test(lower))) return "complete";
+
+  // Definitely incomplete - user is mid-thought
+  const definitelyIncomplete = [
+    /\b(i want to|i need to|i'd like to|can you|could you|would you|let me|i'm going to)$/i,
+    /\b(and|but|or|so|because|if|when|then|also)$/i,
+    /\b(the|a|an|my|your|this|that|for|from|to|in|on|at|with)$/i,
+    /\b(i|we|they|he|she|it|you)$/i, // Ends with pronoun alone
+    /\b(um|uh|hmm|like|well|so)$/i, // Filler words
+    /\b(some|any|few|more|less)$/i, // Quantifiers without object
+  ];
+  if (definitelyIncomplete.some((p) => p.test(lower))) return "incomplete";
+
+  // Looks like a complete thought (4+ words, no trailing incomplete patterns)
+  const wordCount = trimmed.split(/\s+/).length;
+  if (wordCount >= 4) return "complete";
+
+  // 2-3 words without punctuation - wait a bit
+  return "maybe";
+}
 
 // Natural thinking fillers - short, human-like
 // These fire if LLM takes > FILLER_DELAY_MS to respond
@@ -75,9 +125,10 @@ const PROCESSING_FILLERS = [
 ];
 
 // Filler timing - speak filler quickly if LLM is slow
-const FILLER_DELAY_MIN_MS = 500; // Reduced from 800ms for faster perceived response
-const FILLER_DELAY_MAX_MS = 800; // Reduced from 1200ms
-const FILLER_SKIP_CHANCE = 0.3; // 30% chance to skip filler (speak more often)
+// With intent check disabled, we can fire fillers earlier
+const FILLER_DELAY_MIN_MS = 300; // Was 500ms - fire faster now
+const FILLER_DELAY_MAX_MS = 500; // Was 800ms - reduced
+const FILLER_SKIP_CHANCE = 0.2; // 20% chance to skip (speak fillers 80% of the time)
 
 // Filler responses for tool calls - spoken immediately while tool executes
 const TOOL_FILLERS: Record<string, string> = {
@@ -106,11 +157,13 @@ export class TurnManager {
 
   private systemPrompt: string;
   private silenceTimer: NodeJS.Timeout | null = null;
-  private isProcessing = false;
   private escalationState: EscalationState;
 
   // For parallel completeness checking
-  private pendingCompletenessCheck: Promise<{ isComplete: boolean; latencyMs: number }> | null = null;
+  private pendingCompletenessCheck: Promise<{
+    isComplete: boolean;
+    latencyMs: number;
+  }> | null = null;
 
   // Natural filler tracking
   private lastFillerUsed: string | null = null;
@@ -119,6 +172,13 @@ export class TurnManager {
 
   // Barge-in debounce - only interrupt TTS once per playback
   private bargeInHandled = false;
+
+  // Race condition protection - prevents double processing of same transcript
+  private processingLock = false;
+  private pendingTranscript = false;
+
+  // Utterance accumulation - tracks when we started collecting fragments
+  private accumulationStartTime: number | null = null;
 
   constructor(
     callSid: string,
@@ -181,7 +241,9 @@ export class TurnManager {
         console.log(`[TURN] Media stream started for ${this.callSid}`);
         // Log the actual audio format SignalWire is sending
         if (event.mediaFormat) {
-          console.log(`[TURN] Audio format: ${event.mediaFormat.encoding} @ ${event.mediaFormat.sampleRate}Hz`);
+          console.log(
+            `[TURN] Audio format: ${event.mediaFormat.encoding} @ ${event.mediaFormat.sampleRate}Hz`,
+          );
         }
         sessionManager.updateSession(this.callSid, {
           streamSid: event.streamSid,
@@ -245,7 +307,9 @@ export class TurnManager {
 
     if (ttsResult.status === "rejected") {
       console.error(`[TURN] TTS connection failed:`, ttsResult.reason);
-      throw new Error("TTS initialization failed - cannot proceed without voice output");
+      throw new Error(
+        "TTS initialization failed - cannot proceed without voice output",
+      );
     }
     console.log(`[TURN] TTS connected successfully`);
 
@@ -254,7 +318,9 @@ export class TurnManager {
       console.error(`[TURN] CRITICAL: Caller speech will NOT be recognized!`);
       this.transcriber = null;
     } else {
-      console.log(`[TURN] STT connected successfully - ready for speech recognition`);
+      console.log(
+        `[TURN] STT connected successfully - ready for speech recognition`,
+      );
     }
 
     // Speak greeting and log it
@@ -272,7 +338,9 @@ export class TurnManager {
 
     const now = Date.now();
     if (now - this.lastAudioLogTime > 2000) {
-      console.log(`[TURN] Received ${this.audioChunkCount} audio chunks, STT active: ${!!this.transcriber}`);
+      console.log(
+        `[TURN] Received ${this.audioChunkCount} audio chunks, STT active: ${!!this.transcriber}`,
+      );
       this.lastAudioLogTime = now;
     }
 
@@ -284,29 +352,24 @@ export class TurnManager {
   private handleTranscript(text: string, isFinal: boolean): void {
     this.state = updateTranscript(this.state, text, isFinal);
 
-    // Reset silence timer
-    if (this.silenceTimer) {
-      clearTimeout(this.silenceTimer);
-      this.silenceTimer = null;
-    }
-
     if (isFinal) {
       console.log(`[TURN] Final transcript: "${text}"`);
-
-      // Start completeness check in parallel (don't await)
-      // This runs while we wait for the silence threshold
-      this.pendingCompletenessCheck = checkUtteranceCompleteness(text);
-
-      // Start silence timer
-      this.silenceTimer = setTimeout(() => {
-        this.processUserTurn();
-      }, SILENCE_THRESHOLD_MS);
+      // Schedule processing - consolidated timer management
+      this.scheduleProcessing();
     }
   }
 
   private handleSpeechStarted(): void {
     console.log(`[TURN] User started speaking`);
     sessionManager.setSpeaking(this.callSid, true);
+
+    // Cancel any pending processing - user is still talking
+    this.cancelScheduledProcessing();
+
+    // Start accumulation timer if not already started
+    if (!this.accumulationStartTime) {
+      this.accumulationStartTime = Date.now();
+    }
 
     // Check for barge-in (interrupt TTS) - only once per TTS playback
     const session = sessionManager.getSession(this.callSid);
@@ -325,11 +388,33 @@ export class TurnManager {
     sessionManager.setSpeaking(this.callSid, false);
     this.state = startSilence(this.state);
 
-    // Process turn after short silence buffer
-    if (!this.silenceTimer) {
-      this.silenceTimer = setTimeout(() => {
-        this.processUserTurn();
-      }, SILENCE_THRESHOLD_MS);
+    // Schedule processing if not already scheduled
+    this.scheduleProcessing();
+  }
+
+  /**
+   * Consolidated timer management - only ONE place schedules processing
+   * Prevents race conditions from multiple timers
+   */
+  private scheduleProcessing(): void {
+    // Clear any existing timer
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+    }
+
+    this.silenceTimer = setTimeout(() => {
+      this.silenceTimer = null;
+      this.processUserTurn();
+    }, SILENCE_THRESHOLD_MS);
+  }
+
+  /**
+   * Cancel scheduled processing (e.g., when user starts speaking again)
+   */
+  private cancelScheduledProcessing(): void {
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
     }
   }
 
@@ -338,39 +423,77 @@ export class TurnManager {
    * This is the core of the low-latency architecture
    */
   private async processUserTurn(): Promise<void> {
-    if (this.isProcessing) {
-      console.log(`[TURN] Already processing, skipping`);
+    // LOCK CHECK - Prevents race condition where two calls enter simultaneously
+    // Must be the FIRST thing we check, before any transcript access
+    if (this.processingLock) {
+      console.log(`[TURN] Processing locked, marking pending`);
+      this.pendingTranscript = true;
       return;
     }
+
+    // ACQUIRE LOCK IMMEDIATELY - before any other operations
+    this.processingLock = true;
 
     const transcript = getCompleteTranscript(this.state);
     if (transcript.length < MIN_TRANSCRIPT_LENGTH) {
       console.log(`[TURN] Transcript too short, ignoring: "${transcript}"`);
+      this.processingLock = false;
+      this.accumulationStartTime = null;
       return;
     }
 
-    // Use the parallel completeness check result if available
-    if (this.pendingCompletenessCheck) {
-      try {
-        const completeness = await this.pendingCompletenessCheck;
-        if (!completeness.isComplete) {
-          console.log(`[TURN] Utterance incomplete, waiting: "${transcript}"`);
-          this.silenceTimer = setTimeout(() => {
-            this.pendingCompletenessCheck = null; // Don't check again
-            this.processUserTurn();
-          }, INCOMPLETE_WAIT_MS);
-          return;
-        }
-      } catch (error) {
-        console.error(`[TURN] Completeness check failed, proceeding:`, error);
+    // Track when we started accumulating (for max wait timeout)
+    if (!this.accumulationStartTime) {
+      this.accumulationStartTime = Date.now();
+    }
+
+    // Check if we've been accumulating too long (force process)
+    const accumulationTime = Date.now() - this.accumulationStartTime;
+    const forceProcess = accumulationTime >= MAX_ACCUMULATION_MS;
+
+    // Completeness check
+    const completeness = checkUtteranceCompleteness(transcript);
+    console.log(
+      `[TURN] Completeness: "${transcript.substring(0, 40)}..." -> ${completeness} (accumulated: ${accumulationTime}ms)`,
+    );
+
+    // Decide whether to wait or process
+    if (!forceProcess) {
+      if (completeness === "incomplete") {
+        console.log(`[TURN] Waiting for user to finish`);
+        this.processingLock = false;
+        this.silenceTimer = setTimeout(() => {
+          this.silenceTimer = null;
+          this.processUserTurn();
+        }, INCOMPLETE_WAIT_MS);
+        return;
       }
+
+      if (completeness === "maybe") {
+        console.log(`[TURN] Maybe complete, waiting a bit more`);
+        this.processingLock = false;
+        this.silenceTimer = setTimeout(() => {
+          this.silenceTimer = null;
+          this.processUserTurn();
+        }, SILENCE_THRESHOLD_MS);
+        return;
+      }
+    } else {
+      console.log(`[TURN] Max accumulation time reached, forcing process`);
+    }
+
+    // COMPLETE - proceed with LLM call
+    // Reset accumulation tracking
+    this.accumulationStartTime = null;
+
+    // Legacy LLM-based check (disabled by default - too slow)
+    if (this.pendingCompletenessCheck) {
       this.pendingCompletenessCheck = null;
     }
 
-    this.isProcessing = true;
-    this.fillerSpoken = false; // Reset for this turn
+    this.fillerSpoken = false;
     const startTime = Date.now();
-    console.log(`[TURN] Processing with streaming: "${transcript}"`);
+    console.log(`[TURN] Processing: "${transcript}"`);
 
     // Clear transcript buffer
     this.state = clearTranscript(this.state);
@@ -384,7 +507,9 @@ export class TurnManager {
     );
 
     try {
-      const conversationHistory = sessionManager.getConversationHistory(this.callSid);
+      const conversationHistory = sessionManager.getConversationHistory(
+        this.callSid,
+      );
       const toolContext = {
         tenantId: this.tenant.id,
         callSid: this.callSid,
@@ -440,7 +565,10 @@ export class TurnManager {
           const result = await executeTool(name, args, toolContext);
 
           // Track booking completion
-          if (name === "create_booking" && (result as { success?: boolean })?.success) {
+          if (
+            name === "create_booking" &&
+            (result as { success?: boolean })?.success
+          ) {
             this.escalationState.taskCompleted = true;
           }
 
@@ -482,7 +610,9 @@ export class TurnManager {
           if (isFirstChunk) {
             this.cancelFillerTimer(); // LLM responded fast, no filler needed
             const ttft = Date.now() - startTime;
-            console.log(`[TURN] Time to first token: ${ttft}ms (${currentProvider})`);
+            console.log(
+              `[TURN] Time to first token: ${ttft}ms (${currentProvider})`,
+            );
           }
 
           // Buffer and speak sentences as they complete
@@ -491,7 +621,9 @@ export class TurnManager {
             const ttfs = Date.now() - startTime;
             // If filler was spoken, continue from it; otherwise start fresh on first chunk
             const shouldContinue = this.fillerSpoken || !isFirstChunk;
-            console.log(`[TURN] Speaking sentence (${ttfs}ms): "${sentence.substring(0, 40)}..." (continue: ${shouldContinue})`);
+            console.log(
+              `[TURN] Speaking sentence (${ttfs}ms): "${sentence.substring(0, 40)}..." (continue: ${shouldContinue})`,
+            );
             this.speakChunk(sentence, shouldContinue);
             isFirstChunk = false;
           }
@@ -504,7 +636,9 @@ export class TurnManager {
           if (remaining) {
             const ttfs = Date.now() - startTime;
             // Final chunk should NEVER continue - this closes the prosody properly
-            console.log(`[TURN] Flushing final (${ttfs}ms): "${remaining.substring(0, 40)}..." (continue: false)`);
+            console.log(
+              `[TURN] Flushing final (${ttfs}ms): "${remaining.substring(0, 40)}..." (continue: false)`,
+            );
             this.speakChunk(remaining, false);
           }
         }
@@ -533,15 +667,28 @@ export class TurnManager {
         console.log(`[TURN] Escalation triggered`);
         this.callbacks.onTransferRequested(this.tenant.escalation_phone);
       }
-
     } catch (error) {
       console.error(`[TURN] Error processing turn:`, error);
 
       // Fallback response
-      const fallback = "I'm sorry, I'm having trouble processing that. Could you please repeat?";
+      const fallback =
+        "I'm sorry, I'm having trouble processing that. Could you please repeat?";
       await this.speak(fallback);
     } finally {
-      this.isProcessing = false;
+      this.processingLock = false;
+
+      // Check if new transcript arrived while we were processing
+      if (this.pendingTranscript) {
+        this.pendingTranscript = false;
+        const pendingText = getCompleteTranscript(this.state);
+        if (pendingText.length >= MIN_TRANSCRIPT_LENGTH) {
+          console.log(
+            `[TURN] Processing pending transcript: "${pendingText.substring(0, 30)}..."`,
+          );
+          // Use setTimeout to avoid stack overflow on rapid inputs
+          setTimeout(() => this.processUserTurn(), 0);
+        }
+      }
     }
   }
 
@@ -576,8 +723,11 @@ export class TurnManager {
    */
   private selectFiller(userInput: string): string {
     // Categorize input to pick appropriate filler type
-    const isQuestion = userInput.includes("?") ||
-      /^(what|where|when|why|how|can|do|is|are|will|would|could)\b/i.test(userInput);
+    const isQuestion =
+      userInput.includes("?") ||
+      /^(what|where|when|why|how|can|do|is|are|will|would|could)\b/i.test(
+        userInput,
+      );
     const isLong = userInput.length > 30;
 
     let pool: string[];
@@ -592,8 +742,9 @@ export class TurnManager {
     }
 
     // Filter out last used filler to avoid repetition
-    const available = pool.filter(f => f !== this.lastFillerUsed);
-    const selected = available[Math.floor(Math.random() * available.length)] || pool[0];
+    const available = pool.filter((f) => f !== this.lastFillerUsed);
+    const selected =
+      available[Math.floor(Math.random() * available.length)] || pool[0];
 
     this.lastFillerUsed = selected;
     return selected;
@@ -609,7 +760,9 @@ export class TurnManager {
     }
 
     // Randomize delay for naturalness
-    const delay = FILLER_DELAY_MIN_MS + Math.random() * (FILLER_DELAY_MAX_MS - FILLER_DELAY_MIN_MS);
+    const delay =
+      FILLER_DELAY_MIN_MS +
+      Math.random() * (FILLER_DELAY_MAX_MS - FILLER_DELAY_MIN_MS);
 
     this.fillerSpoken = false;
     this.fillerTimer = setTimeout(() => {

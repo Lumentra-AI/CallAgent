@@ -7,7 +7,9 @@ import type { DeepgramConfig, DeepgramTranscript } from "../../types/voice.js";
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
 
 if (!DEEPGRAM_API_KEY) {
-  console.error("[DEEPGRAM] CRITICAL: DEEPGRAM_API_KEY not set - STT will not work");
+  console.error(
+    "[DEEPGRAM] CRITICAL: DEEPGRAM_API_KEY not set - STT will not work",
+  );
 }
 
 // Validate API key format (should be 40 char hex or longer for newer keys)
@@ -20,12 +22,16 @@ function validateApiKey(key: string): boolean {
 }
 
 // Create Deepgram client singleton
-export const deepgramClient = DEEPGRAM_API_KEY && validateApiKey(DEEPGRAM_API_KEY)
-  ? createClient(DEEPGRAM_API_KEY)
-  : null;
+export const deepgramClient =
+  DEEPGRAM_API_KEY && validateApiKey(DEEPGRAM_API_KEY)
+    ? createClient(DEEPGRAM_API_KEY)
+    : null;
 
 // Verify API key by making a test request
-export async function verifyDeepgramApiKey(): Promise<{ valid: boolean; error?: string }> {
+export async function verifyDeepgramApiKey(): Promise<{
+  valid: boolean;
+  error?: string;
+}> {
   if (!DEEPGRAM_API_KEY) {
     return { valid: false, error: "DEEPGRAM_API_KEY not configured" };
   }
@@ -41,8 +47,15 @@ export async function verifyDeepgramApiKey(): Promise<{ valid: boolean; error?: 
 
     if (response.status === 401 || response.status === 403) {
       const body = await response.text();
-      console.error("[DEEPGRAM] API key validation failed:", response.status, body);
-      return { valid: false, error: `Invalid API key (HTTP ${response.status})` };
+      console.error(
+        "[DEEPGRAM] API key validation failed:",
+        response.status,
+        body,
+      );
+      return {
+        valid: false,
+        error: `Invalid API key (HTTP ${response.status})`,
+      };
     }
 
     if (!response.ok) {
@@ -58,10 +71,20 @@ export async function verifyDeepgramApiKey(): Promise<{ valid: boolean; error?: 
   }
 }
 
-// Default configuration for phone calls - OPTIMIZED FOR LOW LATENCY
+// Default configuration for phone calls
+// BALANCE: Not too fast (cuts off speakers) vs not too slow (awkward pauses)
+//
+// MODEL CHOICE (latency vs accuracy trade-off):
+// - nova-2-phonecall: Fastest (~100ms), American/British English only
+// - whisper-medium: Good balance (~150ms), handles South Asian accents well
+// - whisper-large: Best accuracy (~300ms), but adds latency
+//
+// Using whisper-large for maximum accuracy
+// Set DEEPGRAM_MODEL env var to override
 export const defaultDeepgramConfig: DeepgramConfig = {
-  model: "nova-2-phonecall",
-  language: "en-US",
+  model:
+    (process.env.DEEPGRAM_MODEL as DeepgramConfig["model"]) || "whisper-large",
+  language: "en", // "en" allows accent flexibility vs "en-US" which expects American
   punctuate: true,
   interimResults: true,
   utteranceEndMs: 1000, // Minimum allowed value (Deepgram rejects <1000)
@@ -69,7 +92,7 @@ export const defaultDeepgramConfig: DeepgramConfig = {
   encoding: "linear16", // 16-bit signed PCM (matches SignalWire L16@24000h)
   sampleRate: 24000, // 24kHz - high quality audio
   channels: 1,
-  endpointing: 500, // Silence detection - 500ms balances responsiveness vs cutting off speech
+  endpointing: 500, // 500ms silence = end of utterance. Lower = faster but cuts off slow speakers
 };
 
 export { LiveTranscriptionEvents };
