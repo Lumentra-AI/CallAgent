@@ -585,6 +585,15 @@ export class TurnManager {
           // Execute tool
           const result = await executeTool(name, args, toolContext);
 
+          // Save tool result to conversation history
+          // This is required for OpenAI's API - tool results must follow tool_calls
+          sessionManager.addMessage(this.callSid, "tool", "", {
+            toolCallId: id,
+            toolName: name,
+            toolResult:
+              typeof result === "string" ? result : JSON.stringify(result),
+          });
+
           // Track booking completion
           if (
             name === "create_booking" &&
