@@ -69,6 +69,11 @@ export function addMessage(
     toolCallId?: string;
     toolName?: string;
     toolResult?: string;
+    toolCalls?: Array<{
+      id: string;
+      name: string;
+      args: Record<string, unknown>;
+    }>;
   },
 ): void {
   const session = activeSessions.get(callSid);

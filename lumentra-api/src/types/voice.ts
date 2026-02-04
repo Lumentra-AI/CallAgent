@@ -44,6 +44,11 @@ export interface ConversationMessage {
   toolCallId?: string;
   toolName?: string;
   toolResult?: string;
+  toolCalls?: Array<{
+    id: string;
+    name: string;
+    args: Record<string, unknown>;
+  }>;
 }
 
 // ============================================
@@ -100,8 +105,18 @@ export interface SignalWireOutboundMedia {
 // ============================================
 
 export interface DeepgramConfig {
-  model: "nova-2" | "nova-2-general" | "nova-2-meeting" | "nova-2-phonecall";
-  language: string;
+  // Nova-2: Fast, good for American/British English
+  // Whisper: Better accuracy, REQUIRED for South Asian accents (Indian, BD, PK)
+  model:
+    | "nova-2"
+    | "nova-2-general"
+    | "nova-2-meeting"
+    | "nova-2-phonecall"
+    | "whisper-large"
+    | "whisper-medium"
+    | "whisper-small"
+    | "whisper-base";
+  language: string; // "en" for accent flexibility, "en-US" for American only
   punctuate: boolean;
   interimResults: boolean;
   utteranceEndMs: number;

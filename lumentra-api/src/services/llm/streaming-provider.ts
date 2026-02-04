@@ -142,7 +142,23 @@ function toOpenAIMessages(
     if (msg.role === "user") {
       result.push({ role: "user", content: msg.content });
     } else if (msg.role === "assistant") {
-      result.push({ role: "assistant", content: msg.content });
+      // If assistant message has tool_calls, include them
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        result.push({
+          role: "assistant",
+          content: msg.content || null,
+          tool_calls: msg.toolCalls.map((tc) => ({
+            id: tc.id,
+            type: "function" as const,
+            function: {
+              name: tc.name,
+              arguments: JSON.stringify(tc.args),
+            },
+          })),
+        });
+      } else {
+        result.push({ role: "assistant", content: msg.content });
+      }
     } else if (msg.role === "tool") {
       result.push({
         role: "tool" as const,

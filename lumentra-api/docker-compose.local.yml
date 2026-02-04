@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: localdev123456789
       POSTGRES_DB: lumentra
     ports:
-      - "5433:5432" # Use 5433 to avoid conflict with any existing PostgreSQL
+      - "5434:5432" # Use 5434 to avoid conflict with local PostgreSQL on 5433
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./schema:/docker-entrypoint-initdb.d:ro

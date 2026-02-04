@@ -101,14 +101,14 @@ export const voiceAgentFunctions: FunctionDeclaration[] = [
   {
     name: "transfer_to_human",
     description:
-      "Transfer call to human staff. Use when: (1) customer explicitly requests human/person/agent, (2) customer has complaint or refund request, (3) you cannot resolve their issue after 2+ attempts.",
+      "Transfer to human staff. STRICT: Only use when caller says EXACT phrases like 'human', 'real person', 'manager', 'supervisor', 'speak to someone else', or 'I want to complain'. NEVER use for: frustration, confusion, profanity, rudeness, single words you don't understand, or repeated questions. If unsure, ask a clarifying question instead of transferring.",
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
         reason: {
           type: SchemaType.STRING,
           description:
-            "Reason for transfer. Must be one of: customer_request, complaint, refund_request, complex_issue, billing_question, cannot_resolve.",
+            "Reason for transfer. Must be one of: customer_request (said 'human'/'person'), complaint (said 'complain'), refund_request, cannot_resolve (tried 3+ times).",
         },
       },
       required: ["reason"],

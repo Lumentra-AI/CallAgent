@@ -42,6 +42,7 @@ import {
   verifyDeepgramApiKey,
   deepgramClient,
 } from "./services/deepgram/client.js";
+import { logProviderStatus } from "./services/llm/streaming-provider.js";
 
 const app = new Hono();
 
@@ -185,6 +186,9 @@ async function start() {
   // Start background job scheduler
   startScheduler();
   console.log("[STARTUP] Job scheduler started");
+
+  // Log LLM provider status (helps debug latency issues)
+  logProviderStatus();
 
   // Start HTTP server
   const server = serve(

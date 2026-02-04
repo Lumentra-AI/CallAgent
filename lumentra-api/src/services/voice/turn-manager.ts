@@ -567,6 +567,12 @@ export class TurnManager {
           const { id, name, args } = chunk.toolCall;
           console.log(`[TURN] Tool call: ${name}`, args);
 
+          // Add assistant message with tool_calls to history BEFORE executing tool
+          // This is required for OpenAI's API - tool results must follow tool_calls
+          sessionManager.addMessage(this.callSid, "assistant", "", {
+            toolCalls: [{ id, name, args }],
+          });
+
           // Speak filler IMMEDIATELY while tool executes
           const filler = TOOL_FILLERS[name] || TOOL_FILLERS.default;
           this.speakChunk(filler, false);
