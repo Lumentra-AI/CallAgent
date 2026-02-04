@@ -191,6 +191,10 @@ export class TurnManager {
   // Audio pipeline state machine - proper state management
   private pipelineState: AudioPipelineStateMachine;
 
+  // Multi-chunk TTS tracking - know when FULL response is complete
+  private pendingTTSChunks = 0;
+  private responseStreamComplete = false;
+
   constructor(
     callSid: string,
     tenant: Tenant,
@@ -282,24 +286,41 @@ export class TurnManager {
           this.mediaHandler?.sendAudio(audioData);
         },
         onDone: () => {
-          sessionManager.setPlaying(this.callSid, false);
-
-          // Handle state transition when TTS completes
-          if (this.pipelineState.is(PipelineState.GREETING)) {
-            // Greeting complete - now ready to listen
-            this.pipelineState.transition(
-              PipelineState.LISTENING,
-              "Greeting TTS complete",
-            );
-          } else if (this.pipelineState.is(PipelineState.SPEAKING)) {
-            // Response complete - ready for next user input
-            this.pipelineState.transition(
-              PipelineState.LISTENING,
-              "Response TTS complete",
+          // Decrement pending chunks counter
+          if (this.pendingTTSChunks > 0) {
+            this.pendingTTSChunks--;
+            console.log(
+              `[TURN] TTS chunk complete, ${this.pendingTTSChunks} chunks remaining`,
             );
           }
 
-          this.checkForPendingResponse();
+          // Only transition state when ALL chunks are done AND stream is complete
+          const allChunksComplete =
+            this.pendingTTSChunks === 0 && this.responseStreamComplete;
+
+          if (allChunksComplete) {
+            sessionManager.setPlaying(this.callSid, false);
+
+            // Handle state transition when TTS completes
+            if (this.pipelineState.is(PipelineState.GREETING)) {
+              // Greeting complete - now ready to listen
+              this.pipelineState.transition(
+                PipelineState.LISTENING,
+                "Greeting TTS complete",
+              );
+            } else if (this.pipelineState.is(PipelineState.SPEAKING)) {
+              // Response complete - ready for next user input
+              this.pipelineState.transition(
+                PipelineState.LISTENING,
+                "Response TTS complete",
+              );
+            }
+
+            // Reset flags for next response
+            this.responseStreamComplete = false;
+
+            this.checkForPendingResponse();
+          }
         },
         onError: (error) => {
           console.error(`[TURN] TTS error:`, error);
@@ -566,6 +587,10 @@ export class TurnManager {
     const startTime = Date.now();
     console.log(`[TURN] Processing: "${transcript}"`);
 
+    // Reset TTS tracking for new response
+    this.pendingTTSChunks = 0;
+    this.responseStreamComplete = false;
+
     // Transition to PROCESSING state - blocks VAD during LLM generation
     this.pipelineState.transition(
       PipelineState.PROCESSING,
@@ -762,6 +787,12 @@ export class TurnManager {
             );
             this.speakChunk(remaining, false);
           }
+
+          // Mark that LLM stream is complete - TTS can transition state once all chunks finish
+          this.responseStreamComplete = true;
+          console.log(
+            `[TURN] LLM stream complete, waiting for ${this.pendingTTSChunks} TTS chunks to finish`,
+          );
         }
       }
 
@@ -847,8 +878,12 @@ export class TurnManager {
       return;
     }
 
-    // Transition to SPEAKING state if not already there
-    if (this.pipelineState.is(PipelineState.PROCESSING)) {
+    // CRITICAL: Transition to SPEAKING state from ANY state (PROCESSING or LISTENING)
+    // This handles the case where previous TTS chunk completed and transitioned to LISTENING
+    if (
+      this.pipelineState.is(PipelineState.PROCESSING) ||
+      this.pipelineState.is(PipelineState.LISTENING)
+    ) {
       this.pipelineState.transition(
         PipelineState.SPEAKING,
         "Starting TTS playback",
@@ -858,6 +893,13 @@ export class TurnManager {
     sessionManager.setPlaying(this.callSid, true);
     this.bargeInHandled = false; // Reset barge-in flag for new TTS playback
     this.ttsStartTime = Date.now(); // Track when TTS started for barge-in delay
+
+    // Track pending TTS chunks
+    this.pendingTTSChunks++;
+    console.log(
+      `[TURN] Sending TTS chunk (${this.pendingTTSChunks} pending): "${text.substring(0, 40)}..."`,
+    );
+
     this.tts.speakChunk(text, isContinuation);
   }
 
@@ -882,6 +924,11 @@ export class TurnManager {
     sessionManager.setPlaying(this.callSid, true);
     this.bargeInHandled = false; // Reset barge-in flag for new TTS playback
     this.ttsStartTime = Date.now(); // Track when TTS started for barge-in delay
+
+    // Track pending TTS (single chunk for full speak)
+    this.pendingTTSChunks = 1;
+    this.responseStreamComplete = true; // Full speak is always complete immediately
+
     this.tts.speak(text);
   }
 
