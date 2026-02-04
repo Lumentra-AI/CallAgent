@@ -4,6 +4,7 @@
 
 export {
   authMiddleware,
+  userAuthMiddleware,
   optionalAuthMiddleware,
   requireRole,
   getAuthTenantId,

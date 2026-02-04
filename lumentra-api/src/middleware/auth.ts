@@ -99,11 +99,76 @@ async function verifyTenantAccess(
 }
 
 /**
+ * User-only authentication middleware
+ * Verifies JWT but does NOT require X-Tenant-ID.
+ * Use for routes where the user may not have a tenant yet (setup, tenant listing).
+ * If X-Tenant-ID is present, tenant access is verified and context is populated.
+ */
+export function userAuthMiddleware() {
+  return async (c: Context, next: Next) => {
+    const authHeader = c.req.header("Authorization");
+    const token = extractToken(authHeader);
+
+    if (!token) {
+      return c.json(
+        {
+          error: "Unauthorized",
+          message: "Missing or invalid Authorization header",
+        },
+        401,
+      );
+    }
+
+    const supabase = getAuthClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      return c.json(
+        {
+          error: "Unauthorized",
+          message: "Invalid or expired token",
+        },
+        401,
+      );
+    }
+
+    // Optionally resolve tenant if header is present
+    const tenantId = c.req.header("X-Tenant-ID");
+    let role = "";
+
+    if (tenantId) {
+      const access = await verifyTenantAccess(user.id, tenantId);
+      if (access.hasAccess) {
+        role = access.role!;
+      }
+    }
+
+    c.set("auth", {
+      user,
+      userId: user.id,
+      tenantId: tenantId || "",
+      role,
+    });
+
+    await next();
+  };
+}
+
+/**
  * Authentication middleware
- * Verifies JWT and validates tenant access
+ * Verifies JWT and validates tenant access (requires X-Tenant-ID)
  */
 export function authMiddleware() {
   return async (c: Context, next: Next) => {
+    // Skip if already authenticated by a more specific middleware
+    if (c.get("auth")) {
+      await next();
+      return;
+    }
+
     // Extract token from Authorization header
     const authHeader = c.req.header("Authorization");
     const token = extractToken(authHeader);

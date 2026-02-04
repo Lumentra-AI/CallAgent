@@ -37,7 +37,11 @@ import {
 import { initTenantCache } from "./services/database/tenant-cache.js";
 import { initDatabase, closePool } from "./services/database/client.js";
 import { startScheduler } from "./jobs/scheduler.js";
-import { authMiddleware, rateLimit } from "./middleware/index.js";
+import {
+  authMiddleware,
+  userAuthMiddleware,
+  rateLimit,
+} from "./middleware/index.js";
 import {
   verifyDeepgramApiKey,
   deepgramClient,
@@ -97,7 +101,12 @@ app.route("/signalwire", signalwireVoice);
 app.route("/vapi", vapiRoutes); // Vapi webhooks (no auth - verified by signature)
 app.route("/api/chat", chatRoutes); // Chat widget is public
 
-// Auth middleware for protected /api/* routes
+// User-only auth (no tenant required) for setup and tenant listing
+app.use("/api/setup/*", userAuthMiddleware());
+app.use("/api/tenants", userAuthMiddleware());
+app.use("/api/tenants/*", userAuthMiddleware());
+
+// Full auth (requires X-Tenant-ID) for all other API routes
 app.use("/api/*", authMiddleware());
 
 // Protected API routes
