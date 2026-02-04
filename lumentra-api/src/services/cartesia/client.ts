@@ -42,7 +42,7 @@ export const defaultCartesiaConfig: CartesiaConfig = {
 
 // Voice controls matching Cartesia playground settings
 export const voiceControls = {
-  speed: "slow" as const, // Slower pace for better comprehension
+  speed: 0.9, // Slightly slower than normal (1.0) for better comprehension
   emotion: ["positivity"] as const, // Default level warmth - sounds human
 };
 
