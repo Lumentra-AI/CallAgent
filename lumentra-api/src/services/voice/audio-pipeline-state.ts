@@ -26,7 +26,7 @@ export class AudioPipelineStateMachine {
     [PipelineState.IDLE]: { enabled: false, threshold: 0 },
     [PipelineState.GREETING]: { enabled: false, threshold: 0 }, // Completely disable during greeting
     [PipelineState.LISTENING]: { enabled: true, threshold: 0.5 }, // Normal sensitivity
-    [PipelineState.PROCESSING]: { enabled: false, threshold: 0 }, // Block during processing
+    [PipelineState.PROCESSING]: { enabled: true, threshold: 0.7 }, // Detect speech for greedy cancel
     [PipelineState.SPEAKING]: { enabled: true, threshold: 0.8 }, // High threshold for barge-in
   };
 

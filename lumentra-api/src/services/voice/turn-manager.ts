@@ -43,28 +43,74 @@ import { createSentenceBuffer } from "./sentence-buffer.js";
 import type { Tenant } from "../../types/database.js";
 import type WebSocket from "ws";
 
-// Configuration - BALANCED for natural conversation
-// Trade-off: faster response vs waiting for complete thoughts
-const SILENCE_THRESHOLD_MS = 400; // Wait after final transcript before processing
-const INCOMPLETE_WAIT_MS = 600; // Extra wait for incomplete utterances
-const MAX_ACCUMULATION_MS = 3000; // Max time to accumulate before forcing process
+// === Vapi-inspired layered endpointing configuration ===
+// Layer 1: Context-aware (assistant asked for structured data)
+const STRUCTURED_DATA_WAIT_MS = 3000; // Name, phone, address, email - user needs time
+const DATE_COLLECTION_WAIT_MS = 2000; // Date/time - moderate wait
+
+// Layer 2: Filler detection
+const FILLER_WAIT_MS = 2000; // Caller is thinking (umm, uh, etc.)
+
+// Layer 3: Transcription heuristics (Vapi-style punctuation/number/no-punctuation)
+const ON_PUNCTUATION_MS = 400; // Text ends with .!? - likely complete
+const ON_NUMBER_MS = 1000; // Text ends with a number - might be part of longer sequence
+const ON_NO_PUNCTUATION_MS = 1500; // No punctuation - user may still be talking
+
+// General
+const INCOMPLETE_WAIT_MS = 1500; // Structurally incomplete (ends with "the", "for", etc.)
+const MAX_ACCUMULATION_MS = 12000; // Max time per speech burst before forcing process
 const MIN_TRANSCRIPT_LENGTH = 3; // Minimum characters before processing
+const BARGE_IN_TRANSCRIPT_WAIT_MS = 350; // Wait for transcript before deciding barge-in
+
+// Acknowledgement phrases - these should NOT trigger barge-in during TTS
+// Vapi pattern: user says "yeah" or "uh-huh" while listening, not interrupting
+const ACKNOWLEDGEMENT_PHRASES = new Set([
+  "yeah",
+  "yes",
+  "yep",
+  "yup",
+  "okay",
+  "ok",
+  "right",
+  "uh-huh",
+  "uh huh",
+  "mm-hmm",
+  "mm hmm",
+  "mmhmm",
+  "mhm",
+  "got it",
+  "sure",
+  "alright",
+  "correct",
+  "that's right",
+]);
 
 /**
  * Utterance completeness check
- * Returns: 'complete' | 'incomplete' | 'maybe'
+ * Returns: 'complete' | 'incomplete' | 'filler' | 'maybe'
  * - complete: Process immediately
- * - incomplete: Wait for more input
- * - maybe: Wait a bit, then process
+ * - incomplete: Wait for more input (INCOMPLETE_WAIT_MS)
+ * - filler: Caller is thinking - wait extra long (FILLER_WAIT_MS)
+ * - maybe: Wait a bit, then process (SILENCE_THRESHOLD_MS)
  */
 function checkUtteranceCompleteness(
   text: string,
-): "complete" | "incomplete" | "maybe" {
+): "complete" | "incomplete" | "filler" | "maybe" {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
 
   // Very short - wait for more
   if (trimmed.length < 4) return "incomplete";
+
+  // Check for filler words FIRST - caller is thinking, give them time
+  // Matches: um, umm, ummm, uh, uhh, hmm, hmmm, mm, mmm, ah, ahh, er, err
+  const fillerPattern = /\b(u+m+|u+h+|h+m+|m+m+|a+h+|e+r+|you know)\s*$/i;
+  if (fillerPattern.test(lower)) return "filler";
+
+  // Also check if the ONLY content is filler words (e.g. "umm yeah umm")
+  const allFillers =
+    /^(\s*(u+m+|u+h+|h+m+|m+m+|a+h+|e+r+|you know|like|well|so|yeah|ok)\s*)+$/i;
+  if (allFillers.test(lower)) return "filler";
 
   // Ends with sentence-ending punctuation - complete!
   if (/[.!?]$/.test(trimmed)) return "complete";
@@ -85,14 +131,31 @@ function checkUtteranceCompleteness(
     /\b(and|but|or|so|because|if|when|then|also)$/i,
     /\b(the|a|an|my|your|this|that|for|from|to|in|on|at|with)$/i,
     /\b(i|we|they|he|she|it|you)$/i, // Ends with pronoun alone
-    /\b(um|uh|hmm|like|well|so)$/i, // Filler words
+    /\b(like|well)$/i, // Filler words used mid-sentence
     /\b(some|any|few|more|less)$/i, // Quantifiers without object
   ];
   if (definitelyIncomplete.some((p) => p.test(lower))) return "incomplete";
 
-  // Looks like a complete thought (4+ words, no trailing incomplete patterns)
+  // Check total word count
   const wordCount = trimmed.split(/\s+/).length;
-  if (wordCount >= 4) return "complete";
+
+  // 4+ words - but check if the LAST fragment (after final punctuation) is incomplete
+  // e.g. "Three days. For three" -> last fragment "For three" is mid-sentence
+  if (wordCount >= 4) {
+    const lastSentenceEnd = Math.max(
+      trimmed.lastIndexOf("."),
+      trimmed.lastIndexOf("!"),
+      trimmed.lastIndexOf("?"),
+    );
+    if (lastSentenceEnd > 0 && lastSentenceEnd < trimmed.length - 1) {
+      const lastFragment = trimmed.substring(lastSentenceEnd + 1).trim();
+      if (lastFragment.length > 0 && lastFragment.split(/\s+/).length <= 3) {
+        // Trailing fragment is short without punctuation - user likely mid-sentence
+        return "maybe";
+      }
+    }
+    return "complete";
+  }
 
   // 2-3 words without punctuation - wait a bit
   return "maybe";
@@ -174,6 +237,13 @@ export class TurnManager {
   // Barge-in debounce - only interrupt TTS once per playback
   private bargeInHandled = false;
   private ttsStartTime: number | null = null; // Track when TTS started playing
+
+  // Deferred barge-in - wait for transcript to check acknowledgement phrases
+  private pendingBargeIn = false;
+  private bargeInTimer: NodeJS.Timeout | null = null;
+
+  // Greedy cancel - save transcript for restore on abort
+  private lastProcessedTranscript: string | null = null;
 
   // Race condition protection - prevents double processing of same transcript
   private processingLock = false;
@@ -418,6 +488,26 @@ export class TurnManager {
 
     if (isFinal) {
       console.log(`[TURN] Final transcript: "${text}"`);
+
+      // Check if we have a pending barge-in waiting for transcript
+      if (this.pendingBargeIn) {
+        const lower = text.trim().toLowerCase();
+        if (ACKNOWLEDGEMENT_PHRASES.has(lower)) {
+          // User said "yeah", "uh-huh", etc. - NOT an interruption
+          console.log(
+            `[TURN] Acknowledgement detected ("${text}"), cancelling barge-in`,
+          );
+          this.cancelPendingBargeIn();
+          return; // Don't schedule processing for acknowledgements
+        } else {
+          // Real interruption - execute barge-in immediately
+          console.log(
+            `[TURN] Non-acknowledgement during barge-in ("${text}"), interrupting`,
+          );
+          this.executeBargeIn();
+        }
+      }
+
       // Schedule processing - consolidated timer management
       this.scheduleProcessing();
     }
@@ -427,33 +517,47 @@ export class TurnManager {
     console.log(`[TURN] User started speaking`);
     sessionManager.setSpeaking(this.callSid, true);
 
+    // === GREEDY CANCEL: User speaks during PROCESSING -> abort LLM ===
+    // Vapi pattern: cancel speculative inference, process full input when user finishes
+    if (this.pipelineState.is(PipelineState.PROCESSING)) {
+      console.log(
+        `[TURN] User speaking during PROCESSING - aborting LLM (greedy cancel)`,
+      );
+      this.abortCurrentProcessing();
+      // Don't return - fall through to set up accumulation timer
+    }
+
     // Check if VAD should be processed in current state
-    if (!this.pipelineState.shouldProcessVAD()) {
+    // (GREETING state still blocks VAD)
+    if (
+      !this.pipelineState.shouldProcessVAD() &&
+      !this.pipelineState.is(PipelineState.LISTENING)
+    ) {
       const state = this.pipelineState.getState();
       console.log(`[TURN] Ignoring speech in ${state} state - VAD disabled`);
       return;
     }
 
     // Cancel any pending processing - user is still talking
+    const hadPendingProcessing = this.silenceTimer !== null;
     this.cancelScheduledProcessing();
 
-    // Start accumulation timer if not already started
-    if (!this.accumulationStartTime) {
+    // Reset accumulation timer for each new speech burst
+    if (hadPendingProcessing || !this.accumulationStartTime) {
       this.accumulationStartTime = Date.now();
     }
 
-    // Check for barge-in (interrupt TTS) - only allowed during SPEAKING state
+    // === DEFERRED BARGE-IN: Wait for transcript to check acknowledgement phrases ===
+    // Vapi pattern: "yeah" / "uh-huh" during TTS = acknowledgement, not interruption
     const session = sessionManager.getSession(this.callSid);
     if (session?.isPlaying && !this.bargeInHandled) {
-      // Check if barge-in is allowed in current state
       if (!this.pipelineState.canBargeIn()) {
         const state = this.pipelineState.getState();
         console.log(`[TURN] Barge-in not allowed in ${state} state`);
         return;
       }
 
-      // BARGE-IN DELAY: Prevent false positives from echo/VAD sensitivity
-      // Don't allow interruption for first 800ms of TTS playback
+      // Prevent false positives from echo during first 800ms of TTS
       const MIN_TTS_DURATION_MS = 800;
       const ttsDuration = this.ttsStartTime
         ? Date.now() - this.ttsStartTime
@@ -466,13 +570,160 @@ export class TurnManager {
         return;
       }
 
-      console.log(`[TURN] Barge-in detected, interrupting TTS`);
-      this.bargeInHandled = true; // Prevent repeated interrupts
-      sessionManager.requestInterrupt(this.callSid);
-      this.tts?.cancel();
-      this.mediaHandler?.clearAudio();
-      this.state = clearAudioQueue(this.state);
+      // DEFERRED: Wait for transcript to check if it's an acknowledgement
+      // If user is just saying "yeah" or "uh-huh", don't interrupt
+      console.log(
+        `[TURN] Potential barge-in, waiting for transcript to verify`,
+      );
+      this.pendingBargeIn = true;
+      this.bargeInHandled = true; // Prevent repeated triggers
+
+      // Safety: if no transcript arrives in time, execute barge-in anyway
+      this.bargeInTimer = setTimeout(() => {
+        if (this.pendingBargeIn) {
+          console.log(
+            `[TURN] Barge-in timer expired, executing without transcript`,
+          );
+          this.executeBargeIn();
+        }
+      }, BARGE_IN_TRANSCRIPT_WAIT_MS);
     }
+  }
+
+  /**
+   * Execute barge-in: stop TTS and abort LLM stream
+   * Vapi pattern: full pipeline cancel, not just TTS stop
+   */
+  private executeBargeIn(): void {
+    this.pendingBargeIn = false;
+    if (this.bargeInTimer) {
+      clearTimeout(this.bargeInTimer);
+      this.bargeInTimer = null;
+    }
+
+    console.log(`[TURN] Barge-in executing - stopping TTS and aborting LLM`);
+    sessionManager.requestInterrupt(this.callSid);
+    this.tts?.cancel();
+    this.mediaHandler?.clearAudio();
+    this.state = clearAudioQueue(this.state);
+
+    // Also abort the LLM stream - the response is stale since user interrupted
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    this.cancelFillerTimer();
+    this.pendingTTSChunks = 0;
+    this.responseStreamComplete = false;
+
+    // Transition to LISTENING so new speech is processed
+    if (this.pipelineState.is(PipelineState.SPEAKING)) {
+      this.pipelineState.transition(
+        PipelineState.LISTENING,
+        "Barge-in - user interrupted",
+      );
+    }
+    sessionManager.setPlaying(this.callSid, false);
+    this.accumulationStartTime = Date.now();
+  }
+
+  /**
+   * Cancel a pending barge-in (user said acknowledgement phrase)
+   */
+  private cancelPendingBargeIn(): void {
+    this.pendingBargeIn = false;
+    this.bargeInHandled = false; // Allow future barge-ins
+    if (this.bargeInTimer) {
+      clearTimeout(this.bargeInTimer);
+      this.bargeInTimer = null;
+    }
+  }
+
+  /**
+   * GREEDY CANCEL: Abort current LLM processing when user resumes speaking
+   * Vapi pattern: speculative inference is cancelled, user never hears stale response
+   */
+  private abortCurrentProcessing(): void {
+    console.log(`[TURN] Greedy cancel - aborting LLM and restoring transcript`);
+
+    // Abort the LLM stream
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    this.cancelFillerTimer();
+
+    // Cancel any TTS that started
+    this.tts?.cancel();
+    this.mediaHandler?.clearAudio();
+    this.state = clearAudioQueue(this.state);
+    this.pendingTTSChunks = 0;
+    this.responseStreamComplete = false;
+    sessionManager.setPlaying(this.callSid, false);
+
+    // Restore the transcript that was cleared when processing started
+    // so new speech appends to it, giving the LLM the full context
+    if (this.lastProcessedTranscript) {
+      this.state.transcriptBuffer = this.lastProcessedTranscript;
+      // Remove the user message we added to history - we'll re-send the full text
+      sessionManager.popLastUserMessage(this.callSid);
+      console.log(
+        `[TURN] Restored transcript: "${this.lastProcessedTranscript.substring(0, 30)}..."`,
+      );
+      this.lastProcessedTranscript = null;
+    }
+
+    // Transition to LISTENING
+    this.pipelineState.transition(
+      PipelineState.LISTENING,
+      "Greedy cancel - user resumed speaking",
+    );
+    this.accumulationStartTime = Date.now();
+  }
+
+  /**
+   * Layered endpointing: compute context-aware wait time
+   * Vapi pattern: different timeouts for punctuation / numbers / no-punctuation / structured data
+   */
+  private getEndpointingTimeout(transcript: string): number {
+    const trimmed = transcript.trim();
+    const lower = trimmed.toLowerCase();
+
+    // Layer 1: Context-aware rules (highest priority)
+    // If assistant just asked for structured data, give caller more time
+    const lastAssistant = sessionManager.getLastAssistantMessage(this.callSid);
+    if (lastAssistant) {
+      if (/(name|spell|spelling)/i.test(lastAssistant)) {
+        return STRUCTURED_DATA_WAIT_MS;
+      }
+      if (/(phone|number|address|zip|email)/i.test(lastAssistant)) {
+        return STRUCTURED_DATA_WAIT_MS;
+      }
+      if (/(date|when|check.?in|check.?out)/i.test(lastAssistant)) {
+        return DATE_COLLECTION_WAIT_MS;
+      }
+    }
+
+    // Layer 2: Filler detection
+    const fillerPattern = /\b(u+m+|u+h+|h+m+|m+m+|a+h+|e+r+|you know)\s*$/i;
+    if (fillerPattern.test(lower)) {
+      return FILLER_WAIT_MS;
+    }
+
+    // Layer 3: Transcription heuristics
+    // Ends with punctuation - short wait, likely a complete thought
+    if (/[.!?]$/.test(trimmed)) {
+      return ON_PUNCTUATION_MS;
+    }
+
+    // Ends with a number - medium wait, might be part of longer sequence
+    if (
+      /\d$/.test(trimmed) ||
+      /\b(one|two|three|four|five|six|seven|eight|nine|ten)$/i.test(lower)
+    ) {
+      return ON_NUMBER_MS;
+    }
+
+    // No punctuation - longest wait
+    return ON_NO_PUNCTUATION_MS;
   }
 
   private handleSpeechEnded(): void {
@@ -494,10 +745,14 @@ export class TurnManager {
       clearTimeout(this.silenceTimer);
     }
 
+    // Compute initial wait based on transcript content and context (layered endpointing)
+    const transcript = getCompleteTranscript(this.state);
+    const waitMs = this.getEndpointingTimeout(transcript);
+
     this.silenceTimer = setTimeout(() => {
       this.silenceTimer = null;
       this.processUserTurn();
-    }, SILENCE_THRESHOLD_MS);
+    }, waitMs);
   }
 
   /**
@@ -551,6 +806,18 @@ export class TurnManager {
 
     // Decide whether to wait or process
     if (!forceProcess) {
+      if (completeness === "filler") {
+        console.log(
+          `[TURN] Caller is thinking (filler detected), waiting ${FILLER_WAIT_MS}ms`,
+        );
+        this.processingLock = false;
+        this.silenceTimer = setTimeout(() => {
+          this.silenceTimer = null;
+          this.processUserTurn();
+        }, FILLER_WAIT_MS);
+        return;
+      }
+
       if (completeness === "incomplete") {
         console.log(`[TURN] Waiting for user to finish`);
         this.processingLock = false;
@@ -562,12 +829,13 @@ export class TurnManager {
       }
 
       if (completeness === "maybe") {
-        console.log(`[TURN] Maybe complete, waiting a bit more`);
+        const waitMs = this.getEndpointingTimeout(transcript);
+        console.log(`[TURN] Maybe complete, waiting ${waitMs}ms`);
         this.processingLock = false;
         this.silenceTimer = setTimeout(() => {
           this.silenceTimer = null;
           this.processUserTurn();
-        }, SILENCE_THRESHOLD_MS);
+        }, waitMs);
         return;
       }
     } else {
@@ -599,6 +867,9 @@ export class TurnManager {
 
     // Create abort controller for this request
     this.abortController = new AbortController();
+
+    // Save transcript for greedy cancel restore (before clearing)
+    this.lastProcessedTranscript = transcript;
 
     // Clear transcript buffer
     this.state = clearTranscript(this.state);

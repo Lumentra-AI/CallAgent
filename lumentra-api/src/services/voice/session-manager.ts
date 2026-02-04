@@ -172,6 +172,42 @@ export function clearInterrupt(callSid: string): void {
 }
 
 /**
+ * Remove the last user message from history (used for greedy cancel)
+ * When we speculatively process partial input and then abort,
+ * we need to remove it so the full input can be sent cleanly.
+ */
+export function popLastUserMessage(callSid: string): boolean {
+  const session = activeSessions.get(callSid);
+  if (!session) return false;
+
+  for (let i = session.conversationHistory.length - 1; i >= 0; i--) {
+    if (session.conversationHistory[i].role === "user") {
+      session.conversationHistory.splice(i, 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Get the last assistant message content (for context-aware endpointing)
+ */
+export function getLastAssistantMessage(callSid: string): string | null {
+  const session = activeSessions.get(callSid);
+  if (!session) return null;
+
+  for (let i = session.conversationHistory.length - 1; i >= 0; i--) {
+    if (
+      session.conversationHistory[i].role === "assistant" &&
+      session.conversationHistory[i].content
+    ) {
+      return session.conversationHistory[i].content;
+    }
+  }
+  return null;
+}
+
+/**
  * End session and clean up
  */
 export function endSession(callSid: string): CallSession | undefined {
