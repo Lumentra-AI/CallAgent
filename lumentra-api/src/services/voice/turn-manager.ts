@@ -626,6 +626,13 @@ export class TurnManager {
                 this.speakChunk(sentence, true);
                 isFirstChunk = false;
               }
+            } else if (resultChunk.type === "done") {
+              // Flush any remaining buffered text from tool result
+              const remaining = sentenceBuffer.flush();
+              if (remaining) {
+                // Final chunk should use continue: false to properly close prosody
+                this.speakChunk(remaining, false);
+              }
             }
           }
 
