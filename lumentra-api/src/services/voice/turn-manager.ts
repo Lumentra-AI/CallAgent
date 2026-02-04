@@ -11,10 +11,7 @@ import {
 } from "./conversation-state.js";
 import * as sessionManager from "./session-manager.js";
 import { buildSystemPrompt, cleanupCall } from "../gemini/chat.js";
-import {
-  streamChatWithFallback,
-  streamToolResults,
-} from "../llm/streaming-provider.js";
+import { streamChatWithFallback } from "../llm/streaming-provider.js";
 import { voiceAgentFunctions, executeTool } from "../gemini/tools.js";
 import {
   createTranscriber,
@@ -617,17 +614,20 @@ export class TurnManager {
             this.escalationState.taskCompleted = true;
           }
 
-          // Stream tool result response
-          const toolResultStream = streamToolResults(
-            currentProvider,
-            {
-              userMessage: transcript,
-              conversationHistory,
-              systemPrompt: this.systemPrompt,
-              tools: voiceAgentFunctions,
-            },
-            [{ id, name, result }],
+          // Get FRESH conversation history that includes the tool_calls and tool result we just added
+          // CRITICAL: Using stale history causes OpenAI error "tool must follow tool_calls"
+          const updatedHistory = sessionManager.getConversationHistory(
+            this.callSid,
           );
+
+          // Stream response based on tool results
+          // Don't pass toolResults array - they're already in updatedHistory
+          const toolResultStream = streamChatWithFallback({
+            userMessage: "", // Continue from tool results in history
+            conversationHistory: updatedHistory,
+            systemPrompt: this.systemPrompt,
+            tools: voiceAgentFunctions,
+          });
 
           // Continue streaming from tool result
           let isFirstToolResultChunk = true;
