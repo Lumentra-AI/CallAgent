@@ -74,16 +74,19 @@ export async function verifyDeepgramApiKey(): Promise<{
 // Default configuration for phone calls
 // BALANCE: Not too fast (cuts off speakers) vs not too slow (awkward pauses)
 //
-// MODEL CHOICE (latency vs accuracy trade-off):
-// - nova-2-phonecall: Fastest (~100ms), American/British English only
-// - whisper-medium: Good balance (~150ms), handles South Asian accents well
-// - whisper-large: Best accuracy (~300ms), but adds latency
+// MODEL CHOICE for live streaming (latency vs accuracy trade-off):
+// - nova-2-phonecall: Previous gen (~100ms), good for phone calls
+// - nova-3-phonecall: Latest gen, best accuracy for accents/dialects, phonecall-optimized
 //
-// Using whisper-large for maximum accuracy
+// NOTE: Whisper models are NOT supported for live streaming on Deepgram
+// They only work for batch/pre-recorded transcription
+//
+// Using nova-3-phonecall: Best for live calls with South Asian accents
 // Set DEEPGRAM_MODEL env var to override
 export const defaultDeepgramConfig: DeepgramConfig = {
   model:
-    (process.env.DEEPGRAM_MODEL as DeepgramConfig["model"]) || "whisper-large",
+    (process.env.DEEPGRAM_MODEL as DeepgramConfig["model"]) ||
+    "nova-3-phonecall",
   language: "en", // "en" allows accent flexibility vs "en-US" which expects American
   punctuate: true,
   interimResults: true,
