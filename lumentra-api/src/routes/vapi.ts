@@ -83,15 +83,32 @@ vapiRoutes.post("/webhook", async (c) => {
 
 // Handle assistant-request - return dynamic assistant config for inbound calls
 async function handleAssistantRequest(c: any, body: any) {
-  const phoneNumber = body.message?.call?.phoneNumber?.number;
-  const callerNumber = body.message?.call?.customer?.number;
+  // Debug: Log full payload structure to diagnose phone number extraction
+  console.log(
+    "[VAPI] Full assistant-request payload:",
+    JSON.stringify(body, null, 2),
+  );
+
+  // Try multiple possible paths for phone number
+  const phoneNumber =
+    body.message?.call?.phoneNumber?.number ||
+    body.message?.call?.phoneNumberId ||
+    body.message?.phoneNumber?.number ||
+    body.call?.phoneNumber?.number;
+  const callerNumber =
+    body.message?.call?.customer?.number ||
+    body.message?.customer?.number ||
+    body.call?.customer?.number;
 
   console.log(
     `[VAPI] Assistant request for phone: ${phoneNumber}, caller: ${callerNumber}`,
   );
 
   if (!phoneNumber) {
-    console.error("[VAPI] No phone number in assistant request");
+    console.error(
+      "[VAPI] No phone number in assistant request. Call object:",
+      JSON.stringify(body.message?.call || body.call, null, 2),
+    );
     return c.json({
       error: "Phone number required",
     });
