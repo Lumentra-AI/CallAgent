@@ -34,7 +34,10 @@ export interface StreamingChatOptions {
 
 // Provider status tracking (shared with multi-provider.ts)
 type ProviderStatus = "available" | "rate_limited" | "error";
-const providerStatus: Record<string, { status: ProviderStatus; until?: number }> = {
+const providerStatus: Record<
+  string,
+  { status: ProviderStatus; until?: number }
+> = {
   gemini: { status: "available" },
   openai: { status: "available" },
   groq: { status: "available" },
@@ -58,9 +61,12 @@ function isProviderAvailable(provider: string): boolean {
 function markProviderError(provider: string, isRateLimit = false): void {
   providerStatus[provider] = {
     status: isRateLimit ? "rate_limited" : "error",
-    until: Date.now() + (isRateLimit ? RATE_LIMIT_COOLDOWN_MS : ERROR_COOLDOWN_MS),
+    until:
+      Date.now() + (isRateLimit ? RATE_LIMIT_COOLDOWN_MS : ERROR_COOLDOWN_MS),
   };
-  console.log(`[STREAM] ${provider} marked ${isRateLimit ? "rate limited" : "errored"}`);
+  console.log(
+    `[STREAM] ${provider} marked ${isRateLimit ? "rate limited" : "errored"}`,
+  );
 }
 
 function isProviderInitialized(provider: string): boolean {
@@ -68,6 +74,33 @@ function isProviderInitialized(provider: string): boolean {
   if (provider === "openai") return openaiClient !== null;
   if (provider === "groq") return groqClient !== null;
   return false;
+}
+
+// Log provider status at startup - call this from index.ts
+let statusLogged = false;
+export function logProviderStatus(): void {
+  if (statusLogged) return;
+  statusLogged = true;
+
+  console.log(`[STREAM] ========== LLM Provider Status ==========`);
+  console.log(
+    `[STREAM]   groq:   ${groqClient ? "READY" : "NOT INITIALIZED (missing GROQ_API_KEY)"}`,
+  );
+  console.log(
+    `[STREAM]   openai: ${openaiClient ? "READY" : "NOT INITIALIZED (missing OPENAI_API_KEY)"}`,
+  );
+  console.log(
+    `[STREAM]   gemini: ${genAI ? "READY" : "NOT INITIALIZED (missing GEMINI_API_KEY)"}`,
+  );
+  console.log(`[STREAM] ============================================`);
+
+  // Warn if only Gemini is available (slowest)
+  if (!groqClient && !openaiClient && genAI) {
+    console.warn(
+      `[STREAM] WARNING: Only Gemini available - expect 700-1200ms latency`,
+    );
+    console.warn(`[STREAM] Add GROQ_API_KEY for 100-300ms latency`);
+  }
 }
 
 // Convert conversation to Gemini format
@@ -82,12 +115,14 @@ function toGeminiContents(messages: ConversationMessage[]): Content[] {
     } else if (msg.role === "tool") {
       contents.push({
         role: "function",
-        parts: [{
-          functionResponse: {
-            name: msg.toolName || "unknown",
-            response: { result: msg.toolResult || msg.content },
+        parts: [
+          {
+            functionResponse: {
+              name: msg.toolName || "unknown",
+              response: { result: msg.toolResult || msg.content },
+            },
           },
-        }],
+        ],
       });
     }
   }
@@ -120,7 +155,9 @@ function toOpenAIMessages(
 }
 
 // Convert Gemini tools to OpenAI format
-function toOpenAITools(geminiTools: FunctionDeclaration[]): ChatCompletionTool[] {
+function toOpenAITools(
+  geminiTools: FunctionDeclaration[],
+): ChatCompletionTool[] {
   return geminiTools.map((tool) => ({
     type: "function" as const,
     function: {
@@ -153,8 +190,9 @@ function convertSchema(schema: unknown): Record<string, unknown> {
   return result;
 }
 
-// Gemini streaming implementation
-async function* streamWithGemini(
+// Gemini streaming implementation (kept for potential future use)
+// @ts-expect-error - Unused but kept for potential future fallback
+async function* _streamWithGemini(
   options: StreamingChatOptions,
 ): AsyncGenerator<StreamChunk> {
   if (!genAI) throw new Error("Gemini not initialized");
@@ -273,8 +311,9 @@ async function* streamWithOpenAI(
   yield { type: "done", provider: "openai" };
 }
 
-// Groq streaming implementation
-async function* streamWithGroq(
+// Groq streaming implementation (kept for potential future use)
+// @ts-expect-error - Unused but kept for potential future fallback
+async function* _streamWithGroq(
   options: StreamingChatOptions,
 ): AsyncGenerator<StreamChunk> {
   if (!groqClient) throw new Error("Groq not initialized");
@@ -288,8 +327,12 @@ async function* streamWithGroq(
 
   const stream = await groqClient.chat.completions.create({
     model: toolConfig.model,
-    messages: messages as Parameters<typeof groqClient.chat.completions.create>[0]["messages"],
-    tools: groqTools as Parameters<typeof groqClient.chat.completions.create>[0]["tools"],
+    messages: messages as Parameters<
+      typeof groqClient.chat.completions.create
+    >[0]["messages"],
+    tools: groqTools as Parameters<
+      typeof groqClient.chat.completions.create
+    >[0]["tools"],
     temperature: 0.4,
     max_tokens: 500,
     stream: true,
@@ -353,25 +396,32 @@ export async function* streamChatWithFallback(
     tools: options.tools || voiceAgentFunctions,
   };
 
+  // Provider: OpenAI GPT-4.1 mini ONLY (no fallback)
+  // User requirement: Use only GPT, skip Groq and Gemini
   const providers = [
-    { name: "gemini", fn: () => streamWithGemini(optionsWithTools) },
     { name: "openai", fn: () => streamWithOpenAI(optionsWithTools) },
-    { name: "groq", fn: () => streamWithGroq(optionsWithTools) },
   ];
+
+  // Log provider status on first call (helps debug why certain providers are used)
+  logProviderStatus();
 
   for (const provider of providers) {
     if (!isProviderInitialized(provider.name)) {
-      console.log(`[STREAM] Skipping ${provider.name} (not initialized)`);
+      console.warn(`[STREAM] SKIP ${provider.name} - not initialized`);
       continue;
     }
 
     if (!isProviderAvailable(provider.name)) {
-      console.log(`[STREAM] Skipping ${provider.name} (cooling down)`);
+      const status = providerStatus[provider.name];
+      const remainingMs = status?.until ? status.until - Date.now() : 0;
+      console.warn(
+        `[STREAM] SKIP ${provider.name} - cooling down (${Math.ceil(remainingMs / 1000)}s remaining)`,
+      );
       continue;
     }
 
     try {
-      console.log(`[STREAM] Starting stream with ${provider.name}`);
+      console.log(`[STREAM] Using ${provider.name}`);
       const stream = provider.fn();
 
       // Yield all chunks from this provider
@@ -419,10 +469,12 @@ export async function* streamToolResults(
   for (const tr of toolResults) {
     updatedHistory.push({
       role: "tool",
-      content: typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result),
+      content:
+        typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result),
       toolName: tr.name,
       toolCallId: tr.id,
-      toolResult: typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result),
+      toolResult:
+        typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result),
       timestamp: new Date(),
     });
   }
