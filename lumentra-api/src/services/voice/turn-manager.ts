@@ -10,6 +10,10 @@ import {
   clearAudioQueue,
 } from "./conversation-state.js";
 import * as sessionManager from "./session-manager.js";
+import {
+  AudioPipelineStateMachine,
+  PipelineState,
+} from "./audio-pipeline-state.js";
 import { buildSystemPrompt, cleanupCall } from "../gemini/chat.js";
 import { streamChatWithFallback } from "../llm/streaming-provider.js";
 import { voiceAgentFunctions, executeTool } from "../gemini/tools.js";
@@ -184,8 +188,8 @@ export class TurnManager {
   // Abort controller - cancels in-flight LLM requests on cleanup
   private abortController: AbortController | null = null;
 
-  // Greeting protection - prevents interruption of initial greeting
-  private greetingInProgress = false;
+  // Audio pipeline state machine - proper state management
+  private pipelineState: AudioPipelineStateMachine;
 
   constructor(
     callSid: string,
@@ -196,6 +200,9 @@ export class TurnManager {
     this.callSid = callSid;
     this.tenant = tenant;
     this.callbacks = callbacks;
+
+    // Initialize audio pipeline state machine
+    this.pipelineState = new AudioPipelineStateMachine(callSid);
 
     // Create session
     sessionManager.createSession(callSid, tenant, callerPhone);
@@ -276,11 +283,35 @@ export class TurnManager {
         },
         onDone: () => {
           sessionManager.setPlaying(this.callSid, false);
+
+          // Handle state transition when TTS completes
+          if (this.pipelineState.is(PipelineState.GREETING)) {
+            // Greeting complete - now ready to listen
+            this.pipelineState.transition(
+              PipelineState.LISTENING,
+              "Greeting TTS complete",
+            );
+          } else if (this.pipelineState.is(PipelineState.SPEAKING)) {
+            // Response complete - ready for next user input
+            this.pipelineState.transition(
+              PipelineState.LISTENING,
+              "Response TTS complete",
+            );
+          }
+
           this.checkForPendingResponse();
         },
         onError: (error) => {
           console.error(`[TURN] TTS error:`, error);
           sessionManager.setPlaying(this.callSid, false);
+
+          // On error, return to listening state
+          if (
+            this.pipelineState.is(PipelineState.GREETING) ||
+            this.pipelineState.is(PipelineState.SPEAKING)
+          ) {
+            this.pipelineState.transition(PipelineState.LISTENING, "TTS error");
+          }
         },
       },
       { voiceId: this.tenant.voice_config.voice_id },
@@ -331,10 +362,11 @@ export class TurnManager {
     }
 
     // Speak greeting and log it
-    // CRITICAL: Mark greeting as in-progress to prevent interruption
-    this.greetingInProgress = true;
+    // CRITICAL: Transition to GREETING state - VAD will be disabled
+    // State will automatically transition to LISTENING when TTS onDone fires
+    this.pipelineState.transition(PipelineState.GREETING, "Starting greeting");
     await this.speak(this.tenant.greeting_standard);
-    this.greetingInProgress = false;
+    // Note: Don't set state to LISTENING here - TTS onDone callback handles it
 
     addAssistantTurn(this.callSid, this.tenant.greeting_standard).catch((err) =>
       console.error("[TRAINING] Failed to log greeting:", err),
@@ -374,6 +406,13 @@ export class TurnManager {
     console.log(`[TURN] User started speaking`);
     sessionManager.setSpeaking(this.callSid, true);
 
+    // Check if VAD should be processed in current state
+    if (!this.pipelineState.shouldProcessVAD()) {
+      const state = this.pipelineState.getState();
+      console.log(`[TURN] Ignoring speech in ${state} state - VAD disabled`);
+      return;
+    }
+
     // Cancel any pending processing - user is still talking
     this.cancelScheduledProcessing();
 
@@ -382,14 +421,13 @@ export class TurnManager {
       this.accumulationStartTime = Date.now();
     }
 
-    // Check for barge-in (interrupt TTS) - only once per TTS playback
+    // Check for barge-in (interrupt TTS) - only allowed during SPEAKING state
     const session = sessionManager.getSession(this.callSid);
     if (session?.isPlaying && !this.bargeInHandled) {
-      // CRITICAL: Never interrupt the initial greeting
-      if (this.greetingInProgress) {
-        console.log(
-          `[TURN] Ignoring speech during greeting - user must hear who they're talking to`,
-        );
+      // Check if barge-in is allowed in current state
+      if (!this.pipelineState.canBargeIn()) {
+        const state = this.pipelineState.getState();
+        console.log(`[TURN] Barge-in not allowed in ${state} state`);
         return;
       }
 
@@ -527,6 +565,12 @@ export class TurnManager {
     this.fillerSpoken = false;
     const startTime = Date.now();
     console.log(`[TURN] Processing: "${transcript}"`);
+
+    // Transition to PROCESSING state - blocks VAD during LLM generation
+    this.pipelineState.transition(
+      PipelineState.PROCESSING,
+      "Starting LLM processing",
+    );
 
     // Create abort controller for this request
     this.abortController = new AbortController();
@@ -801,6 +845,14 @@ export class TurnManager {
         `[TURN] Session ${this.callSid} no longer exists, skipping TTS`,
       );
       return;
+    }
+
+    // Transition to SPEAKING state if not already there
+    if (this.pipelineState.is(PipelineState.PROCESSING)) {
+      this.pipelineState.transition(
+        PipelineState.SPEAKING,
+        "Starting TTS playback",
+      );
     }
 
     sessionManager.setPlaying(this.callSid, true);

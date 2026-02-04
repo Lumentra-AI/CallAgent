@@ -20,6 +20,13 @@ export class MediaStreamHandler {
   private callbacks: MediaStreamCallbacks;
   private streamSid: string | null = null;
   private isActive = false;
+  private lastAudioSentTime: number = Date.now();
+  private silenceInjectionInterval: NodeJS.Timeout | null = null;
+
+  // Generate silence frames (20ms of mulaw silence = 160 bytes of 0xFF)
+  private static readonly SILENCE_FRAME = Buffer.alloc(160, 0xff);
+  private static readonly SILENCE_INJECTION_INTERVAL_MS = 20;
+  private static readonly MAX_SILENCE_GAP_MS = 100;
 
   constructor(ws: WebSocket, callbacks: MediaStreamCallbacks) {
     this.ws = ws;
@@ -41,6 +48,7 @@ export class MediaStreamHandler {
     this.ws.on("close", () => {
       console.log("[MEDIA-STREAM] WebSocket closed");
       this.isActive = false;
+      this.stopSilenceInjection();
       this.callbacks.onStop();
     });
 
@@ -65,6 +73,10 @@ export class MediaStreamHandler {
           console.log(
             `[MEDIA-STREAM] Format: ${JSON.stringify(event.start.mediaFormat)}`,
           );
+
+          // Start silence injection to prevent buffer underruns
+          this.startSilenceInjection();
+
           this.callbacks.onStart(event.start);
         }
         break;
@@ -84,6 +96,7 @@ export class MediaStreamHandler {
       case "stop":
         console.log("[MEDIA-STREAM] Stream stopped");
         this.isActive = false;
+        this.stopSilenceInjection();
         this.callbacks.onStop();
         break;
     }
@@ -95,6 +108,9 @@ export class MediaStreamHandler {
       return;
     }
 
+    // Track last audio send time for silence injection
+    this.lastAudioSentTime = Date.now();
+
     const message: SignalWireOutboundMedia = {
       event: "media",
       streamSid: this.streamSid,
@@ -104,6 +120,53 @@ export class MediaStreamHandler {
     };
 
     this.ws.send(JSON.stringify(message));
+  }
+
+  /**
+   * Start injecting silence frames to prevent buffer underrun
+   * Runs periodically and injects silence if no audio sent recently
+   */
+  private startSilenceInjection(): void {
+    this.stopSilenceInjection(); // Clear any existing interval
+
+    this.silenceInjectionInterval = setInterval(() => {
+      const timeSinceLastAudio = Date.now() - this.lastAudioSentTime;
+
+      // If we haven't sent audio in a while, inject silence to prevent underrun
+      if (timeSinceLastAudio > MediaStreamHandler.MAX_SILENCE_GAP_MS) {
+        this.sendSilence();
+      }
+    }, MediaStreamHandler.SILENCE_INJECTION_INTERVAL_MS);
+  }
+
+  /**
+   * Stop silence injection
+   */
+  private stopSilenceInjection(): void {
+    if (this.silenceInjectionInterval) {
+      clearInterval(this.silenceInjectionInterval);
+      this.silenceInjectionInterval = null;
+    }
+  }
+
+  /**
+   * Send silence frame to maintain RTP stream continuity
+   */
+  private sendSilence(): void {
+    if (!this.isActive || !this.streamSid) {
+      return;
+    }
+
+    const message: SignalWireOutboundMedia = {
+      event: "media",
+      streamSid: this.streamSid,
+      media: {
+        payload: MediaStreamHandler.SILENCE_FRAME.toString("base64"),
+      },
+    };
+
+    this.ws.send(JSON.stringify(message));
+    this.lastAudioSentTime = Date.now();
   }
 
   // Send a mark to track audio playback position
@@ -146,6 +209,7 @@ export class MediaStreamHandler {
   close(): void {
     console.log("[MEDIA-STREAM] Closing connection");
     this.isActive = false;
+    this.stopSilenceInjection();
     this.ws.close();
   }
 }

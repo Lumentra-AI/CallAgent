@@ -152,7 +152,9 @@ export class CartesiaTTS {
       return;
     }
 
-    console.log(`[TTS] Chunk: "${text.substring(0, 40)}${text.length > 40 ? '...' : ''}" (continue: ${isContinuation})`);
+    console.log(
+      `[TTS] Chunk: "${text.substring(0, 40)}${text.length > 40 ? "..." : ""}" (continue: ${isContinuation})`,
+    );
 
     const request = {
       model_id: this.config.modelId,
@@ -172,6 +174,41 @@ export class CartesiaTTS {
     };
 
     this.ws.send(JSON.stringify(request));
+
+    // If this is the final chunk (not continuing), send flush signal
+    // This ensures Cartesia completes all buffered audio frames
+    if (!isContinuation) {
+      setTimeout(() => this.flush(), 100);
+    }
+  }
+
+  /**
+   * Flush buffered audio to prevent missing frames
+   * Send empty transcript with continue=false to force generation completion
+   */
+  flush(): void {
+    if (!this.ws || !this.isConnected) {
+      return;
+    }
+
+    const flushRequest = {
+      model_id: this.config.modelId,
+      transcript: "", // Empty transcript signals flush
+      voice: {
+        mode: "id",
+        id: this.config.voiceId,
+        __experimental_controls: voiceControls,
+      },
+      output_format: {
+        container: this.config.outputFormat.container,
+        encoding: this.config.outputFormat.encoding,
+        sample_rate: this.config.outputFormat.sampleRate,
+      },
+      context_id: this.contextId,
+      continue: false, // Force completion
+    };
+
+    this.ws.send(JSON.stringify(flushRequest));
   }
 
   // Cancel current speech and clear queue
