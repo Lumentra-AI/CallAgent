@@ -159,8 +159,8 @@ export function buildAssistantConfig(
   return {
     name: `${tenant.business_name} Assistant`,
     model: {
-      provider: "groq",
-      model: "llama-3.3-70b-versatile",
+      provider: "google",
+      model: "gemini-2.0-flash",
       temperature: 0.7,
       messages: [
         {

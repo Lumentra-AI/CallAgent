@@ -13,6 +13,7 @@ import type { Tenant } from "../../types/database.js";
 
 // Cache storage
 const tenantCache = new Map<string, Tenant>();
+const vapiPhoneIdCache = new Map<string, Tenant>(); // Key by vapi_phone_number_id
 let cacheInitialized = false;
 let lastRefresh: Date | null = null;
 
@@ -51,6 +52,7 @@ async function refreshCache(): Promise<void> {
 
   // Clear and rebuild cache
   tenantCache.clear();
+  vapiPhoneIdCache.clear();
 
   for (const tenant of tenants) {
     // Key by phone number for fast lookup during incoming calls
@@ -59,6 +61,10 @@ async function refreshCache(): Promise<void> {
     }
     // Also key by tenant ID for other lookups
     tenantCache.set(`id:${tenant.id}`, tenant);
+    // Key by Vapi phone number ID for direct webhook lookup
+    if (tenant.vapi_phone_number_id) {
+      vapiPhoneIdCache.set(tenant.vapi_phone_number_id, tenant);
+    }
   }
 
   lastRefresh = new Date();
@@ -81,6 +87,16 @@ export function getTenantByPhone(phoneNumber: string): Tenant | null {
  */
 export function getTenantById(tenantId: string): Tenant | null {
   return tenantCache.get(`id:${tenantId}`) || null;
+}
+
+/**
+ * Get tenant by Vapi phone number ID (for webhook lookup)
+ * FAST: O(1) from cache, no DB query or Vapi API call
+ */
+export function getTenantByVapiPhoneId(
+  vapiPhoneNumberId: string,
+): Tenant | null {
+  return vapiPhoneIdCache.get(vapiPhoneNumberId) || null;
 }
 
 /**

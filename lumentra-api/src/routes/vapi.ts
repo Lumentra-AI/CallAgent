@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import {
   getTenantByPhoneWithFallback,
   getTenantById,
+  getTenantByVapiPhoneId,
 } from "../services/database/tenant-cache.js";
 import {
   buildAssistantConfig,
@@ -100,7 +101,36 @@ async function handleAssistantRequest(c: any, body: any) {
     body.message?.customer?.number ||
     body.call?.customer?.number;
 
-  // If no direct phone number but we have phoneNumberId, look it up from Vapi API
+  console.log(
+    `[VAPI] Assistant request - phone: ${phoneNumber}, phoneNumberId: ${phoneNumberId}, caller: ${callerNumber}`,
+  );
+
+  // FAST PATH: Try direct lookup by Vapi phone number ID first (no API call needed)
+  if (phoneNumberId) {
+    const tenant = getTenantByVapiPhoneId(phoneNumberId);
+    if (tenant) {
+      console.log(
+        `[VAPI] Found tenant by vapi_phone_number_id: ${tenant.business_name}`,
+      );
+      const serverUrl = process.env.BACKEND_URL || "http://localhost:3100";
+      const assistant = buildAssistantConfig(tenant, serverUrl);
+
+      return c.json({
+        assistant,
+        metadata: {
+          tenantId: tenant.id,
+          businessName: tenant.business_name,
+          callerPhone: callerNumber,
+        },
+      });
+    }
+    console.log(
+      `[VAPI] No tenant found for phoneNumberId: ${phoneNumberId}, trying phone number lookup`,
+    );
+  }
+
+  // FALLBACK: If no direct match by phoneNumberId, try phone number lookup
+  // First try to resolve phoneNumberId to actual phone number via Vapi API
   if (!phoneNumber && phoneNumberId) {
     try {
       const vapiResponse = await fetch(
@@ -127,10 +157,6 @@ async function handleAssistantRequest(c: any, body: any) {
       console.error(`[VAPI] Error resolving phoneNumberId:`, err);
     }
   }
-
-  console.log(
-    `[VAPI] Assistant request - phone: ${phoneNumber}, phoneNumberId: ${phoneNumberId}, caller: ${callerNumber}`,
-  );
 
   if (!phoneNumber) {
     console.error(
