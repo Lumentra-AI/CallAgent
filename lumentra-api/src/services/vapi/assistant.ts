@@ -159,8 +159,8 @@ export function buildAssistantConfig(
   return {
     name: `${tenant.business_name} Assistant`,
     model: {
-      provider: "google",
-      model: "gemini-2.0-flash",
+      provider: "openai",
+      model: "gpt-4o-mini",
       temperature: 0.7,
       messages: [
         {
