@@ -6,28 +6,28 @@ import { ArrowRight } from "lucide-react";
 import { ShimmerButton } from "@/components/magicui/shimmer-button";
 import { NumberTicker } from "@/components/magicui/number-ticker";
 import { Button } from "@/components/ui/button";
-import { RetroGrid } from "@/components/ui/retro-grid";
-import { HeroBeamDemo } from "./HeroBeamDemo";
+import { RetroTerminal } from "./RetroTerminal";
 import { useDemoOrchestrator } from "@/components/demo/DemoOrchestrator";
 
 export function HeroSection() {
   const { triggerDemo } = useDemoOrchestrator();
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-slate-950">
-      {/* Retro Grid Background - clean professional 3D grid */}
-      <RetroGrid
-        angle={65}
-        cellSize={50}
-        opacity={0.5}
-        lightLineColor="#475569"
-        darkLineColor="#475569"
+    <section className="relative min-h-screen overflow-hidden bg-black">
+      {/* Subtle grid background */}
+      <div
+        className="absolute inset-0 opacity-20"
+        style={{
+          backgroundImage: `
+            linear-gradient(rgba(99, 102, 241, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(99, 102, 241, 0.1) 1px, transparent 1px)
+          `,
+          backgroundSize: "50px 50px",
+        }}
       />
 
-      {/* Top gradient for navbar readability */}
-      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-slate-950 via-slate-950/80 to-transparent z-[1]" />
-
-      {/* Bottom fade */}
-      <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-slate-950 to-transparent z-[1]" />
+      {/* Gradient overlays */}
+      <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black to-transparent z-10" />
+      <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black to-transparent z-10" />
 
       <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20 pt-28">
         <div className="text-center">
@@ -37,10 +37,10 @@ export function HeroSection() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: "easeOut" }}
           >
-            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white font-mono">
               Never Miss Another Call
             </h1>
-            <p className="mt-3 text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-indigo-400">
+            <p className="mt-3 text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-cyan-400 font-mono">
               Convert Every Conversation
             </p>
           </motion.div>
@@ -50,7 +50,7 @@ export function HeroSection() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.15 }}
-            className="mt-8 text-lg sm:text-xl text-gray-300 max-w-2xl mx-auto leading-relaxed"
+            className="mt-8 text-lg sm:text-xl text-zinc-400 max-w-2xl mx-auto leading-relaxed"
           >
             Lumentra handles your calls 24/7 with human-like AI. Book
             appointments, answer questions, and grow your business while you
@@ -77,33 +77,38 @@ export function HeroSection() {
               variant="outline"
               size="lg"
               onClick={() => triggerDemo("incoming-call")}
-              className="h-12 px-8 bg-white/10 backdrop-blur-sm border-white/20 text-white hover:bg-white/20 hover:text-white"
+              className="h-12 px-8 bg-white/5 backdrop-blur-sm border-zinc-700 text-white hover:bg-white/10 hover:text-white font-mono"
             >
               Watch Demo
             </Button>
           </motion.div>
 
-          {/* Visual flow demo */}
-          <HeroBeamDemo />
+          {/* Retro Terminal Demo */}
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.4 }}
+            className="mt-16"
+          >
+            <RetroTerminal />
+          </motion.div>
 
           {/* Stats */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.35 }}
-            className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-8 max-w-3xl mx-auto"
+            transition={{ duration: 0.6, delay: 0.5 }}
+            className="mt-16 grid grid-cols-2 gap-8 max-w-md mx-auto font-mono"
           >
             {[
-              { value: 50000, suffix: "+", label: "Calls Handled" },
               { value: 98, suffix: "%", label: "Satisfaction" },
               { value: null, display: "24/7", label: "Availability" },
-              { value: 27, suffix: "", label: "Industries" },
             ].map((stat, i) => (
               <motion.div
                 key={stat.label}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.4 + i * 0.1 }}
+                transition={{ duration: 0.5, delay: 0.55 + i * 0.1 }}
                 className="text-center"
               >
                 <div className="text-3xl sm:text-4xl font-bold text-white">
@@ -116,7 +121,7 @@ export function HeroSection() {
                     stat.display
                   )}
                 </div>
-                <p className="mt-1 text-sm text-gray-400">{stat.label}</p>
+                <p className="mt-1 text-sm text-zinc-500">{stat.label}</p>
               </motion.div>
             ))}
           </motion.div>

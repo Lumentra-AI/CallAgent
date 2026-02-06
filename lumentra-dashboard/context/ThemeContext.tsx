@@ -12,14 +12,6 @@ import React, {
 } from "react";
 
 // ============================================================================
-// MOUNTED STORE - For hydration-safe mounting detection
-// ============================================================================
-
-const mountedSubscribe = () => () => {};
-const getMountedSnapshot = () => true;
-const getMountedServerSnapshot = () => false;
-
-// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -54,51 +46,64 @@ function getSystemTheme(): ResolvedTheme {
 }
 
 function resolveTheme(mode: ThemeMode): ResolvedTheme {
-  if (mode === "system") {
-    return getSystemTheme();
-  }
+  if (mode === "system") return getSystemTheme();
   return mode;
+}
+
+function applyTheme(resolvedTheme: ResolvedTheme) {
+  if (typeof window === "undefined") return;
+
+  const root = document.documentElement;
+  if (resolvedTheme === "dark") {
+    root.classList.add("dark");
+  } else {
+    root.classList.remove("dark");
+  }
+}
+
+// Hydration-safe mounted detection via useSyncExternalStore
+const mountedSubscribe = () => () => {};
+const getMountedSnapshot = () => true;
+const getMountedServerSnapshot = () => false;
+
+function getInitialTheme(): ThemeMode {
+  if (typeof window === "undefined") return "system";
+  const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null;
+  return saved && ["light", "dark", "system"].includes(saved)
+    ? saved
+    : "system";
 }
 
 // ============================================================================
 // PROVIDER COMPONENT
 // ============================================================================
 
-// Helper to get initial theme from localStorage
-function getInitialTheme(): ThemeMode {
-  if (typeof window === "undefined") return "system";
-  const savedTheme = localStorage.getItem(
-    THEME_STORAGE_KEY,
-  ) as ThemeMode | null;
-  return savedTheme && ["light", "dark", "system"].includes(savedTheme)
-    ? savedTheme
-    : "system";
-}
-
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  // Use lazy initializer to avoid setState in effect
   const [theme, setThemeState] = useState<ThemeMode>(getInitialTheme);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
     resolveTheme(getInitialTheme()),
   );
-
-  // Use useSyncExternalStore for hydration-safe mounted detection
-  // This avoids setState in effect while still preventing hydration mismatch
   const mounted = useSyncExternalStore(
     mountedSubscribe,
     getMountedSnapshot,
     getMountedServerSnapshot,
   );
 
-  // Listen for system theme changes when in system mode
+  // Apply theme to DOM whenever resolved theme changes
+  useEffect(() => {
+    if (!mounted) return;
+    applyTheme(resolvedTheme);
+  }, [mounted, resolvedTheme]);
+
+  // Listen for system theme changes
   useEffect(() => {
     if (!mounted) return;
 
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-
-    const handleChange = (e: MediaQueryListEvent) => {
+    const handleChange = () => {
       if (theme === "system") {
-        setResolvedTheme(e.matches ? "dark" : "light");
+        const newResolved = getSystemTheme();
+        setResolvedTheme(newResolved);
       }
     };
 
@@ -106,36 +111,21 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mediaQuery.removeEventListener("change", handleChange);
   }, [mounted, theme]);
 
-  // Apply theme to document
-  useEffect(() => {
-    if (!mounted) return;
-
-    const root = document.documentElement;
-
-    if (resolvedTheme === "dark") {
-      root.classList.add("dark");
-      root.classList.remove("light");
-    } else {
-      root.classList.add("light");
-      root.classList.remove("dark");
-    }
-
-    // Save to localStorage
-    localStorage.setItem(THEME_STORAGE_KEY, theme);
-  }, [theme, resolvedTheme, mounted]);
-
-  // Update both theme and resolved theme together to avoid setState in effect
   const setTheme = useCallback((newTheme: ThemeMode) => {
     setThemeState(newTheme);
-    setResolvedTheme(resolveTheme(newTheme));
+    const newResolved = resolveTheme(newTheme);
+    setResolvedTheme(newResolved);
+    applyTheme(newResolved);
+    localStorage.setItem(THEME_STORAGE_KEY, newTheme);
   }, []);
 
   const toggleTheme = useCallback(() => {
     setThemeState((prev) => {
-      // Cycle through: light -> dark -> system -> light
-      const newTheme =
-        prev === "light" ? "dark" : prev === "dark" ? "system" : "light";
-      setResolvedTheme(resolveTheme(newTheme));
+      // Simple toggle: dark <-> light (ignoring system for quick toggle)
+      const newTheme = prev === "dark" ? "light" : "dark";
+      setResolvedTheme(newTheme);
+      applyTheme(newTheme);
+      localStorage.setItem(THEME_STORAGE_KEY, newTheme);
       return newTheme;
     });
   }, []);
@@ -153,10 +143,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [theme, resolvedTheme, setTheme, toggleTheme, isDark],
   );
 
-  // Prevent flash of wrong theme
-  if (!mounted) {
-    return null;
-  }
+  if (!mounted) return null;
 
   return (
     <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
