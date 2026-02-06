@@ -21,7 +21,11 @@ import {
   createTranscriber,
   type DeepgramTranscriber,
 } from "../deepgram/transcriber.js";
-import { createTTS, type CartesiaTTS } from "../cartesia/tts.js";
+import {
+  createTTS,
+  type CartesiaTTS,
+  type WordTimestamp,
+} from "../cartesia/tts.js";
 import {
   createMediaStreamHandler,
   type MediaStreamHandler,
@@ -58,9 +62,11 @@ const ON_NO_PUNCTUATION_MS = 1500; // No punctuation - user may still be talking
 
 // General
 const INCOMPLETE_WAIT_MS = 1500; // Structurally incomplete (ends with "the", "for", etc.)
-const MAX_ACCUMULATION_MS = 12000; // Max time per speech burst before forcing process
+const MAX_ACCUMULATION_MS = 6000; // Max time per speech burst before forcing process
 const MIN_TRANSCRIPT_LENGTH = 3; // Minimum characters before processing
 const BARGE_IN_TRANSCRIPT_WAIT_MS = 350; // Wait for transcript before deciding barge-in
+const GREEDY_CANCEL_CONFIRM_MS = 400; // Wait for transcript before aborting LLM (Vapi/Retell pattern)
+const SPEECH_STARTED_DEBOUNCE_MS = 200; // Ignore rapid-fire duplicate SpeechStarted events
 
 // Acknowledgement phrases - these should NOT trigger barge-in during TTS
 // Vapi pattern: user says "yeah" or "uh-huh" while listening, not interrupting
@@ -245,6 +251,18 @@ export class TurnManager {
   // Greedy cancel - save transcript for restore on abort
   private lastProcessedTranscript: string | null = null;
 
+  // Deferred greedy cancel - require transcript confirmation before aborting LLM
+  // Vapi/Retell pattern: raw SpeechStarted events are often noise/echo, not real speech
+  private pendingGreedyCancel = false;
+  private greedyCancelTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // SpeechStarted debounce - filter rapid-fire duplicate events from Deepgram
+  private lastSpeechStartedTime = 0;
+
+  // Word-level TTS timestamps - track what the user heard before barge-in
+  // Vapi pattern: reconstruct exactly which words were spoken before interruption
+  private currentResponseWordTimestamps: WordTimestamp[] = [];
+
   // Race condition protection - prevents double processing of same transcript
   private processingLock = false;
   private pendingTranscript = false;
@@ -392,6 +410,9 @@ export class TurnManager {
             this.checkForPendingResponse();
           }
         },
+        onWordTimestamps: (timestamps) => {
+          this.currentResponseWordTimestamps.push(...timestamps);
+        },
         onError: (error) => {
           console.error(`[TURN] TTS error:`, error);
           sessionManager.setPlaying(this.callSid, false);
@@ -489,6 +510,27 @@ export class TurnManager {
     if (isFinal) {
       console.log(`[TURN] Final transcript: "${text}"`);
 
+      // === DEFERRED GREEDY CANCEL CONFIRMATION ===
+      // If we have a pending greedy cancel and got a real transcript, execute it now.
+      // If transcript is too short (noise artifact), cancel the pending greedy cancel.
+      if (this.pendingGreedyCancel) {
+        const trimmed = text.trim();
+        if (trimmed.length > 2) {
+          // Real speech confirmed - execute greedy cancel
+          console.log(
+            `[TURN] Greedy cancel confirmed by transcript ("${trimmed}") - aborting LLM`,
+          );
+          this.cancelPendingGreedyCancel();
+          this.abortCurrentProcessing();
+        } else {
+          // Too short - likely noise artifact, not real speech
+          console.log(
+            `[TURN] Greedy cancel dismissed (transcript too short: "${trimmed}")`,
+          );
+          this.cancelPendingGreedyCancel();
+        }
+      }
+
       // Check if we have a pending barge-in waiting for transcript
       if (this.pendingBargeIn) {
         const lower = text.trim().toLowerCase();
@@ -514,16 +556,37 @@ export class TurnManager {
   }
 
   private handleSpeechStarted(): void {
+    // === DEBOUNCE: Filter rapid-fire duplicate SpeechStarted events from Deepgram ===
+    const now = Date.now();
+    if (now - this.lastSpeechStartedTime < SPEECH_STARTED_DEBOUNCE_MS) {
+      return; // Ignore duplicate within debounce window
+    }
+    this.lastSpeechStartedTime = now;
+
     console.log(`[TURN] User started speaking`);
     sessionManager.setSpeaking(this.callSid, true);
 
-    // === GREEDY CANCEL: User speaks during PROCESSING -> abort LLM ===
-    // Vapi pattern: cancel speculative inference, process full input when user finishes
+    // === DEFERRED GREEDY CANCEL: User speaks during PROCESSING ===
+    // Vapi/Retell pattern: don't abort LLM on raw SpeechStarted (often noise/echo).
+    // Instead, set a pending flag and wait for a confirmed final transcript.
+    // LLM continues processing during the confirmation window.
     if (this.pipelineState.is(PipelineState.PROCESSING)) {
-      console.log(
-        `[TURN] User speaking during PROCESSING - aborting LLM (greedy cancel)`,
-      );
-      this.abortCurrentProcessing();
+      if (!this.pendingGreedyCancel) {
+        console.log(
+          `[TURN] Speech detected during PROCESSING - deferring greedy cancel (waiting ${GREEDY_CANCEL_CONFIRM_MS}ms for transcript)`,
+        );
+        this.pendingGreedyCancel = true;
+
+        // Safety: if no transcript confirms within the window, it was noise - ignore it
+        this.greedyCancelTimer = setTimeout(() => {
+          if (this.pendingGreedyCancel) {
+            console.log(
+              `[TURN] Pending greedy cancel expired (no transcript) - was noise, continuing LLM`,
+            );
+            this.pendingGreedyCancel = false;
+          }
+        }, GREEDY_CANCEL_CONFIRM_MS);
+      }
       // Don't return - fall through to set up accumulation timer
     }
 
@@ -602,6 +665,32 @@ export class TurnManager {
     }
 
     console.log(`[TURN] Barge-in executing - stopping TTS and aborting LLM`);
+
+    // Use word-level timestamps to determine what the user actually heard
+    // Vapi pattern: include partial response context so LLM knows what was communicated
+    if (this.currentResponseWordTimestamps.length > 0 && this.ttsStartTime) {
+      const elapsedMs = Date.now() - this.ttsStartTime;
+      // Convert elapsed real time to TTS timeline (timestamps are in seconds)
+      const elapsedSec = elapsedMs / 1000;
+      const spokenWords = this.currentResponseWordTimestamps
+        .filter((wt) => wt.end <= elapsedSec)
+        .map((wt) => wt.word);
+
+      if (spokenWords.length > 0) {
+        const partialResponse = spokenWords.join(" ");
+        console.log(
+          `[TURN] User heard before interruption: "${partialResponse.substring(0, 60)}..."`,
+        );
+        // Add context to conversation history so LLM knows what was communicated
+        sessionManager.addMessage(
+          this.callSid,
+          "assistant",
+          `[interrupted after saying: "${partialResponse}"]`,
+        );
+      }
+    }
+    this.currentResponseWordTimestamps = [];
+
     sessionManager.requestInterrupt(this.callSid);
     this.tts?.cancel();
     this.mediaHandler?.clearAudio();
@@ -635,6 +724,17 @@ export class TurnManager {
     if (this.bargeInTimer) {
       clearTimeout(this.bargeInTimer);
       this.bargeInTimer = null;
+    }
+  }
+
+  /**
+   * Cancel a pending greedy cancel (no transcript confirmed it was real speech)
+   */
+  private cancelPendingGreedyCancel(): void {
+    this.pendingGreedyCancel = false;
+    if (this.greedyCancelTimer) {
+      clearTimeout(this.greedyCancelTimer);
+      this.greedyCancelTimer = null;
     }
   }
 
@@ -676,7 +776,9 @@ export class TurnManager {
       PipelineState.LISTENING,
       "Greedy cancel - user resumed speaking",
     );
-    this.accumulationStartTime = Date.now();
+    // NOTE: Do NOT reset accumulationStartTime here.
+    // Preserving the original start time ensures MAX_ACCUMULATION_MS is enforced
+    // even across greedy cancel cycles (prevents the 24s+ accumulation death loop).
   }
 
   /**
@@ -904,6 +1006,7 @@ export class TurnManager {
       const sentenceBuffer = createSentenceBuffer();
       let fullResponse = "";
       let isFirstChunk = true;
+      let sentenceCount = 0;
       let currentProvider = "unknown";
       let shouldEscalate = false;
 
@@ -1023,26 +1126,28 @@ export class TurnManager {
         if (chunk.type === "text" && chunk.content) {
           fullResponse += chunk.content;
 
-          // Log first token latency and cancel filler timer
+          // Log first token latency and cancel filler timer ONCE per response
+          // (before sentence loop to avoid duplicate TTFT logs per yielded sentence)
           if (isFirstChunk) {
             this.cancelFillerTimer(); // LLM responded fast, no filler needed
             const ttft = Date.now() - startTime;
             console.log(
               `[TURN] Time to first token: ${ttft}ms (${currentProvider})`,
             );
+            isFirstChunk = false;
           }
 
           // Buffer and speak sentences as they complete
           const sentences = sentenceBuffer.add(chunk.content);
           for (const sentence of sentences) {
             const ttfs = Date.now() - startTime;
-            // If filler was spoken, continue from it; otherwise start fresh on first chunk
-            const shouldContinue = this.fillerSpoken || !isFirstChunk;
+            // If filler was spoken, continue from it; otherwise start fresh on first sentence
+            const shouldContinue = this.fillerSpoken || sentenceCount > 0;
             console.log(
               `[TURN] Speaking sentence (${ttfs}ms): "${sentence.substring(0, 40)}..." (continue: ${shouldContinue})`,
             );
             this.speakChunk(sentence, shouldContinue);
-            isFirstChunk = false;
+            sentenceCount++;
           }
         }
 
@@ -1053,7 +1158,7 @@ export class TurnManager {
           if (remaining) {
             const ttfs = Date.now() - startTime;
             // Continue from previous chunks if any were spoken; start fresh only if this is the sole chunk
-            const shouldContinue = !isFirstChunk;
+            const shouldContinue = sentenceCount > 0;
             console.log(
               `[TURN] Flushing final (${ttfs}ms): "${remaining.substring(0, 40)}..." (continue: ${shouldContinue})`,
             );
@@ -1170,6 +1275,7 @@ export class TurnManager {
     if (!isContinuation) {
       this.bargeInHandled = false;
       this.ttsStartTime = Date.now();
+      this.currentResponseWordTimestamps = []; // Reset for new response
     }
 
     // Track pending TTS chunks
@@ -1314,6 +1420,7 @@ export class TurnManager {
     }
 
     this.cancelFillerTimer();
+    this.cancelPendingGreedyCancel();
 
     await Promise.all([this.transcriber?.stop(), this.tts?.disconnect()]);
 

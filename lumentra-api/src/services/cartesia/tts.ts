@@ -10,10 +10,17 @@ import {
 } from "./client.js";
 import type { CartesiaConfig, CartesiaStreamChunk } from "../../types/voice.js";
 
+export interface WordTimestamp {
+  word: string;
+  start: number;
+  end: number;
+}
+
 export interface TTSCallbacks {
   onAudioChunk: (audioData: Buffer) => void;
   onDone: () => void;
   onError: (error: Error) => void;
+  onWordTimestamps?: (timestamps: WordTimestamp[]) => void;
 }
 
 export class CartesiaTTS {
@@ -102,7 +109,9 @@ export class CartesiaTTS {
         break;
 
       case "timestamps":
-        // Word timestamps for potential future use (lip sync, etc.)
+        if (message.word_timestamps && this.callbacks.onWordTimestamps) {
+          this.callbacks.onWordTimestamps(message.word_timestamps);
+        }
         break;
     }
   }
