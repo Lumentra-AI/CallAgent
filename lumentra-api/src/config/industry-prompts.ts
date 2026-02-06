@@ -1,37 +1,14 @@
 // Industry-specific prompt configurations
-// Priority industries: medical, hotel, motel, restaurant, pizza
+// Core appointment/reservation-based industries
 
 export type IndustryType =
   | "hotel"
   | "motel"
-  | "vacation_rental"
   | "restaurant"
-  | "pizza"
-  | "catering"
   | "medical"
   | "dental"
-  | "veterinary"
-  | "mental_health"
-  | "chiropractic"
-  | "auto_dealer"
-  | "auto_service"
-  | "car_rental"
-  | "towing"
-  | "legal"
-  | "accounting"
-  | "insurance"
-  | "consulting"
   | "salon"
-  | "spa"
-  | "barbershop"
-  | "fitness"
-  | "real_estate"
-  | "property_management"
-  | "home_services"
-  | "hvac"
-  | "plumbing"
-  | "electrical"
-  | "cleaning";
+  | "auto_service";
 
 export interface IndustryTerminology {
   transaction: string;
@@ -247,76 +224,69 @@ Adapt based on what they tell you. Don't follow rigidly.`,
   },
 
   // ============================================================================
-  // PIZZA (Keep existing detailed menu)
+  // SALON (Hair, Nails, Beauty)
   // ============================================================================
-  pizza: {
+  salon: {
     terminology: {
-      transaction: "Order",
-      transactionPlural: "Orders",
+      transaction: "Appointment",
+      transactionPlural: "Appointments",
+      customer: "Client",
+      customerPlural: "Clients",
+    },
+    roleDescription: `You help clients schedule salon appointments, answer questions about services and pricing, and provide general salon information.`,
+    criticalRules: `
+## SALON BOOKING RULES
+- Ask which service they need (haircut, color, nails, etc.)
+- Ask if they have a preferred stylist
+- Mention approximate service duration so they can plan
+- Note any special requests (e.g., specific style, color preferences)`,
+    bookingFlow: `
+## APPOINTMENT BOOKING FLOW
+1. Ask: "What service are you looking to book?" (haircut, color, highlights, nails, etc.)
+2. Ask: "Do you have a preferred stylist, or would you like the next available?"
+3. Check availability and offer times
+4. Ask: "What name should I put the appointment under?"
+5. Confirm: Name, service, stylist, date and time
+6. Mention: "Please arrive 5-10 minutes early."`,
+    faqSection: `
+## COMMON QUESTIONS
+- Walk-ins: "We accept walk-ins based on availability, but appointments are recommended."
+- Cancellation: "Please give us 24 hours notice for cancellations."
+- Products: "We carry professional salon products. Ask your stylist for recommendations."`,
+    supported: true,
+  },
+
+  // ============================================================================
+  // AUTO SERVICE (Mechanic, Oil Change, Repairs)
+  // ============================================================================
+  auto_service: {
+    terminology: {
+      transaction: "Appointment",
+      transactionPlural: "Appointments",
       customer: "Customer",
       customerPlural: "Customers",
     },
-    roleDescription: `You help callers place orders, answer menu questions, and provide information about delivery and pickup.`,
+    roleDescription: `You help customers schedule service appointments for their vehicles, answer questions about services offered, and provide shop information.`,
     criticalRules: `
-## CRITICAL ORDER RULES - READ CAREFULLY
-You have the customer's phone number from caller ID - DO NOT ask for it.
-Before calling create_order, you MUST have collected:
-1. All order items (what they want)
-2. Order type (pickup or delivery)
-3. For DELIVERY ONLY: complete street address
-4. Customer's name (ask: "What name is this order under?")
-
-If ANY required info is missing, ASK for it first. Example flow:
-- Customer: "I want a large pepperoni"
-- You: "Great choice! Is this for pickup or delivery?"
-- Customer: "Delivery"
-- You: "What's the delivery address?"
-- Customer: "123 Main Street"
-- You: "And what name should I put the order under?"
-- Customer: "John"
-- You: NOW you can call create_order with all the info
-
-NEVER call create_order with "unknown", "not provided", or placeholder values.`,
+## AUTO SERVICE BOOKING RULES
+- Ask what service they need (oil change, tire rotation, brake inspection, etc.)
+- Get the vehicle make, model, and year
+- Note any symptoms or concerns (noises, warning lights, etc.)
+- Mention estimated service duration`,
     bookingFlow: `
-## ORDER TAKING GUIDELINES
-- Always ask: "Is this for pickup or delivery?"
-- For delivery: Get the complete street address and confirm it's in delivery range
-- Repeat the order back before confirming
-- Give estimated ready/delivery time
-- Provide the order confirmation number`,
+## SERVICE APPOINTMENT FLOW
+1. Ask: "What service does your vehicle need?"
+2. Ask: "What is the year, make, and model of your vehicle?"
+3. Ask: "Are there any specific concerns or warning lights?"
+4. Check availability and offer times
+5. Ask: "What name should I put the appointment under?"
+6. Confirm: Name, vehicle, service, date and time
+7. Mention: "Please bring your keys and any relevant paperwork."`,
     faqSection: `
-## MENU & PRICING (Tony's Pizza)
-
-### Pizzas (Hand-tossed, fresh daily)
-- **Cheese Pizza**: Small $10.99, Medium $14.99, Large $18.99
-- **Pepperoni**: Small $12.99, Medium $16.99, Large $20.99
-- **Supreme** (pepperoni, sausage, peppers, onions, mushrooms): Small $14.99, Medium $18.99, Large $23.99
-- **Meat Lovers** (pepperoni, sausage, bacon, ham): Small $14.99, Medium $18.99, Large $23.99
-- **Veggie** (peppers, onions, mushrooms, olives, tomatoes): Small $13.99, Medium $17.99, Large $22.99
-- **Margherita** (fresh mozzarella, tomatoes, basil): Small $13.99, Medium $17.99, Large $21.99
-- **BBQ Chicken**: Small $14.99, Medium $18.99, Large $23.99
-- **Hawaiian** (ham, pineapple): Small $13.99, Medium $17.99, Large $21.99
-
-### Specialty Options
-- **Gluten-Free Crust**: Add $3 (available in medium only)
-- **Extra Toppings**: $1.50 each
-
-### Sides & Extras
-- **Garlic Knots** (6 pieces): $5.99
-- **Mozzarella Sticks** (6 pieces): $7.99
-- **Chicken Wings** (10 pieces): $12.99
-- **Garden Salad**: $6.99
-- **Caesar Salad**: $7.99
-- **2-Liter Soda**: $3.99
-
-### Deals
-- **Family Deal**: 2 Large Pizzas + Garlic Knots = $49.99
-- **Lunch Special** (11am-3pm): Medium 1-topping + drink = $12.99
-
-### Delivery Info
-- **Pickup**: Ready in 15-25 minutes
-- **Delivery**: 30-45 minutes, $3 delivery fee, free over $30
-- **Delivery Area**: Within 5 miles`,
+## COMMON QUESTIONS
+- Estimates: "We provide free estimates. Bring your vehicle in and we'll take a look."
+- Warranty: "Ask about our service warranty when you come in."
+- Wait time: "Most routine services take 30-60 minutes. We have a waiting area."`,
     supported: true,
   },
 };

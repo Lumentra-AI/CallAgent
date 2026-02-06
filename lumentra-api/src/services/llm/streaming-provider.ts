@@ -312,7 +312,7 @@ async function* streamWithOpenAI(
     messages,
     tools: openaiTools,
     temperature: 0.3,
-    max_tokens: 300,
+    max_tokens: 500,
     stream: true,
   });
 

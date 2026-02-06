@@ -74,12 +74,17 @@ export function generateConnectingXml(
   return xml;
 }
 
-// Transfer call to a phone number
-export function generateTransferXml(phoneNumber: string): string {
+// Transfer call to a phone number or SIP URI
+export function generateTransferXml(destination: string): string {
+  const isSip = destination.startsWith("sip:") || destination.includes("@");
+  const dialTarget = isSip
+    ? `<Sip>${destination.startsWith("sip:") ? destination : `sip:${destination}`}</Sip>`
+    : `<Number>${destination}</Number>`;
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say>Transferring you now. Please hold.</Say>
-  <Dial>${phoneNumber}</Dial>
+  <Dial>${dialTarget}</Dial>
 </Response>`;
 }
 

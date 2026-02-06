@@ -72,53 +72,25 @@ export type TemplateCategory =
   | "healthcare"
   | "hospitality"
   | "personal_care"
-  | "professional"
   | "automotive"
-  | "property"
   | "default";
 
 // Mapping of industries to template categories
 export const INDUSTRY_TO_CATEGORY: Record<string, TemplateCategory> = {
   // Healthcare
-  clinic: "healthcare",
-  medical_practice: "healthcare",
-  dental_practice: "healthcare",
-  physical_therapy: "healthcare",
-  optometry: "healthcare",
-  veterinary: "healthcare",
   medical: "healthcare",
   dental: "healthcare",
 
   // Hospitality
   hotel: "hospitality",
-  boutique_hotel: "hospitality",
-  resort: "hospitality",
   motel: "hospitality",
   restaurant: "hospitality",
-  fine_dining: "hospitality",
-  pizza: "hospitality",
 
   // Personal Care
   salon: "personal_care",
-  barbershop: "personal_care",
-  spa: "personal_care",
-  med_spa: "personal_care",
-  fitness_studio: "personal_care",
-
-  // Professional Services
-  law_firm: "professional",
-  accounting_firm: "professional",
-  consulting: "professional",
 
   // Automotive
-  auto_dealership: "automotive",
   auto_service: "automotive",
-  car_rental: "automotive",
-
-  // Property
-  real_estate: "property",
-  property_management: "property",
-  home_services: "property",
 };
 
 // Get template category for an industry

@@ -83,13 +83,7 @@ const HEALTHCARE_TEMPLATE: TemplateConfig = {
   id: "healthcare",
   name: "Patient Schedule",
   description: "Optimized for medical practices and clinics",
-  industries: [
-    "medical",
-    "dental",
-    "veterinary",
-    "mental_health",
-    "chiropractic",
-  ],
+  industries: ["medical", "dental"],
   layout: "timeline",
   widgets: [
     {
@@ -173,7 +167,7 @@ const HOTEL_TEMPLATE: TemplateConfig = {
   id: "hotel",
   name: "Front Desk",
   description: "Hotel and lodging front desk workstation",
-  industries: ["hotel", "motel", "vacation_rental"],
+  industries: ["hotel", "motel"],
   layout: "grid",
   widgets: [
     {
@@ -257,7 +251,7 @@ const RESTAURANT_TEMPLATE: TemplateConfig = {
   id: "restaurant",
   name: "Host Station",
   description: "Restaurant and dining host workstation",
-  industries: ["restaurant", "pizza", "catering"],
+  industries: ["restaurant"],
   layout: "kanban",
   widgets: [
     {
@@ -334,7 +328,7 @@ const SALON_TEMPLATE: TemplateConfig = {
   id: "salon",
   name: "Appointment Book",
   description: "Salon, spa, and personal care workstation",
-  industries: ["salon", "barbershop", "spa", "fitness"],
+  industries: ["salon"],
   layout: "timeline",
   widgets: [
     {
@@ -406,83 +400,12 @@ const SALON_TEMPLATE: TemplateConfig = {
   },
 };
 
-// Professional Services template
-const PROFESSIONAL_TEMPLATE: TemplateConfig = {
-  id: "professional",
-  name: "Client Manager",
-  description: "Professional services client management",
-  industries: ["legal", "accounting", "insurance", "consulting"],
-  layout: "dashboard",
-  widgets: [
-    {
-      type: "today-schedule",
-      title: "Today's Meetings",
-      size: "lg",
-      order: 1,
-      enabled: true,
-    },
-    {
-      type: "activity-feed",
-      title: "Client Activity",
-      size: "md",
-      order: 2,
-      enabled: true,
-    },
-    {
-      type: "quick-actions",
-      title: "Quick Actions",
-      size: "md",
-      order: 3,
-      enabled: true,
-    },
-    {
-      type: "stats-summary",
-      title: "This Week",
-      size: "sm",
-      order: 4,
-      enabled: true,
-    },
-  ],
-  quickActions: [
-    {
-      id: "new-meeting",
-      label: "Schedule Meeting",
-      icon: "CalendarPlus",
-      action: "/calendar?new=true",
-      variant: "primary",
-    },
-    {
-      id: "new-client",
-      label: "New Client",
-      icon: "UserPlus",
-      action: "/contacts?new=true",
-    },
-    {
-      id: "view-tasks",
-      label: "View Tasks",
-      icon: "ListTodo",
-      action: "/tasks",
-    },
-  ],
-  primaryMetric: {
-    label: "Meetings Today",
-    key: "todayMeetings",
-    format: "number",
-  },
-  columns: {
-    time: "Meeting Time",
-    entity: "Client",
-    status: "Status",
-    action: "Action",
-  },
-};
-
 // Automotive template
 const AUTOMOTIVE_TEMPLATE: TemplateConfig = {
   id: "automotive",
   name: "Service Desk",
   description: "Auto service and dealership workstation",
-  industries: ["auto_dealer", "auto_service", "car_rental", "towing"],
+  industries: ["auto_service"],
   layout: "dashboard",
   widgets: [
     {
@@ -554,86 +477,13 @@ const AUTOMOTIVE_TEMPLATE: TemplateConfig = {
   },
 };
 
-// Property Services template
-const PROPERTY_TEMPLATE: TemplateConfig = {
-  id: "property",
-  name: "Property Manager",
-  description: "Real estate and property management workstation",
-  industries: ["real_estate", "property_management", "home_services"],
-  layout: "dashboard",
-  widgets: [
-    {
-      type: "today-schedule",
-      title: "Today's Showings",
-      size: "lg",
-      order: 1,
-      enabled: true,
-    },
-    {
-      type: "activity-feed",
-      title: "Lead Activity",
-      size: "md",
-      order: 2,
-      enabled: true,
-    },
-    {
-      type: "quick-actions",
-      title: "Quick Actions",
-      size: "md",
-      order: 3,
-      enabled: true,
-    },
-    {
-      type: "stats-summary",
-      title: "This Week",
-      size: "sm",
-      order: 4,
-      enabled: true,
-    },
-  ],
-  quickActions: [
-    {
-      id: "new-showing",
-      label: "Schedule Showing",
-      icon: "CalendarPlus",
-      action: "/calendar?new=true",
-      variant: "primary",
-    },
-    {
-      id: "new-lead",
-      label: "New Lead",
-      icon: "UserPlus",
-      action: "/contacts?new=true",
-    },
-    {
-      id: "properties",
-      label: "Properties",
-      icon: "Home",
-      action: "/resources",
-    },
-  ],
-  primaryMetric: {
-    label: "Showings Today",
-    key: "todayShowings",
-    format: "number",
-  },
-  columns: {
-    time: "Showing Time",
-    entity: "Client / Property",
-    status: "Status",
-    action: "Action",
-  },
-};
-
 // All templates indexed by category
 export const TEMPLATE_CONFIGS: Record<TemplateCategory, TemplateConfig> = {
   default: DEFAULT_TEMPLATE,
   healthcare: HEALTHCARE_TEMPLATE,
-  hospitality: HOTEL_TEMPLATE, // Default hospitality to hotel
+  hospitality: HOTEL_TEMPLATE,
   personal_care: SALON_TEMPLATE,
-  professional: PROFESSIONAL_TEMPLATE,
   automotive: AUTOMOTIVE_TEMPLATE,
-  property: PROPERTY_TEMPLATE,
 };
 
 // Specific industry overrides (e.g., restaurant differs from hotel)
@@ -641,8 +491,6 @@ export const INDUSTRY_TEMPLATE_OVERRIDES: Partial<
   Record<string, TemplateConfig>
 > = {
   restaurant: RESTAURANT_TEMPLATE,
-  pizza: RESTAURANT_TEMPLATE,
-  catering: RESTAURANT_TEMPLATE,
 };
 
 // Get template config for an industry

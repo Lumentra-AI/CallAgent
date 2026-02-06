@@ -11,6 +11,11 @@ import {
   provisionNumber,
   configureNumberWebhooks,
 } from "../services/signalwire/phone.js";
+import {
+  createSipEndpoint,
+  configureSipRouting,
+  getSipEndpointStatus,
+} from "../services/signalwire/sip.js";
 
 export const phoneConfigRoutes = new Hono();
 
@@ -518,5 +523,163 @@ phoneConfigRoutes.post("/verify-forward", async (c) => {
   } catch (error) {
     console.error("[PHONE] Error verifying forward:", error);
     return c.json({ error: "Failed to verify forwarding" }, 500);
+  }
+});
+
+/**
+ * POST /api/phone/sip
+ * Create a SIP trunk endpoint
+ */
+phoneConfigRoutes.post("/sip", async (c) => {
+  const userId = getAuthUserId(c);
+
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
+
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const tenantId = membership.tenant_id;
+    const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
+    const webhookUrl = `${backendUrl}/signalwire/voice`;
+
+    // Create SIP endpoint on SignalWire
+    const { endpoint, error: sipError } = await createSipEndpoint(tenantId);
+
+    if (sipError || !endpoint) {
+      return c.json(
+        { error: sipError || "Failed to create SIP endpoint" },
+        500,
+      );
+    }
+
+    // Configure routing to point to our voice webhook
+    const { error: routingError } = await configureSipRouting(
+      endpoint.endpointId,
+      webhookUrl,
+    );
+
+    if (routingError) {
+      console.warn("[PHONE] SIP routing config failed:", routingError);
+      // Non-fatal: endpoint was created, routing can be retried
+    }
+
+    // Create phone configuration
+    const config = await upsert<PhoneConfigRow>(
+      "phone_configurations",
+      {
+        tenant_id: tenantId,
+        setup_type: "sip",
+        provider: "signalwire",
+        provider_sid: endpoint.endpointId,
+        sip_uri: endpoint.sipUri,
+        sip_username: endpoint.username,
+        status: "pending",
+      },
+      ["tenant_id"],
+    );
+
+    return c.json({
+      success: true,
+      sipUri: endpoint.sipUri,
+      username: endpoint.username,
+      password: endpoint.password,
+      configId: config.id,
+    });
+  } catch (error) {
+    console.error("[PHONE] Error creating SIP endpoint:", error);
+    return c.json({ error: "Failed to create SIP endpoint" }, 500);
+  }
+});
+
+/**
+ * GET /api/phone/sip/status
+ * Check SIP endpoint registration status
+ */
+phoneConfigRoutes.get("/sip/status", async (c) => {
+  const userId = getAuthUserId(c);
+
+  try {
+    // Get tenant
+    const membershipSql = `
+      SELECT tenant_id
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+      LIMIT 1
+    `;
+    const membership = await queryOne<{ tenant_id: string }>(membershipSql, [
+      userId,
+    ]);
+
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    // Get SIP config
+    const configSql = `
+      SELECT provider_sid, sip_uri, status
+      FROM phone_configurations
+      WHERE tenant_id = $1 AND setup_type = 'sip'
+      LIMIT 1
+    `;
+    const config = await queryOne<{
+      provider_sid: string;
+      sip_uri: string;
+      status: string;
+    }>(configSql, [membership.tenant_id]);
+
+    if (!config || !config.provider_sid) {
+      return c.json({ error: "No SIP configuration found" }, 404);
+    }
+
+    // Check registration status with SignalWire
+    const { registered, error: statusError } = await getSipEndpointStatus(
+      config.provider_sid,
+    );
+
+    if (statusError) {
+      return c.json({
+        registered: false,
+        sipUri: config.sip_uri,
+        status: config.status,
+        error: statusError,
+      });
+    }
+
+    // Update status if PBX has connected
+    if (registered && config.status === "pending") {
+      const updateSql = `
+        UPDATE phone_configurations
+        SET status = 'active', verified_at = $1
+        WHERE tenant_id = $2 AND setup_type = 'sip'
+      `;
+      await queryOne(updateSql, [
+        new Date().toISOString(),
+        membership.tenant_id,
+      ]);
+    }
+
+    return c.json({
+      registered,
+      sipUri: config.sip_uri,
+      status: registered ? "active" : config.status,
+    });
+  } catch (error) {
+    console.error("[PHONE] Error checking SIP status:", error);
+    return c.json({ error: "Failed to check SIP status" }, 500);
   }
 });

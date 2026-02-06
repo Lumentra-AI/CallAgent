@@ -234,9 +234,9 @@ export class TurnManager {
   private fillerTimer: NodeJS.Timeout | null = null;
   private fillerSpoken = false;
 
-  // Barge-in debounce - only interrupt TTS once per playback
+  // Barge-in debounce - only interrupt TTS once per response
   private bargeInHandled = false;
-  private ttsStartTime: number | null = null; // Track when TTS started playing
+  private ttsStartTime: number | null = null; // Track when first TTS chunk started for this response
 
   // Deferred barge-in - wait for transcript to check acknowledgement phrases
   private pendingBargeIn = false;
@@ -1010,8 +1010,8 @@ export class TurnManager {
               // Flush any remaining buffered text from tool result
               const remaining = sentenceBuffer.flush();
               if (remaining) {
-                // Final chunk should use continue: false to properly close prosody
-                this.speakChunk(remaining, false);
+                // Continue from previous chunks if any were spoken
+                this.speakChunk(remaining, !isFirstToolResultChunk);
               }
             }
           }
@@ -1052,11 +1052,12 @@ export class TurnManager {
           const remaining = sentenceBuffer.flush();
           if (remaining) {
             const ttfs = Date.now() - startTime;
-            // Final chunk should NEVER continue - this closes the prosody properly
+            // Continue from previous chunks if any were spoken; start fresh only if this is the sole chunk
+            const shouldContinue = !isFirstChunk;
             console.log(
-              `[TURN] Flushing final (${ttfs}ms): "${remaining.substring(0, 40)}..." (continue: false)`,
+              `[TURN] Flushing final (${ttfs}ms): "${remaining.substring(0, 40)}..." (continue: ${shouldContinue})`,
             );
-            this.speakChunk(remaining, false);
+            this.speakChunk(remaining, shouldContinue);
           }
 
           // Mark that LLM stream is complete - TTS can transition state once all chunks finish
@@ -1162,8 +1163,14 @@ export class TurnManager {
     }
 
     sessionManager.setPlaying(this.callSid, true);
-    this.bargeInHandled = false; // Reset barge-in flag for new TTS playback
-    this.ttsStartTime = Date.now(); // Track when TTS started for barge-in delay
+
+    // Only reset barge-in tracking on the FIRST chunk of a response.
+    // For multi-chunk responses, resetting per-chunk creates false-positive barge-in windows
+    // between chunks where background noise or echo can trigger interruption.
+    if (!isContinuation) {
+      this.bargeInHandled = false;
+      this.ttsStartTime = Date.now();
+    }
 
     // Track pending TTS chunks
     this.pendingTTSChunks++;

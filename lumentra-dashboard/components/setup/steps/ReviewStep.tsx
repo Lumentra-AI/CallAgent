@@ -148,6 +148,7 @@ export function ReviewStep() {
     try {
       const success = await completeSetup();
       if (success) {
+        document.cookie = "setup_completed=1; path=/; max-age=31536000";
         router.push("/dashboard?setup=complete");
       } else {
         setLaunchError("Failed to launch. Please try again.");
@@ -271,7 +272,9 @@ export function ReviewStep() {
                   ? "New number"
                   : state.phoneData.setupType === "port"
                     ? "Porting"
-                    : "Forwarding",
+                    : state.phoneData.setupType === "sip"
+                      ? "SIP Trunk"
+                      : "Forwarding",
             },
             { label: "Number", value: state.phoneData.number || "Pending" },
           ]}

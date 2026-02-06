@@ -11,15 +11,12 @@ import { Button } from "@/components/ui/button";
 import {
   Building2,
   Stethoscope,
-  Wrench,
   Check,
   Car,
   Briefcase,
   Scissors,
-  Home,
   ChevronDown,
   UtensilsCrossed,
-  Scale,
   Palette,
   Phone,
   Loader2,
@@ -39,47 +36,21 @@ const INDUSTRY_ICON_MAP: Record<string, React.ElementType> = {
   // Hospitality
   hotel: Building2,
   motel: Building2,
-  vacation_rental: Home,
   restaurant: UtensilsCrossed,
-  catering: UtensilsCrossed,
   // Healthcare
   medical: Stethoscope,
   dental: Stethoscope,
-  veterinary: Stethoscope,
-  mental_health: Stethoscope,
-  chiropractic: Stethoscope,
   // Automotive
-  auto_dealer: Car,
   auto_service: Car,
-  car_rental: Car,
-  towing: Car,
-  // Professional
-  legal: Scale,
-  accounting: Briefcase,
-  insurance: Briefcase,
-  consulting: Briefcase,
   // Personal Care
   salon: Scissors,
-  spa: Scissors,
-  barbershop: Scissors,
-  fitness: Scissors,
-  // Property
-  real_estate: Home,
-  property_management: Home,
-  home_services: Wrench,
-  hvac: Wrench,
-  plumbing: Wrench,
-  electrical: Wrench,
-  cleaning: Wrench,
 };
 
 const CATEGORY_ICONS: Record<IndustryCategory, React.ElementType> = {
   hospitality: Building2,
   healthcare: Stethoscope,
   automotive: Car,
-  professional: Briefcase,
   personal_care: Scissors,
-  property: Home,
 };
 
 const THEME_COLORS: { value: ThemeColor; label: string; class: string }[] = [

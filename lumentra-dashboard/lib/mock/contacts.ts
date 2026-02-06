@@ -212,12 +212,8 @@ export function getMockContacts(industry: string): MockContact[] {
     case "motel":
       return getHotelContacts();
     case "restaurant":
-    case "fine_dining":
-    case "pizza":
       return getRestaurantContacts();
     case "salon":
-    case "barbershop":
-    case "spa":
       return getSalonContacts();
     default:
       return MOCK_CONTACTS;

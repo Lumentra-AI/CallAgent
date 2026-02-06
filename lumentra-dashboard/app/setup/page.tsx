@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/AuthContext";
 import { useTenant } from "@/context/TenantContext";
 import { Loader2 } from "lucide-react";
 import { get } from "@/lib/api/client";
@@ -14,26 +13,20 @@ interface ProgressResponse {
 }
 
 export default function SetupPage() {
-  const { user, isLoading: authLoading } = useAuth();
   const { tenants, isLoading: tenantLoading, refreshTenants } = useTenant();
   const router = useRouter();
   const [loadingProgress, setLoadingProgress] = useState(false);
 
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.replace("/login");
-    }
-  }, [authLoading, user, router]);
-
   // Check for completed setup or redirect to current step
+  // Auth is handled by middleware - if we're here, user is authenticated
   useEffect(() => {
     async function checkProgress() {
-      if (!authLoading && !tenantLoading && user) {
+      if (!tenantLoading) {
         // If user has active tenants, go to dashboard
         if (tenants.length > 0) {
           const activeTenants = tenants.filter((t) => t.is_active);
           if (activeTenants.length > 0) {
+            document.cookie = "setup_completed=1; path=/; max-age=31536000";
             router.replace("/dashboard");
             return;
           }
@@ -45,11 +38,10 @@ export default function SetupPage() {
           const progress = await get<ProgressResponse>("/api/setup/progress");
 
           if (progress.completed) {
-            // Refresh tenants and redirect to dashboard
+            document.cookie = "setup_completed=1; path=/; max-age=31536000";
             await refreshTenants();
             router.replace("/dashboard");
           } else {
-            // Redirect to current step
             router.replace(`/setup/${progress.step}`);
           }
         } catch {
@@ -62,9 +54,9 @@ export default function SetupPage() {
     }
 
     checkProgress();
-  }, [authLoading, tenantLoading, user, tenants, router, refreshTenants]);
+  }, [tenantLoading, tenants, router, refreshTenants]);
 
-  if (authLoading || tenantLoading || loadingProgress) {
+  if (tenantLoading || loadingProgress) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -73,10 +65,6 @@ export default function SetupPage() {
         </p>
       </div>
     );
-  }
-
-  if (!user) {
-    return null; // Will redirect to login
   }
 
   return (

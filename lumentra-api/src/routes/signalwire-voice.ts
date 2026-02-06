@@ -6,7 +6,12 @@ import {
   generateStreamXml,
   generateTransferXml,
 } from "../services/signalwire/client.js";
-import { getTenantByPhoneWithFallback, getTenantByPhone, getTenantCacheStats } from "../services/database/tenant-cache.js";
+import {
+  getTenantByPhoneWithFallback,
+  getTenantByPhone,
+  getTenantCacheStats,
+  getTenantBySipUri,
+} from "../services/database/tenant-cache.js";
 
 const signalwireVoice = new Hono();
 
@@ -24,7 +29,9 @@ signalwireVoice.post("/voice", async (c) => {
 
     // Get call parameters from SignalWire
     const formData = await c.req.parseBody();
-    console.log(`[SIGNALWIRE] Form data keys: ${Object.keys(formData).join(", ")}`);
+    console.log(
+      `[SIGNALWIRE] Form data keys: ${Object.keys(formData).join(", ")}`,
+    );
     console.log(`[SIGNALWIRE] Form data: ${JSON.stringify(formData)}`);
 
     const callSid = formData.CallSid as string;
@@ -34,8 +41,13 @@ signalwireVoice.post("/voice", async (c) => {
     console.log(`[SIGNALWIRE] Incoming call: ${callSid}`);
     console.log(`[SIGNALWIRE] From: ${from}, To: ${to}`);
 
-    // Look up tenant by phone number
-    const tenant = await getTenantByPhoneWithFallback(to);
+    // Look up tenant by phone number, or by SIP URI for SIP-originated calls
+    let tenant = await getTenantByPhoneWithFallback(to);
+
+    if (!tenant && to.includes("@")) {
+      // SIP-originated call: 'to' may be a SIP URI like user@space.signalwire.com
+      tenant = await getTenantBySipUri(to);
+    }
 
     if (!tenant) {
       console.warn(`[SIGNALWIRE] No tenant found for: ${to}`);
@@ -169,8 +181,20 @@ signalwireVoice.get("/debug", async (c) => {
   return c.json({
     input: phone,
     cacheStats,
-    cachedResult: cachedTenant ? { id: cachedTenant.id, name: cachedTenant.business_name, phone: cachedTenant.phone_number } : null,
-    dbResult: dbTenant ? { id: dbTenant.id, name: dbTenant.business_name, phone: dbTenant.phone_number } : null,
+    cachedResult: cachedTenant
+      ? {
+          id: cachedTenant.id,
+          name: cachedTenant.business_name,
+          phone: cachedTenant.phone_number,
+        }
+      : null,
+    dbResult: dbTenant
+      ? {
+          id: dbTenant.id,
+          name: dbTenant.business_name,
+          phone: dbTenant.phone_number,
+        }
+      : null,
   });
 });
 

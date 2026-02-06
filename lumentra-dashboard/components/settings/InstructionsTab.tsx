@@ -106,7 +106,15 @@ const QUESTIONS: Question[] = [
       { value: "party_size", label: "Number of guests/party size" },
       { value: "special_requests", label: "Special requests" },
     ],
-    industries: ["hotel", "motel", "restaurant", "pizza", "medical", "dental"],
+    industries: [
+      "hotel",
+      "motel",
+      "restaurant",
+      "medical",
+      "dental",
+      "salon",
+      "auto_service",
+    ],
   },
   {
     id: "payment_policy",
@@ -141,10 +149,14 @@ function generateCustomInstructions(
   // Primary goal
   if (answers.primary_goal) {
     const goalMap: Record<string, string> = {
-      booking: "Focus primarily on helping callers schedule appointments and make reservations.",
-      support: "Focus primarily on answering customer questions and providing helpful information.",
-      sales: "Focus primarily on processing orders and assisting with purchases.",
-      hybrid: "Balance between scheduling, answering questions, and processing orders as needed.",
+      booking:
+        "Focus primarily on helping callers schedule appointments and make reservations.",
+      support:
+        "Focus primarily on answering customer questions and providing helpful information.",
+      sales:
+        "Focus primarily on processing orders and assisting with purchases.",
+      hybrid:
+        "Balance between scheduling, answering questions, and processing orders as needed.",
     };
     lines.push(goalMap[answers.primary_goal as string] || "");
   }
@@ -168,7 +180,10 @@ function generateCustomInstructions(
   }
 
   // Booking requirements
-  if (answers.booking_requirements && Array.isArray(answers.booking_requirements)) {
+  if (
+    answers.booking_requirements &&
+    Array.isArray(answers.booking_requirements)
+  ) {
     const reqLabels: Record<string, string> = {
       name: "full name",
       phone: "phone number",
@@ -181,7 +196,9 @@ function generateCustomInstructions(
       .map((r) => reqLabels[r])
       .filter(Boolean);
     if (reqs.length > 0) {
-      lines.push(`\n## Booking Requirements\nWhen booking, always collect: ${reqs.join(", ")}.`);
+      lines.push(
+        `\n## Booking Requirements\nWhen booking, always collect: ${reqs.join(", ")}.`,
+      );
     }
   }
 
@@ -190,10 +207,13 @@ function generateCustomInstructions(
     const paymentMap: Record<string, string> = {
       deposit: "Collect a deposit or card on file to hold reservations.",
       full: "Full payment is required at time of booking.",
-      varies: "Payment requirements vary by service - ask the caller for details.",
+      varies:
+        "Payment requirements vary by service - ask the caller for details.",
     };
     if (paymentMap[answers.payment_policy as string]) {
-      lines.push(`\n## Payment Policy\n${paymentMap[answers.payment_policy as string]}`);
+      lines.push(
+        `\n## Payment Policy\n${paymentMap[answers.payment_policy as string]}`,
+      );
     }
   }
 
@@ -214,8 +234,12 @@ export default function InstructionsTab() {
   const { currentTenant } = useTenant();
   const { updateSettings, error, clearError } = useTenantSettings();
 
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
-  const [activeSection, setActiveSection] = useState<"questionnaire" | "manual">("questionnaire");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
+  const [activeSection, setActiveSection] = useState<
+    "questionnaire" | "manual"
+  >("questionnaire");
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [customInstructions, setCustomInstructions] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -264,7 +288,10 @@ export default function InstructionsTab() {
 
   // Save to database
   const saveToDatabase = useCallback(
-    async (updates: { custom_instructions?: string | null; questionnaire_answers?: Record<string, unknown> | null }) => {
+    async (updates: {
+      custom_instructions?: string | null;
+      questionnaire_answers?: Record<string, unknown> | null;
+    }) => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }
@@ -324,7 +351,10 @@ export default function InstructionsTab() {
         config.businessName,
       );
       setCustomInstructions(generated);
-      saveToDatabase({ custom_instructions: generated, questionnaire_answers: answers });
+      saveToDatabase({
+        custom_instructions: generated,
+        questionnaire_answers: answers,
+      });
       setIsGenerating(false);
       setActiveSection("manual");
     }, 500);
@@ -349,7 +379,9 @@ export default function InstructionsTab() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-white">Custom Instructions</h3>
+          <h3 className="text-lg font-semibold text-white">
+            Custom Instructions
+          </h3>
           <p className="text-sm text-zinc-500">
             Configure how your AI agent behaves and what it knows
           </p>
@@ -411,8 +443,9 @@ export default function InstructionsTab() {
         <div className="space-y-6">
           <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-4">
             <p className="text-sm text-indigo-300">
-              Answer these questions to automatically generate custom instructions for your AI
-              agent. You can fine-tune the result in Manual Edit mode.
+              Answer these questions to automatically generate custom
+              instructions for your AI agent. You can fine-tune the result in
+              Manual Edit mode.
             </p>
           </div>
 
@@ -453,7 +486,9 @@ export default function InstructionsTab() {
                 {q.type === "multiselect" && q.options && (
                   <div className="flex flex-wrap gap-2">
                     {q.options.map((opt) => {
-                      const selected = ((answers[q.id] as string[]) || []).includes(opt.value);
+                      const selected = (
+                        (answers[q.id] as string[]) || []
+                      ).includes(opt.value);
                       return (
                         <button
                           key={opt.value}
@@ -465,7 +500,9 @@ export default function InstructionsTab() {
                               : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700 hover:text-white",
                           )}
                         >
-                          {selected && <Check className="mr-1 inline h-3 w-3" />}
+                          {selected && (
+                            <Check className="mr-1 inline h-3 w-3" />
+                          )}
                           {opt.label}
                         </button>
                       );
@@ -520,8 +557,8 @@ export default function InstructionsTab() {
         <div className="space-y-4">
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
             <p className="text-sm text-zinc-400">
-              These instructions are added to the AI agent&apos;s system prompt. Use markdown
-              formatting for better organization.
+              These instructions are added to the AI agent&apos;s system prompt.
+              Use markdown formatting for better organization.
             </p>
           </div>
 
@@ -567,7 +604,9 @@ A: Yes, we are pet-friendly with a $25/night fee."
 
           {/* Tips */}
           <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
-            <div className="text-sm font-medium text-amber-400">Tips for better instructions</div>
+            <div className="text-sm font-medium text-amber-400">
+              Tips for better instructions
+            </div>
             <ul className="mt-2 space-y-1 text-xs text-zinc-400">
               <li>Use ## headers to organize sections</li>
               <li>Be specific about prices, hours, and policies</li>

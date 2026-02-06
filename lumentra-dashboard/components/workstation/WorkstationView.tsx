@@ -73,9 +73,7 @@ export function WorkstationView({ className }: WorkstationViewProps) {
 
   if (
     templateCategory === "hospitality" &&
-    (industry === "hotel" ||
-      industry === "motel" ||
-      industry === "vacation_rental")
+    (industry === "hotel" || industry === "motel")
   ) {
     return <HotelWorkstation className={className} />;
   }

@@ -7,18 +7,21 @@ import {
   Plus,
   ArrowLeftRight,
   PhoneForwarded,
+  Server,
   Check,
   ArrowLeft,
   Search,
   Clock,
   ChevronDown,
+  CheckCircle,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
-import { get } from "@/lib/api/client";
+import { get, post } from "@/lib/api/client";
 import type { PhoneSetupType } from "@/types";
 
 // Aceternity & MagicUI components
@@ -106,6 +109,13 @@ const PHONE_OPTIONS: PhoneOption[] = [
     timeline: "Ready in minutes",
     icon: PhoneForwarded,
   },
+  {
+    type: "sip",
+    title: "SIP Trunk",
+    description: "Connect your existing phone system via SIP",
+    timeline: "Ready after PBX config",
+    icon: Server,
+  },
 ];
 
 export function PhoneStep() {
@@ -125,6 +135,17 @@ export function PhoneStep() {
   // Forward state
   const [forwardCarrier, setForwardCarrier] = useState("att");
   const [showInstructions, setShowInstructions] = useState(false);
+
+  // SIP state
+  const [creatingSip, setCreatingSip] = useState(false);
+  const [sipCredentials, setSipCredentials] = useState<{
+    sipUri: string;
+    username: string;
+    password: string;
+  } | null>(null);
+  const [sipStatus, setSipStatus] = useState<
+    "idle" | "creating" | "created" | "connected" | "error"
+  >("idle");
 
   const { setupType, number, areaCode, portRequest } = state.phoneData;
 
@@ -460,10 +481,126 @@ export function PhoneStep() {
     </div>
   );
 
+  const handleCreateSip = async () => {
+    setCreatingSip(true);
+    setSipStatus("creating");
+    try {
+      const data = await post<{
+        success: boolean;
+        sipUri: string;
+        username: string;
+        password: string;
+      }>("/api/phone/sip");
+
+      if (data.success) {
+        setSipCredentials({
+          sipUri: data.sipUri,
+          username: data.username,
+          password: data.password,
+        });
+        setSipStatus("created");
+      } else {
+        setSipStatus("error");
+      }
+    } catch {
+      setSipStatus("error");
+    } finally {
+      setCreatingSip(false);
+    }
+  };
+
+  const renderSipFlow = () => (
+    <div className="space-y-6">
+      {sipStatus === "idle" && (
+        <div className="space-y-4">
+          <div className="rounded-lg border bg-muted/30 p-4">
+            <p className="text-sm text-muted-foreground">
+              SIP trunking lets your existing phone system (PBX/VOIP) route
+              calls directly to your AI assistant. Ideal for multi-line
+              businesses like medical offices, hotels, and restaurants.
+            </p>
+          </div>
+          <Button onClick={handleCreateSip} disabled={creatingSip}>
+            {creatingSip ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating endpoint...
+              </>
+            ) : (
+              "Create SIP Endpoint"
+            )}
+          </Button>
+        </div>
+      )}
+
+      {sipStatus === "creating" && (
+        <div className="flex items-center gap-3 rounded-lg border p-4">
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <span className="text-sm">Provisioning SIP endpoint...</span>
+        </div>
+      )}
+
+      {sipStatus === "created" && sipCredentials && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 rounded-lg border border-green-500/50 bg-green-50 p-3 dark:bg-green-950/20">
+            <CheckCircle className="h-5 w-5 text-green-600" />
+            <span className="text-sm font-medium text-green-800 dark:text-green-200">
+              SIP endpoint created
+            </span>
+          </div>
+
+          <div className="space-y-3 rounded-lg border p-4">
+            <p className="text-sm font-medium">
+              Configure these in your PBX / VOIP system:
+            </p>
+            <div className="space-y-2">
+              <div>
+                <Label className="text-xs text-muted-foreground">SIP URI</Label>
+                <p className="font-mono text-sm">{sipCredentials.sipUri}</p>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">
+                  Username
+                </Label>
+                <p className="font-mono text-sm">{sipCredentials.username}</p>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">
+                  Password
+                </Label>
+                <p className="font-mono text-sm">{sipCredentials.password}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-amber-500/50 bg-amber-50 p-4 dark:bg-amber-950/20">
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              After configuring your PBX, route incoming calls to the SIP URI
+              above. Your AI assistant will answer calls routed through this
+              trunk.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {sipStatus === "error" && (
+        <div className="space-y-3">
+          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+            Failed to create SIP endpoint. Please try again.
+          </div>
+          <Button variant="outline" onClick={handleCreateSip}>
+            Retry
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+
   const optionColors: Record<PhoneSetupType, string> = {
     new: "bg-emerald-800",
     port: "bg-blue-800",
     forward: "bg-purple-800",
+    sip: "bg-slate-800",
   };
 
   return (
@@ -483,7 +620,7 @@ export function PhoneStep() {
       </div>
 
       {/* Setup type selection with wobble cards */}
-      <div className="relative z-10 grid gap-4 md:grid-cols-3">
+      <div className="relative z-10 grid gap-4 sm:grid-cols-2">
         {PHONE_OPTIONS.map((option) => {
           const isSelected = setupType === option.type;
           const Icon = option.icon;
@@ -536,6 +673,7 @@ export function PhoneStep() {
         {setupType === "new" && renderNewNumberFlow()}
         {setupType === "port" && renderPortNumberFlow()}
         {setupType === "forward" && renderForwardFlow()}
+        {setupType === "sip" && renderSipFlow()}
       </div>
 
       {/* Navigation buttons */}

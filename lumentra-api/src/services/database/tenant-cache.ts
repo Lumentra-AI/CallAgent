@@ -100,6 +100,54 @@ export function getTenantByVapiPhoneId(
 }
 
 /**
+ * Get tenant by SIP URI with DB fallback
+ * For SIP-originated calls where the 'to' field is a SIP URI
+ */
+export async function getTenantBySipUri(
+  sipUri: string,
+): Promise<Tenant | null> {
+  // Extract username from SIP URI (e.g., "user@space.signalwire.com" or "sip:user@space")
+  const cleaned = sipUri.replace(/^sip:/, "");
+
+  // Check cache first - iterate through cached tenants looking for SIP URI match
+  for (const [key, tenant] of tenantCache.entries()) {
+    if (key.startsWith("sip:") && key === `sip:${cleaned}`) {
+      return tenant;
+    }
+  }
+
+  // Fallback to DB query via phone_configurations
+  console.log("[CACHE] SIP cache miss, querying database for:", cleaned);
+
+  try {
+    const result = await queryOne<{ tenant_id: string }>(
+      `SELECT tenant_id FROM phone_configurations
+       WHERE sip_uri = $1 AND setup_type = 'sip' AND status = 'active'`,
+      [cleaned],
+    );
+
+    if (!result) {
+      return null;
+    }
+
+    const tenant = await queryOne<Tenant>(
+      `SELECT * FROM tenants WHERE id = $1 AND is_active = true`,
+      [result.tenant_id],
+    );
+
+    if (tenant) {
+      // Add to cache
+      tenantCache.set(`sip:${cleaned}`, tenant);
+      tenantCache.set(`id:${tenant.id}`, tenant);
+    }
+
+    return tenant;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get tenant by phone with DB fallback
  * Use this when cache might not have the tenant (new tenant, etc.)
  */

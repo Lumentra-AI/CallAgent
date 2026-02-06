@@ -51,7 +51,8 @@ const SUPPORTED_INDUSTRIES = new Set<IndustryType>([
   "hotel",
   "motel",
   "restaurant",
-  "pizza",
+  "salon",
+  "auto_service",
 ]);
 
 interface IndustryProviderProps {

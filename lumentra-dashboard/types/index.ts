@@ -141,47 +141,20 @@ export type IndustryType =
   // Hospitality
   | "hotel"
   | "motel"
-  | "vacation_rental"
   | "restaurant"
-  | "pizza"
-  | "catering"
   // Healthcare
   | "medical"
   | "dental"
-  | "veterinary"
-  | "mental_health"
-  | "chiropractic"
-  // Automotive
-  | "auto_dealer"
-  | "auto_service"
-  | "car_rental"
-  | "towing"
-  // Professional Services
-  | "legal"
-  | "accounting"
-  | "insurance"
-  | "consulting"
   // Personal Care
   | "salon"
-  | "spa"
-  | "barbershop"
-  | "fitness"
-  // Property
-  | "real_estate"
-  | "property_management"
-  | "home_services"
-  | "hvac"
-  | "plumbing"
-  | "electrical"
-  | "cleaning";
+  // Automotive
+  | "auto_service";
 
 export type IndustryCategory =
   | "hospitality"
   | "healthcare"
-  | "automotive"
-  | "professional"
   | "personal_care"
-  | "property";
+  | "automotive";
 
 export interface CapabilityQuestion {
   id: string;
@@ -661,7 +634,7 @@ export type SetupStep =
 
 export type TenantStatus = "draft" | "active" | "suspended";
 
-export type PhoneSetupType = "new" | "port" | "forward";
+export type PhoneSetupType = "new" | "port" | "forward" | "sip";
 
 export type PhoneStatus =
   | "pending"

@@ -110,19 +110,11 @@ const CAPABILITY_OPTIONS: CapabilityOption[] = [
 const INDUSTRY_CAPABILITIES: Record<string, string[]> = {
   dental: ["appointments", "patient_intake", "faq", "emergency_dispatch"],
   medical: ["appointments", "patient_intake", "faq", "emergency_dispatch"],
-  veterinary: ["appointments", "patient_intake", "faq", "emergency_dispatch"],
   restaurant: ["reservations", "faq", "promotions", "after_hours"],
-  pizza: ["call_handling", "faq", "promotions"],
   hotel: ["reservations", "faq", "after_hours"],
+  motel: ["reservations", "faq", "after_hours"],
   salon: ["appointments", "faq", "promotions"],
-  spa: ["appointments", "faq", "promotions"],
-  barbershop: ["appointments", "faq"],
-  legal: ["appointments", "message_taking", "faq"],
-  accounting: ["appointments", "message_taking", "faq"],
   auto_service: ["appointments", "faq", "promotions"],
-  auto_dealer: ["appointments", "faq", "message_taking"],
-  real_estate: ["appointments", "message_taking", "faq"],
-  fitness: ["appointments", "faq", "promotions"],
   default: ["call_handling", "message_taking", "faq"],
 };
 

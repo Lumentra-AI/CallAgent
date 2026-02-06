@@ -189,12 +189,8 @@ export function getMockSchedule(industry: string): MockBooking[] {
     case "motel":
       return getHotelSchedule();
     case "restaurant":
-    case "fine_dining":
-    case "pizza":
       return getRestaurantSchedule();
     case "salon":
-    case "barbershop":
-    case "spa":
       return getSalonSchedule();
     default:
       return MOCK_SCHEDULE;

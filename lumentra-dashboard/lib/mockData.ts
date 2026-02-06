@@ -102,42 +102,10 @@ export function generateIndustryMetrics(industry: IndustryType): MetricValue[] {
   const now = new Date().toISOString();
 
   // Group industries by category for metrics generation
-  const hospitalityIndustries = [
-    "hotel",
-    "motel",
-    "vacation_rental",
-    "restaurant",
-    "catering",
-  ];
-  const healthcareIndustries = [
-    "medical",
-    "dental",
-    "veterinary",
-    "mental_health",
-    "chiropractic",
-  ];
-  const automotiveIndustries = [
-    "auto_dealer",
-    "auto_service",
-    "car_rental",
-    "towing",
-  ];
-  const professionalIndustries = [
-    "legal",
-    "accounting",
-    "insurance",
-    "consulting",
-  ];
-  const personalCareIndustries = ["salon", "spa", "barbershop", "fitness"];
-  const propertyIndustries = [
-    "real_estate",
-    "property_management",
-    "home_services",
-    "hvac",
-    "plumbing",
-    "electrical",
-    "cleaning",
-  ];
+  const hospitalityIndustries = ["hotel", "motel", "restaurant"];
+  const healthcareIndustries = ["medical", "dental"];
+  const automotiveIndustries = ["auto_service"];
+  const personalCareIndustries = ["salon"];
 
   if (hospitalityIndustries.includes(industry)) {
     return [
@@ -228,35 +196,6 @@ export function generateIndustryMetrics(industry: IndustryType): MetricValue[] {
     ];
   }
 
-  if (professionalIndustries.includes(industry)) {
-    return [
-      {
-        id: "consultations",
-        value: Math.floor(6 + Math.random() * 6),
-        status: "nominal",
-        timestamp: now,
-      },
-      {
-        id: "newMatters",
-        value: Math.floor(2 + Math.random() * 4),
-        status: "nominal",
-        timestamp: now,
-      },
-      {
-        id: "activeMatters",
-        value: Math.floor(25 + Math.random() * 15),
-        status: "nominal",
-        timestamp: now,
-      },
-      {
-        id: "billableHours",
-        value: Math.floor(6 + Math.random() * 3),
-        status: "nominal",
-        timestamp: now,
-      },
-    ];
-  }
-
   if (personalCareIndustries.includes(industry)) {
     return [
       {
@@ -280,35 +219,6 @@ export function generateIndustryMetrics(industry: IndustryType): MetricValue[] {
       {
         id: "retention",
         value: 75 + Math.random() * 15,
-        status: "nominal",
-        timestamp: now,
-      },
-    ];
-  }
-
-  if (propertyIndustries.includes(industry)) {
-    return [
-      {
-        id: "jobs",
-        value: Math.floor(10 + Math.random() * 8),
-        status: "nominal",
-        timestamp: now,
-      },
-      {
-        id: "quotes",
-        value: Math.floor(6 + Math.random() * 6),
-        status: "nominal",
-        timestamp: now,
-      },
-      {
-        id: "conversion",
-        value: 55 + Math.random() * 20,
-        status: "nominal",
-        timestamp: now,
-      },
-      {
-        id: "avgTicket",
-        value: 250 + Math.random() * 150,
         status: "nominal",
         timestamp: now,
       },
