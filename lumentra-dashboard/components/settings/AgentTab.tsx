@@ -1,11 +1,7 @@
 "use client";
 
-import React, { useCallback, useRef, useEffect, useState } from "react";
-import { useConfig } from "@/context/ConfigContext";
-import {
-  useTenantSettings,
-  type TenantSettings,
-} from "@/hooks/useTenantSettings";
+import React, { useEffect } from "react";
+import { useTenantConfig } from "@/hooks/useTenantConfig";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -68,17 +64,32 @@ const EMPATHY_OPTIONS = [
 ] as const;
 
 // ============================================================================
+// TYPES & DEFAULTS
+// ============================================================================
+
+interface AgentPersonality {
+  tone: "professional" | "friendly" | "casual" | "formal";
+  verbosity: "concise" | "balanced" | "detailed";
+  empathy: "low" | "medium" | "high";
+  humor: boolean;
+}
+
+const DEFAULT_PERSONALITY: AgentPersonality = {
+  tone: "professional",
+  verbosity: "balanced",
+  empathy: "medium",
+  humor: false,
+};
+
+const DEFAULT_AGENT_NAME = "Lumentra";
+
+// ============================================================================
 // AGENT TAB COMPONENT
 // ============================================================================
 
 export default function AgentTab() {
-  const { config, updateConfig } = useConfig();
-  const { updateSettings, isSaving, error, clearError } = useTenantSettings();
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
-    "idle",
-  );
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const { tenant, saveStatus, error, clearError, updateSettings } =
+    useTenantConfig();
 
   // Clear error after 5 seconds
   useEffect(() => {
@@ -88,73 +99,21 @@ export default function AgentTab() {
     }
   }, [error, clearError]);
 
-  // Debounced save to database
-  const saveToDatabase = useCallback(
-    async (updates: Partial<TenantSettings>) => {
-      // Clear any existing debounce timer
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
+  if (!tenant) return null;
 
-      // Debounce: wait 500ms before saving
-      debounceRef.current = setTimeout(async () => {
-        setSaveStatus("saving");
-        try {
-          await updateSettings(updates);
-          setSaveStatus("saved");
+  const agentName = tenant.agent_name ?? DEFAULT_AGENT_NAME;
+  const agentPersonality = {
+    ...DEFAULT_PERSONALITY,
+    ...tenant.agent_personality,
+  };
 
-          // Reset to idle after 2 seconds
-          if (saveTimeoutRef.current) {
-            clearTimeout(saveTimeoutRef.current);
-          }
-          saveTimeoutRef.current = setTimeout(() => {
-            setSaveStatus("idle");
-          }, 2000);
-        } catch {
-          setSaveStatus("idle");
-        }
-      }, 500);
-    },
-    [updateSettings],
-  );
-
-  // Cleanup timeouts on unmount
-  useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, []);
-
-  if (!config) return null;
-
-  const { agentName, agentPersonality } = config;
-
-  const updatePersonality = (updates: Partial<typeof agentPersonality>) => {
+  const updatePersonality = (updates: Partial<AgentPersonality>) => {
     const newPersonality = { ...agentPersonality, ...updates };
-    updateConfig("agentPersonality", newPersonality);
-    // Also save to database - cast to correct types for API
-    saveToDatabase({
-      agent_personality: {
-        tone: newPersonality.tone as
-          | "professional"
-          | "friendly"
-          | "casual"
-          | "formal",
-        verbosity: newPersonality.verbosity as
-          | "concise"
-          | "balanced"
-          | "detailed",
-        empathy: newPersonality.empathy as "low" | "medium" | "high",
-        humor: newPersonality.humor,
-      },
-    });
+    updateSettings({ agent_personality: newPersonality });
   };
 
   const updateAgentName = (name: string) => {
-    updateConfig("agentName", name);
-    // Also save to database
-    saveToDatabase({ agent_name: name });
+    updateSettings({ agent_name: name });
   };
 
   return (

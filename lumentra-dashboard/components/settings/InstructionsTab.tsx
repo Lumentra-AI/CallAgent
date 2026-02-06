@@ -1,9 +1,7 @@
 "use client";
 
-import React, { useCallback, useRef, useEffect, useState } from "react";
-import { useConfig } from "@/context/ConfigContext";
-import { useTenant } from "@/context/TenantContext";
-import { useTenantSettings } from "@/hooks/useTenantSettings";
+import React, { useCallback, useState } from "react";
+import { useTenantConfig } from "@/hooks/useTenantConfig";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -141,8 +139,8 @@ const QUESTIONS: Question[] = [
 
 function generateCustomInstructions(
   answers: Record<string, string | string[]>,
-  industry: string,
-  businessName: string,
+  _industry: string,
+  _businessName: string,
 ): string {
   const lines: string[] = [];
 
@@ -230,13 +228,9 @@ function generateCustomInstructions(
 // ============================================================================
 
 export default function InstructionsTab() {
-  const { config } = useConfig();
-  const { currentTenant } = useTenant();
-  const { updateSettings, error, clearError } = useTenantSettings();
+  const { tenant, isLoading, saveStatus, error, updateSettings } =
+    useTenantConfig();
 
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
-    "idle",
-  );
   const [activeSection, setActiveSection] = useState<
     "questionnaire" | "manual"
   >("questionnaire");
@@ -244,86 +238,28 @@ export default function InstructionsTab() {
   const [customInstructions, setCustomInstructions] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Load existing data from tenant - only run once when tenant data is available
-  const tenantIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (currentTenant && currentTenant.id !== tenantIdRef.current) {
-      tenantIdRef.current = currentTenant.id;
-      // Access additional properties that may exist on the tenant object
-      const tenantData = currentTenant as unknown as {
-        custom_instructions?: string;
-        questionnaire_answers?: Record<string, string | string[]>;
-      };
-      const instructions = tenantData.custom_instructions;
-      const questionnaire = tenantData.questionnaire_answers;
-
-      if (instructions && instructions !== customInstructions) {
-        setCustomInstructions(instructions);
-      }
-      if (questionnaire) {
-        setAnswers(questionnaire);
-      }
+  // Sync from tenant on tenant change (render-time, React recommended pattern)
+  const [prevTenantId, setPrevTenantId] = useState<string | null>(null);
+  if (tenant && tenant.id !== prevTenantId) {
+    setPrevTenantId(tenant.id);
+    if (tenant.custom_instructions) {
+      setCustomInstructions(tenant.custom_instructions);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTenant]);
-
-  // Clear error after 5 seconds
-  useEffect(() => {
-    if (error) {
-      const timeout = setTimeout(clearError, 5000);
-      return () => clearTimeout(timeout);
+    if (tenant.questionnaire_answers) {
+      setAnswers(
+        tenant.questionnaire_answers as Record<string, string | string[]>,
+      );
     }
-  }, [error, clearError]);
-
-  // Cleanup timeouts
-  useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, []);
-
-  // Save to database
-  const saveToDatabase = useCallback(
-    async (updates: {
-      custom_instructions?: string | null;
-      questionnaire_answers?: Record<string, unknown> | null;
-    }) => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-
-      debounceRef.current = setTimeout(async () => {
-        setSaveStatus("saving");
-        try {
-          await updateSettings(updates);
-          setSaveStatus("saved");
-
-          if (saveTimeoutRef.current) {
-            clearTimeout(saveTimeoutRef.current);
-          }
-          saveTimeoutRef.current = setTimeout(() => {
-            setSaveStatus("idle");
-          }, 2000);
-        } catch {
-          setSaveStatus("idle");
-        }
-      }, 500);
-    },
-    [updateSettings],
-  );
+  }
 
   // Update answer
   const updateAnswer = useCallback(
     (questionId: string, value: string | string[]) => {
       const newAnswers = { ...answers, [questionId]: value };
       setAnswers(newAnswers);
-      saveToDatabase({ questionnaire_answers: newAnswers });
+      updateSettings({ questionnaire_answers: newAnswers });
     },
-    [answers, saveToDatabase],
+    [answers, updateSettings],
   );
 
   // Toggle multiselect option
@@ -340,34 +276,34 @@ export default function InstructionsTab() {
 
   // Generate instructions from questionnaire
   const handleGenerate = useCallback(() => {
-    if (!config) return;
+    if (!tenant) return;
 
     setIsGenerating(true);
     // Simulate a brief delay for better UX
     setTimeout(() => {
       const generated = generateCustomInstructions(
         answers,
-        config.industry,
-        config.businessName,
+        tenant.industry,
+        tenant.business_name,
       );
       setCustomInstructions(generated);
-      saveToDatabase({
+      updateSettings({
         custom_instructions: generated,
         questionnaire_answers: answers,
       });
       setIsGenerating(false);
       setActiveSection("manual");
     }, 500);
-  }, [answers, config, saveToDatabase]);
+  }, [answers, tenant, updateSettings]);
 
-  // Save manual instructions
+  // Save manual instructions on blur
   const handleSaveInstructions = useCallback(() => {
-    saveToDatabase({ custom_instructions: customInstructions || null });
-  }, [customInstructions, saveToDatabase]);
+    updateSettings({ custom_instructions: customInstructions || undefined });
+  }, [customInstructions, updateSettings]);
 
-  if (!config) return null;
+  if (isLoading || !tenant) return null;
 
-  const industry = config.industry;
+  const industry = tenant.industry;
 
   // Filter questions by industry
   const filteredQuestions = QUESTIONS.filter(

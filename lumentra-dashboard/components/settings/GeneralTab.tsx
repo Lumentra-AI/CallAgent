@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useConfig } from "@/context/ConfigContext";
 import { useTenant } from "@/context/TenantContext";
+import { useTenantConfig } from "@/hooks/useTenantConfig";
 import { put } from "@/lib/api/client";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,23 +65,34 @@ const THEME_COLORS: { value: ThemeColor; label: string; class: string }[] = [
 ];
 
 // ============================================================================
+// DEFAULT FEATURES
+// ============================================================================
+
+const DEFAULT_FEATURES = {
+  sms_confirmations: false,
+  email_notifications: false,
+  live_transfer: false,
+  voicemail_fallback: false,
+  sentiment_analysis: false,
+  recording_enabled: false,
+  transcription_enabled: false,
+};
+
+// ============================================================================
 // GENERAL TAB COMPONENT
 // ============================================================================
 
 export default function GeneralTab() {
-  const {
-    config,
-    updateConfig,
-    switchIndustry,
-    industryPresets,
-    hasPermission,
-  } = useConfig();
-  const { currentTenant, refreshTenants } = useTenant();
+  const { config, updateConfig, industryPresets, hasPermission } = useConfig();
+  const { refreshCurrentTenant } = useTenant();
+  const { tenant, saveStatus, error, clearError, updateSettings } =
+    useTenantConfig();
+
   const [showAllIndustries, setShowAllIndustries] = useState(false);
   const [selectedCategory, setSelectedCategory] =
     useState<IndustryCategory | null>(null);
 
-  // Phone number state
+  // Phone number local state (separate save logic)
   const [phoneNumber, setPhoneNumber] = useState("");
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [phoneSaving, setPhoneSaving] = useState(false);
@@ -88,24 +100,24 @@ export default function GeneralTab() {
 
   // Initialize phone number from tenant
   useEffect(() => {
-    if (currentTenant?.phone_number) {
-      setPhoneNumber(currentTenant.phone_number);
+    if (tenant?.phone_number) {
+      setPhoneNumber(tenant.phone_number);
     }
-  }, [currentTenant?.phone_number]);
+  }, [tenant?.phone_number]);
 
   const handlePhoneSave = async () => {
-    if (!currentTenant) return;
+    if (!tenant) return;
 
     setPhoneSaving(true);
     setPhoneError(null);
     setPhoneSuccess(false);
 
     try {
-      await put(`/api/tenants/${currentTenant.id}/phone`, {
+      await put(`/api/tenants/${tenant.id}/phone`, {
         phone_number: phoneNumber,
       });
       setPhoneSuccess(true);
-      await refreshTenants();
+      await refreshCurrentTenant();
       setTimeout(() => setPhoneSuccess(false), 3000);
     } catch (err) {
       setPhoneError(
@@ -116,28 +128,63 @@ export default function GeneralTab() {
     }
   };
 
-  const isPhoneChanged = phoneNumber !== (currentTenant?.phone_number || "");
-  const isOwner = currentTenant?.role === "owner";
+  if (!tenant) return null;
 
-  if (!config) return null;
-
+  const isPhoneChanged = phoneNumber !== (tenant.phone_number || "");
+  const isOwner = tenant.role === "owner";
   const canSwitchIndustry = hasPermission("switch_industry");
   const popularIndustries = getPopularIndustries();
+  const industry = (tenant.industry || "hotel") as IndustryType;
+  const features = tenant.features || DEFAULT_FEATURES;
 
   const getIndustryIcon = (industryId: string) => {
     return INDUSTRY_ICON_MAP[industryId] || Building2;
   };
 
+  const handleIndustrySwitch = (newIndustry: IndustryType) => {
+    updateSettings({ industry: newIndustry });
+  };
+
+  const handleFeatureToggle = (
+    key: keyof typeof DEFAULT_FEATURES,
+    value: boolean,
+  ) => {
+    updateSettings({ features: { ...features, [key]: value } });
+  };
+
   return (
     <div className="max-w-2xl space-y-8">
       {/* Header */}
-      <div>
-        <h3 className="text-lg font-semibold text-foreground">
-          General Settings
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          Configure your business identity and agent personality
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-foreground">
+            General Settings
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Configure your business identity and agent personality
+          </p>
+        </div>
+        {/* Save Status Indicator */}
+        {saveStatus === "saving" && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Saving...
+          </div>
+        )}
+        {saveStatus === "saved" && (
+          <div className="flex items-center gap-2 text-sm text-green-600">
+            <Check className="h-4 w-4" />
+            Saved
+          </div>
+        )}
+        {error && (
+          <button
+            onClick={clearError}
+            className="text-sm text-destructive hover:underline"
+          >
+            {error}
+          </button>
+        )}
       </div>
 
       {/* Business Identity */}
@@ -153,8 +200,10 @@ export default function GeneralTab() {
           <div className="space-y-2">
             <Label className="text-muted-foreground">Business Name</Label>
             <Input
-              value={config.businessName}
-              onChange={(e) => updateConfig("businessName", e.target.value)}
+              value={tenant.business_name || ""}
+              onChange={(e) =>
+                updateSettings({ business_name: e.target.value })
+              }
               placeholder="Your business name"
             />
           </div>
@@ -162,8 +211,8 @@ export default function GeneralTab() {
           <div className="space-y-2">
             <Label className="text-muted-foreground">Agent Name</Label>
             <Input
-              value={config.agentName}
-              onChange={(e) => updateConfig("agentName", e.target.value)}
+              value={tenant.agent_name || ""}
+              onChange={(e) => updateSettings({ agent_name: e.target.value })}
               placeholder="e.g., Jessica"
             />
             <p className="text-xs text-muted-foreground">
@@ -248,18 +297,15 @@ export default function GeneralTab() {
         {/* Current Industry Display */}
         <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
           <div className="flex items-center gap-3">
-            {React.createElement(getIndustryIcon(config.industry), {
+            {React.createElement(getIndustryIcon(industry), {
               className: "h-6 w-6 text-primary",
             })}
             <div className="flex-1">
               <div className="font-medium text-foreground">
-                {industryPresets[config.industry]?.label || config.industry}
+                {industryPresets[industry]?.label || industry}
               </div>
               <div className="text-sm text-muted-foreground">
-                {
-                  industryPresets[config.industry]?.terminology
-                    .transactionPlural
-                }
+                {industryPresets[industry]?.terminology.transactionPlural}
               </div>
             </div>
             <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
@@ -276,12 +322,14 @@ export default function GeneralTab() {
                 <div className="grid gap-3 sm:grid-cols-3">
                   {popularIndustries.slice(0, 6).map((preset) => {
                     const Icon = getIndustryIcon(preset.id);
-                    const isSelected = config.industry === preset.id;
+                    const isSelected = industry === preset.id;
 
                     return (
                       <button
                         key={preset.id}
-                        onClick={() => switchIndustry(preset.id)}
+                        onClick={() =>
+                          handleIndustrySwitch(preset.id as IndustryType)
+                        }
                         className={cn(
                           "relative rounded-xl border p-4 text-left transition-all",
                           isSelected
@@ -368,12 +416,14 @@ export default function GeneralTab() {
                     )
                     .map((preset) => {
                       const Icon = getIndustryIcon(preset.id);
-                      const isSelected = config.industry === preset.id;
+                      const isSelected = industry === preset.id;
 
                       return (
                         <button
                           key={preset.id}
-                          onClick={() => switchIndustry(preset.id)}
+                          onClick={() =>
+                            handleIndustrySwitch(preset.id as IndustryType)
+                          }
                           className={cn(
                             "flex items-center gap-2 rounded-xl border p-3 text-left transition-all",
                             isSelected
@@ -423,7 +473,7 @@ export default function GeneralTab() {
               className={cn(
                 "h-10 w-10 rounded-full transition-all",
                 color.class,
-                config.themeColor === color.value
+                config?.themeColor === color.value
                   ? "ring-2 ring-foreground ring-offset-2 ring-offset-background"
                   : "opacity-60 hover:opacity-80",
               )}
@@ -446,43 +496,26 @@ export default function GeneralTab() {
           <FeatureToggle
             label="SMS Confirmations"
             description="Send booking confirmations via SMS"
-            checked={config.features.smsConfirmations}
-            onChange={(v) =>
-              updateConfig("features", {
-                ...config.features,
-                smsConfirmations: v,
-              })
-            }
+            checked={features.sms_confirmations}
+            onChange={(v) => handleFeatureToggle("sms_confirmations", v)}
           />
           <FeatureToggle
             label="Email Notifications"
             description="Send email alerts for bookings"
-            checked={config.features.emailNotifications}
-            onChange={(v) =>
-              updateConfig("features", {
-                ...config.features,
-                emailNotifications: v,
-              })
-            }
+            checked={features.email_notifications}
+            onChange={(v) => handleFeatureToggle("email_notifications", v)}
           />
           <FeatureToggle
             label="Live Transfer"
             description="Allow transfer to human agents"
-            checked={config.features.liveTransfer}
-            onChange={(v) =>
-              updateConfig("features", { ...config.features, liveTransfer: v })
-            }
+            checked={features.live_transfer}
+            onChange={(v) => handleFeatureToggle("live_transfer", v)}
           />
           <FeatureToggle
             label="Call Recording"
             description="Record calls for quality assurance"
-            checked={config.features.recordingEnabled}
-            onChange={(v) =>
-              updateConfig("features", {
-                ...config.features,
-                recordingEnabled: v,
-              })
-            }
+            checked={features.recording_enabled}
+            onChange={(v) => handleFeatureToggle("recording_enabled", v)}
           />
         </div>
       </section>

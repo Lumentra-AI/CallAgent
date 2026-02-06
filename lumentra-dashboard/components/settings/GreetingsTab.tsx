@@ -1,14 +1,11 @@
 "use client";
 
-import React, { useCallback, useRef, useEffect, useState } from "react";
-import { useConfig } from "@/context/ConfigContext";
-import { useTenantSettings } from "@/hooks/useTenantSettings";
+import { useTenantConfig } from "@/hooks/useTenantConfig";
 import { Label } from "@/components/ui/label";
+import type { LucideIcon } from "lucide-react";
 import {
   MessageSquare,
   Moon,
-  Gift,
-  Clock,
   UserCheck,
   Loader2,
   Check,
@@ -21,10 +18,10 @@ import { cn } from "@/lib/utils";
 // ============================================================================
 
 interface GreetingField {
-  id: keyof NonNullable<ReturnType<typeof useConfig>["config"]>["greetings"];
+  id: "standard" | "afterHours" | "returning";
   label: string;
   description: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   placeholder: string;
 }
 
@@ -46,22 +43,6 @@ const GREETING_FIELDS: GreetingField[] = [
       "Thank you for calling {businessName}. We are currently closed...",
   },
   {
-    id: "holiday",
-    label: "Holiday Greeting",
-    description: "Special greeting for holidays",
-    icon: Gift,
-    placeholder:
-      "Happy holidays from {businessName}! We are currently closed...",
-  },
-  {
-    id: "busy",
-    label: "High Volume",
-    description: "When experiencing high call volume",
-    icon: Clock,
-    placeholder:
-      "Thank you for your patience. I'm {agentName} with {businessName}...",
-  },
-  {
     id: "returning",
     label: "Returning Caller",
     description: "Personalized greeting for recognized callers",
@@ -70,86 +51,39 @@ const GREETING_FIELDS: GreetingField[] = [
   },
 ];
 
+// Map frontend field IDs to database column names
+const DB_FIELD_MAP = {
+  standard: "greeting_standard",
+  afterHours: "greeting_after_hours",
+  returning: "greeting_returning",
+} as const;
+
 // ============================================================================
 // GREETINGS TAB COMPONENT
 // ============================================================================
 
-// Map frontend greeting field names to database field names
-const GREETING_DB_MAP: Record<string, string> = {
-  standard: "greeting_standard",
-  afterHours: "greeting_after_hours",
-  returning: "greeting_returning",
-};
-
 export default function GreetingsTab() {
-  const { config, updateConfig } = useConfig();
-  const { updateSettings, error, clearError } = useTenantSettings();
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
-    "idle",
-  );
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const { tenant, saveStatus, error, clearError, updateSettings } =
+    useTenantConfig();
 
-  // Clear error after 5 seconds
-  useEffect(() => {
-    if (error) {
-      const timeout = setTimeout(clearError, 5000);
-      return () => clearTimeout(timeout);
-    }
-  }, [error, clearError]);
+  if (!tenant) return null;
 
-  // Debounced save to database
-  const saveToDatabase = useCallback(
-    async (dbUpdates: Record<string, string | null>) => {
-      // Clear any existing debounce timer
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
+  // Read greeting values from tenant, keyed by frontend field ID
+  const greetingValues: Record<GreetingField["id"], string> = {
+    standard: tenant.greeting_standard ?? "",
+    afterHours: tenant.greeting_after_hours ?? "",
+    returning: tenant.greeting_returning ?? "",
+  };
 
-      // Debounce: wait 500ms before saving
-      debounceRef.current = setTimeout(async () => {
-        setSaveStatus("saving");
-        try {
-          await updateSettings(dbUpdates);
-          setSaveStatus("saved");
-
-          // Reset to idle after 2 seconds
-          if (saveTimeoutRef.current) {
-            clearTimeout(saveTimeoutRef.current);
-          }
-          saveTimeoutRef.current = setTimeout(() => {
-            setSaveStatus("idle");
-          }, 2000);
-        } catch {
-          setSaveStatus("idle");
-        }
-      }, 500);
-    },
-    [updateSettings],
-  );
-
-  // Cleanup timeouts on unmount
-  useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, []);
-
-  if (!config) return null;
-
-  const { greetings } = config;
-
-  const updateGreeting = (field: keyof typeof greetings, value: string) => {
-    // Update local state
-    updateConfig("greetings", { ...greetings, [field]: value });
-
-    // Save to database if this field maps to a DB field
-    const dbField = GREETING_DB_MAP[field];
+  const updateGreeting = (field: GreetingField["id"], value: string) => {
+    const dbField = DB_FIELD_MAP[field];
     if (dbField) {
-      saveToDatabase({ [dbField]: value || null });
+      updateSettings({ [dbField]: value || null });
     }
   };
+
+  const businessName = tenant.business_name || "Your Business";
+  const agentName = tenant.agent_name || "Lumentra";
 
   return (
     <div className="max-w-2xl space-y-8">
@@ -165,10 +99,13 @@ export default function GreetingsTab() {
         {/* Save Status Indicator */}
         <div className="flex items-center gap-2">
           {error && (
-            <div className="flex items-center gap-1.5 rounded-full bg-red-500/10 px-3 py-1 text-xs text-red-400">
+            <button
+              onClick={clearError}
+              className="flex items-center gap-1.5 rounded-full bg-red-500/10 px-3 py-1 text-xs text-red-400"
+            >
               <AlertCircle className="h-3 w-3" />
               <span>Failed to save</span>
-            </div>
+            </button>
           )}
           {!error && saveStatus === "saving" && (
             <div className="flex items-center gap-1.5 rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-400">
@@ -210,7 +147,7 @@ export default function GreetingsTab() {
       <div className="space-y-6">
         {GREETING_FIELDS.map((field) => {
           const Icon = field.icon;
-          const value = greetings[field.id] || "";
+          const value = greetingValues[field.id];
 
           return (
             <section key={field.id} className="space-y-3">
@@ -261,16 +198,11 @@ export default function GreetingsTab() {
               <MessageSquare className="h-4 w-4 text-indigo-400" />
             </div>
             <div>
-              <div className="mb-1 text-xs text-zinc-500">
-                {config.agentName || "Lumentra"}
-              </div>
+              <div className="mb-1 text-xs text-zinc-500">{agentName}</div>
               <p className="text-sm text-white">
-                {(greetings.standard || GREETING_FIELDS[0].placeholder)
-                  .replace(
-                    "{businessName}",
-                    config.businessName || "Your Business",
-                  )
-                  .replace("{agentName}", config.agentName || "Lumentra")}
+                {(greetingValues.standard || GREETING_FIELDS[0].placeholder)
+                  .replace("{businessName}", businessName)
+                  .replace("{agentName}", agentName)}
               </p>
             </div>
           </div>

@@ -7,6 +7,9 @@ import { put } from "@/lib/api/client";
 /**
  * Database tenant settings structure
  * These are the fields that can be updated via PUT /api/tenants/:id
+ *
+ * @deprecated Prefer `useTenantConfig` for new code. This hook is kept
+ * for backward compatibility with standalone pages that still use it.
  */
 export interface TenantSettings {
   // Basic info
@@ -72,6 +75,9 @@ export interface TenantSettings {
 
   // Questionnaire answers (for generating custom instructions)
   questionnaire_answers?: Record<string, unknown> | null;
+
+  // Custom response templates
+  responses?: Record<string, string> | null;
 }
 
 interface UseTenantSettingsReturn {
@@ -88,23 +94,15 @@ interface UseTenantSettingsReturn {
 }
 
 /**
- * Hook for updating tenant settings with API persistence
+ * Hook for updating tenant settings with API persistence.
+ * After saving, refreshes only the current tenant's details (not the full list).
  *
- * Usage:
- * ```tsx
- * const { updateSettings, isSaving, error } = useTenantSettings();
- *
- * // Update agent name
- * await updateSettings({ agent_name: "New Name" });
- *
- * // Update voice config
- * await updateSettings({
- *   voice_config: { provider: "cartesia", voice_id: "xxx", ... }
- * });
- * ```
+ * @deprecated For settings tabs, prefer `useTenantConfig` which provides
+ * both read and write with optimistic updates. This hook is kept for
+ * standalone pages that need direct API access.
  */
 export function useTenantSettings(): UseTenantSettingsReturn {
-  const { currentTenant, refreshTenants } = useTenant();
+  const { currentTenant, refreshCurrentTenant } = useTenant();
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -121,8 +119,8 @@ export function useTenantSettings(): UseTenantSettingsReturn {
       try {
         await put(`/api/tenants/${currentTenant.id}`, updates);
 
-        // Refresh tenant data to get updated values
-        await refreshTenants();
+        // Refresh only the current tenant's full details
+        await refreshCurrentTenant();
 
         console.log("[useTenantSettings] Settings saved successfully");
       } catch (err) {
@@ -135,7 +133,7 @@ export function useTenantSettings(): UseTenantSettingsReturn {
         setIsSaving(false);
       }
     },
-    [currentTenant?.id, refreshTenants],
+    [currentTenant?.id, refreshCurrentTenant],
   );
 
   const clearError = useCallback(() => {
@@ -149,51 +147,4 @@ export function useTenantSettings(): UseTenantSettingsReturn {
     clearError,
     tenantId: currentTenant?.id ?? null,
   };
-}
-
-/**
- * Helper to convert frontend config format to database format
- */
-export function mapConfigToTenantSettings(config: {
-  agentName?: string;
-  agentPersonality?: {
-    tone: string;
-    verbosity: string;
-    empathy: string;
-    humor: boolean;
-  };
-  agentVoice?: {
-    provider: string;
-    voiceId: string;
-    voiceName: string;
-    speakingRate: number;
-    pitch: number;
-  };
-}): Partial<TenantSettings> {
-  const settings: Partial<TenantSettings> = {};
-
-  if (config.agentName !== undefined) {
-    settings.agent_name = config.agentName;
-  }
-
-  if (config.agentPersonality) {
-    settings.agent_personality = {
-      tone: config.agentPersonality.tone as TenantSettings["agent_personality"] extends { tone: infer T } ? T : never,
-      verbosity: config.agentPersonality.verbosity as TenantSettings["agent_personality"] extends { verbosity: infer V } ? V : never,
-      empathy: config.agentPersonality.empathy as TenantSettings["agent_personality"] extends { empathy: infer E } ? E : never,
-      humor: config.agentPersonality.humor,
-    };
-  }
-
-  if (config.agentVoice) {
-    settings.voice_config = {
-      provider: config.agentVoice.provider as TenantSettings["voice_config"] extends { provider: infer P } ? P : never,
-      voice_id: config.agentVoice.voiceId,
-      voice_name: config.agentVoice.voiceName,
-      speaking_rate: config.agentVoice.speakingRate,
-      pitch: config.agentVoice.pitch,
-    };
-  }
-
-  return settings;
 }

@@ -1,9 +1,8 @@
 "use client";
 
 import React from "react";
-import { useConfig } from "@/context/ConfigContext";
-import { Label } from "@/components/ui/label";
-import { Moon, Sun, Clock } from "lucide-react";
+import { useTenantConfig } from "@/hooks/useTenantConfig";
+import { Moon, Sun, Clock, Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ============================================================================
@@ -27,44 +26,76 @@ const TIMEZONES = [
   { value: "America/Los_Angeles", label: "Pacific Time (PT)" },
 ];
 
+const DEFAULT_SCHEDULE = DAYS.map((d) => ({
+  day: d.value,
+  enabled: d.value >= 1 && d.value <= 5,
+  open_time: "09:00",
+  close_time: "17:00",
+}));
+
+const DEFAULT_TIMEZONE = "America/New_York";
+
 // ============================================================================
 // HOURS TAB COMPONENT
 // ============================================================================
 
 export default function HoursTab() {
-  const { config, updateConfig } = useConfig();
+  const { tenant, saveStatus, error, clearError, updateSettings } =
+    useTenantConfig();
 
-  if (!config) return null;
+  if (!tenant) return null;
 
-  const { operatingHours, lateNightMode } = config;
+  const timezone = tenant.timezone || DEFAULT_TIMEZONE;
+  const schedule = tenant.operating_hours?.schedule || DEFAULT_SCHEDULE;
+  const holidays = tenant.operating_hours?.holidays || [];
 
-  const updateHours = (updates: Partial<typeof operatingHours>) => {
-    updateConfig("operatingHours", { ...operatingHours, ...updates });
+  const updateTimezone = (newTimezone: string) => {
+    updateSettings({ timezone: newTimezone });
   };
 
   const updateDaySchedule = (
     day: number,
-    updates: Partial<(typeof operatingHours.schedule)[0]>,
+    updates: Partial<(typeof schedule)[0]>,
   ) => {
-    updateHours({
-      schedule: operatingHours.schedule.map((s) =>
-        s.day === day ? { ...s, ...updates } : s,
-      ),
+    const newSchedule = schedule.map((s) =>
+      s.day === day ? { ...s, ...updates } : s,
+    );
+    updateSettings({
+      operating_hours: { schedule: newSchedule, holidays },
     });
-  };
-
-  const updateLateNight = (updates: Partial<typeof lateNightMode>) => {
-    updateConfig("lateNightMode", { ...lateNightMode, ...updates });
   };
 
   return (
     <div className="max-w-2xl space-y-8">
       {/* Header */}
-      <div>
-        <h3 className="text-lg font-semibold text-white">Operating Hours</h3>
-        <p className="text-sm text-zinc-500">
-          Configure when your AI agent handles calls vs. forwards to voicemail
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-white">Operating Hours</h3>
+          <p className="text-sm text-zinc-500">
+            Configure when your AI agent handles calls vs. forwards to voicemail
+          </p>
+        </div>
+        {/* Save Status Indicator */}
+        {saveStatus === "saving" && (
+          <div className="flex items-center gap-2 text-sm text-zinc-400">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Saving...
+          </div>
+        )}
+        {saveStatus === "saved" && (
+          <div className="flex items-center gap-2 text-sm text-green-600">
+            <Check className="h-4 w-4" />
+            Saved
+          </div>
+        )}
+        {error && (
+          <button
+            onClick={clearError}
+            className="text-sm text-red-500 hover:underline"
+          >
+            {error}
+          </button>
+        )}
       </div>
 
       {/* Timezone */}
@@ -74,8 +105,8 @@ export default function HoursTab() {
         </div>
 
         <select
-          value={operatingHours.timezone}
-          onChange={(e) => updateHours({ timezone: e.target.value })}
+          value={timezone}
+          onChange={(e) => updateTimezone(e.target.value)}
           className="h-10 w-full max-w-xs rounded-md border border-zinc-800 bg-zinc-950 px-3 text-sm text-white focus:border-indigo-500 focus:outline-none"
         >
           {TIMEZONES.map((tz) => (
@@ -96,7 +127,7 @@ export default function HoursTab() {
         </div>
 
         <div className="space-y-2">
-          {operatingHours.schedule.map((daySchedule) => {
+          {schedule.map((daySchedule) => {
             const day = DAYS.find((d) => d.value === daySchedule.day);
             if (!day) return null;
 
@@ -134,10 +165,10 @@ export default function HoursTab() {
                       <Sun className="h-4 w-4 text-amber-500" />
                       <input
                         type="time"
-                        value={daySchedule.openTime}
+                        value={daySchedule.open_time}
                         onChange={(e) =>
                           updateDaySchedule(daySchedule.day, {
-                            openTime: e.target.value,
+                            open_time: e.target.value,
                           })
                         }
                         className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 font-mono text-xs text-white focus:border-indigo-500 focus:outline-none"
@@ -150,10 +181,10 @@ export default function HoursTab() {
                       <Moon className="h-4 w-4 text-indigo-400" />
                       <input
                         type="time"
-                        value={daySchedule.closeTime}
+                        value={daySchedule.close_time}
                         onChange={(e) =>
                           updateDaySchedule(daySchedule.day, {
-                            closeTime: e.target.value,
+                            close_time: e.target.value,
                           })
                         }
                         className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 font-mono text-xs text-white focus:border-indigo-500 focus:outline-none"
@@ -167,109 +198,6 @@ export default function HoursTab() {
             );
           })}
         </div>
-      </section>
-
-      {/* Late Night Mode */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
-          <div>
-            <h4 className="text-sm font-medium text-white">Late Night Mode</h4>
-            <p className="text-xs text-zinc-600">
-              Special handling for after-hours calls
-            </p>
-          </div>
-          <button
-            onClick={() => updateLateNight({ enabled: !lateNightMode.enabled })}
-            className={cn(
-              "relative h-6 w-11 rounded-full transition-colors",
-              lateNightMode.enabled ? "bg-indigo-600" : "bg-zinc-700",
-            )}
-          >
-            <div
-              className={cn(
-                "absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform",
-                lateNightMode.enabled && "translate-x-5",
-              )}
-            />
-          </button>
-        </div>
-
-        {lateNightMode.enabled && (
-          <div className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-            {/* Time Range */}
-            <div className="flex items-center gap-4">
-              <div className="space-y-1">
-                <Label className="text-xs text-zinc-500">Start Time</Label>
-                <input
-                  type="time"
-                  value={lateNightMode.startTime}
-                  onChange={(e) =>
-                    updateLateNight({ startTime: e.target.value })
-                  }
-                  className="rounded border border-zinc-700 bg-zinc-800 px-3 py-2 font-mono text-sm text-white focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-
-              <span className="text-zinc-600">to</span>
-
-              <div className="space-y-1">
-                <Label className="text-xs text-zinc-500">End Time</Label>
-                <input
-                  type="time"
-                  value={lateNightMode.endTime}
-                  onChange={(e) => updateLateNight({ endTime: e.target.value })}
-                  className="rounded border border-zinc-700 bg-zinc-800 px-3 py-2 font-mono text-sm text-white focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Behavior */}
-            <div className="space-y-2">
-              <Label className="text-xs text-zinc-500">Behavior</Label>
-              <div className="grid gap-2 sm:grid-cols-3">
-                {[
-                  {
-                    value: "full_service",
-                    label: "Full Service",
-                    desc: "Handle all calls",
-                  },
-                  {
-                    value: "limited",
-                    label: "Limited",
-                    desc: "Basic inquiries only",
-                  },
-                  {
-                    value: "message_only",
-                    label: "Message Only",
-                    desc: "Take messages",
-                  },
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() =>
-                      updateLateNight({
-                        behavior: option.value as typeof lateNightMode.behavior,
-                      })
-                    }
-                    className={cn(
-                      "rounded-md border p-3 text-left transition-all",
-                      lateNightMode.behavior === option.value
-                        ? "border-indigo-500 bg-indigo-500/10"
-                        : "border-zinc-700 bg-zinc-800 hover:border-zinc-600",
-                    )}
-                  >
-                    <div className="text-xs font-medium text-white">
-                      {option.label}
-                    </div>
-                    <div className="text-[10px] text-zinc-500">
-                      {option.desc}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
       </section>
 
       {/* Note */}

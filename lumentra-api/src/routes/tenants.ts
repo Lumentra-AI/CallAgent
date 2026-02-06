@@ -32,6 +32,9 @@ interface TenantRow {
   escalation_triggers?: string[];
   features?: object;
   subscription_tier?: string;
+  custom_instructions?: string;
+  questionnaire_answers?: object;
+  responses?: object;
 }
 
 /** Row type for membership data */

@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { useConfig } from "@/context/ConfigContext";
+import React, { useEffect } from "react";
+import { useTenantConfig } from "@/hooks/useTenantConfig";
 import { Label } from "@/components/ui/label";
 import {
   XCircle,
@@ -11,6 +11,8 @@ import {
   LogOut,
   Pause,
   HelpCircle,
+  Loader2,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +21,7 @@ import { cn } from "@/lib/utils";
 // ============================================================================
 
 interface ResponseField {
-  id: keyof NonNullable<ReturnType<typeof useConfig>["config"]>["responses"];
+  id: string;
   label: string;
   description: string;
   icon: React.ElementType;
@@ -91,24 +93,57 @@ const RESPONSE_FIELDS: ResponseField[] = [
 // ============================================================================
 
 export default function ResponsesTab() {
-  const { config, updateConfig } = useConfig();
+  const { tenant, saveStatus, error, clearError, updateSettings } =
+    useTenantConfig();
 
-  if (!config) return null;
+  // Clear error after 5 seconds
+  useEffect(() => {
+    if (error) {
+      const timeout = setTimeout(clearError, 5000);
+      return () => clearTimeout(timeout);
+    }
+  }, [error, clearError]);
 
-  const { responses } = config;
+  if (!tenant) return null;
 
-  const updateResponse = (field: keyof typeof responses, value: string) => {
-    updateConfig("responses", { ...responses, [field]: value });
+  const responses: Record<string, string> = tenant.responses || {};
+
+  const updateResponse = (field: string, value: string) => {
+    updateSettings({ responses: { ...responses, [field]: value } });
   };
 
   return (
     <div className="max-w-2xl space-y-8">
-      {/* Header */}
-      <div>
-        <h3 className="text-lg font-semibold text-white">Custom Responses</h3>
-        <p className="text-sm text-zinc-500">
-          Customize how your AI agent responds in specific situations
-        </p>
+      {/* Header with Save Status */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-white">Custom Responses</h3>
+          <p className="text-sm text-zinc-500">
+            Customize how your AI agent responds in specific situations
+          </p>
+        </div>
+
+        {/* Save Status Indicator */}
+        <div className="flex items-center gap-2">
+          {error && (
+            <div className="flex items-center gap-1.5 rounded-full bg-red-500/10 px-3 py-1 text-xs text-red-400">
+              <AlertCircle className="h-3 w-3" />
+              <span>Failed to save</span>
+            </div>
+          )}
+          {!error && saveStatus === "saving" && (
+            <div className="flex items-center gap-1.5 rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-400">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Saving...</span>
+            </div>
+          )}
+          {!error && saveStatus === "saved" && (
+            <div className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400">
+              <Check className="h-3 w-3" />
+              <span>Saved</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Variables Reference */}
@@ -117,13 +152,19 @@ export default function ResponsesTab() {
           Available Variables
         </div>
         <div className="flex flex-wrap gap-2">
-          {["{businessName}", "{agentName}", "{callerName}"].map((variable) => (
-            <code
-              key={variable}
-              className="rounded bg-zinc-800 px-2 py-1 font-mono text-xs text-indigo-400"
-            >
-              {variable}
-            </code>
+          {[
+            { token: "{businessName}", preview: tenant.business_name },
+            { token: "{agentName}", preview: tenant.agent_name },
+            { token: "{callerName}", preview: null },
+          ].map(({ token, preview }) => (
+            <span key={token} className="inline-flex items-center gap-1.5">
+              <code className="rounded bg-zinc-800 px-2 py-1 font-mono text-xs text-indigo-400">
+                {token}
+              </code>
+              {preview && (
+                <span className="text-[10px] text-zinc-600">{preview}</span>
+              )}
+            </span>
           ))}
         </div>
       </div>
