@@ -58,6 +58,18 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Redirect authenticated users who haven't completed setup to /setup
+  // (except if they're already on /setup)
+  const isSetupRoute = request.nextUrl.pathname.startsWith("/setup");
+  if (isProtectedRoute && user && !isSetupRoute) {
+    const setupComplete = request.cookies.get("setup_completed");
+    if (!setupComplete) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/setup";
+      return NextResponse.redirect(url);
+    }
+  }
+
   // Redirect logged in users away from auth pages
   const isAuthRoute =
     request.nextUrl.pathname === "/login" ||

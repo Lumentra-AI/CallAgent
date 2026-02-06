@@ -62,9 +62,9 @@ export default function SuccessPage() {
             </div>
           ) : (
             <div className="mt-8 space-y-4">
-              <Link href="/dashboard">
+              <Link href="/setup">
                 <Button className="w-full h-12">
-                  Go to Dashboard
+                  Set Up Your Agent
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </Link>
