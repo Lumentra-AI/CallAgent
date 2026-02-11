@@ -21,6 +21,7 @@ import {
   LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/context/ToastContext";
 import type { QuickAction } from "@/lib/templates/types";
 
 // Icon mapping
@@ -74,12 +75,29 @@ export function QuickActions({
   className,
 }: QuickActionsProps) {
   const router = useRouter();
+  const { toast } = useToast();
+
+  // Friendly labels for non-path actions
+  const ACTION_LABELS: Record<string, string> = {
+    "check-in": "Check-in initiated",
+    "check-out": "Check-out initiated",
+    call: "Preparing call",
+    seat: "Seating party",
+    waitlist: "Added to waitlist",
+    notify: "Notification sent",
+    reschedule: "Opening reschedule",
+  };
 
   const handleAction = (action: QuickAction) => {
     if (onAction) {
       onAction(action);
     } else if (action.action.startsWith("/")) {
       router.push(action.action);
+    } else {
+      // Non-path actions: show toast feedback
+      const message =
+        ACTION_LABELS[action.action] || `${action.label} triggered`;
+      toast.success(action.label, message);
     }
   };
 

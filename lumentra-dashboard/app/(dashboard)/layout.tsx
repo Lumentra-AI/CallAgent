@@ -99,7 +99,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             role="main"
             aria-label="Dashboard content"
             tabIndex={-1}
-            className="flex-1 overflow-hidden outline-none pb-16 md:pb-0"
+            className="flex-1 overflow-hidden outline-none pb-16 md:pb-14"
           >
             {children}
           </main>

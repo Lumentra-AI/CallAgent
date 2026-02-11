@@ -115,14 +115,14 @@ const HOTEL_ACTIONS = [
     id: "check-in",
     label: "Check In Guest",
     icon: "LogIn",
-    action: "/contacts?action=check-in",
+    action: "check-in",
     variant: "primary" as const,
   },
   {
     id: "check-out",
     label: "Check Out",
     icon: "LogOut",
-    action: "/contacts?action=check-out",
+    action: "check-out",
   },
   {
     id: "new-reservation",
