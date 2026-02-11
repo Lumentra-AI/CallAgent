@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useIndustry } from "@/context/IndustryContext";
 import {
@@ -114,14 +115,14 @@ const HOTEL_ACTIONS = [
     id: "check-in",
     label: "Check In Guest",
     icon: "LogIn",
-    action: "check-in",
+    action: "/contacts?action=check-in",
     variant: "primary" as const,
   },
   {
     id: "check-out",
     label: "Check Out",
     icon: "LogOut",
-    action: "check-out",
+    action: "/contacts?action=check-out",
   },
   {
     id: "new-reservation",
@@ -154,8 +155,12 @@ function isVIPAlert(item: ContextItem): item is VIPAlert {
 
 export function HotelWorkstation({ className }: HotelWorkstationProps) {
   const { tenant } = useIndustry();
+  const router = useRouter();
   const [contextPanelOpen, setContextPanelOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ContextItem | null>(null);
+  const [dismissedAlertIds, setDismissedAlertIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   // Handle arrival/departure click
   const handleScheduleItemClick = useCallback((item: ScheduleItem) => {
@@ -190,14 +195,32 @@ export function HotelWorkstation({ className }: HotelWorkstationProps) {
 
   // Handle dismiss VIP alert
   const handleDismissAlert = useCallback((alert: VIPAlert) => {
-    console.log("Dismiss alert:", alert);
+    setDismissedAlertIds((prev) => new Set([...prev, alert.id]));
   }, []);
+
+  // Handle view all alerts
+  const handleViewAllAlerts = useCallback(() => {
+    router.push("/notifications");
+  }, [router]);
 
   // Close context panel
   const closeContextPanel = useCallback(() => {
     setContextPanelOpen(false);
     setSelectedItem(null);
   }, []);
+
+  // Handle edit from context panel
+  const handleEditItem = useCallback(() => {
+    if (!selectedItem) return;
+    if (isScheduleItem(selectedItem)) {
+      router.push("/contacts");
+    } else if (isHotelRoom(selectedItem)) {
+      router.push("/resources");
+    } else if (isVIPAlert(selectedItem)) {
+      router.push("/notifications");
+    }
+    closeContextPanel();
+  }, [selectedItem, router, closeContextPanel]);
 
   // Get context panel title
   const getContextPanelTitle = () => {
@@ -234,7 +257,7 @@ export function HotelWorkstation({ className }: HotelWorkstationProps) {
           id: "edit",
           label: "Edit",
           icon: Edit,
-          onClick: () => console.log("Edit", selectedItem),
+          onClick: handleEditItem,
         },
       ]
     : [];
@@ -313,6 +336,7 @@ export function HotelWorkstation({ className }: HotelWorkstationProps) {
             title="VIP Alerts"
             onAlertClick={handleAlertClick}
             onDismiss={handleDismissAlert}
+            onViewAll={handleViewAllAlerts}
             maxAlerts={4}
           />
 
@@ -409,7 +433,7 @@ export function HotelWorkstation({ className }: HotelWorkstationProps) {
               title="Stay History"
               action={{
                 label: "View all",
-                onClick: () => console.log("View history"),
+                onClick: () => router.push("/calls"),
               }}
             >
               <p className="text-sm text-muted-foreground">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useIndustry } from "@/context/IndustryContext";
 import { getTemplateConfig, getTemplateCategory } from "@/lib/templates";
@@ -31,6 +32,7 @@ function isScheduleItem(item: ContextItem): item is ScheduleItem {
 
 export function WorkstationView({ className }: WorkstationViewProps) {
   const { industry, tenant } = useIndustry();
+  const router = useRouter();
   const [contextPanelOpen, setContextPanelOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ContextItem | null>(null);
 
@@ -214,7 +216,10 @@ export function WorkstationView({ className }: WorkstationViewProps) {
           id: "edit",
           label: "Edit",
           icon: Edit,
-          onClick: () => console.log("Edit", selectedItem),
+          onClick: () => {
+            router.push("/contacts");
+            closeContextPanel();
+          },
         },
       ]
     : [];
@@ -320,7 +325,7 @@ export function WorkstationView({ className }: WorkstationViewProps) {
               title="History"
               action={{
                 label: "View all",
-                onClick: () => console.log("View history"),
+                onClick: () => router.push("/calls"),
               }}
             >
               <p className="text-sm text-muted-foreground">

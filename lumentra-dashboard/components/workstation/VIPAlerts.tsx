@@ -45,6 +45,7 @@ interface VIPAlertsProps {
   title?: string;
   onAlertClick?: (alert: VIPAlert) => void;
   onDismiss?: (alert: VIPAlert) => void;
+  onViewAll?: () => void;
   className?: string;
   maxAlerts?: number;
 }
@@ -168,6 +169,7 @@ export function VIPAlerts({
   title = "VIP Alerts",
   onAlertClick,
   onDismiss,
+  onViewAll,
   className,
   maxAlerts = 5,
 }: VIPAlertsProps) {
@@ -319,7 +321,10 @@ export function VIPAlerts({
           </AnimatePresence>
 
           {alerts.length > maxAlerts && (
-            <button className="w-full text-center text-xs text-muted-foreground hover:text-foreground py-2">
+            <button
+              onClick={onViewAll}
+              className="w-full text-center text-xs text-muted-foreground hover:text-foreground py-2"
+            >
               View all {alerts.length} alerts
             </button>
           )}
