@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEscalation } from "@/context/EscalationContext";
+import { useConfig } from "@/context/ConfigContext";
 import { EscalationCard } from "./EscalationCard";
 import type { MockEscalation } from "@/lib/mock/escalations";
 
@@ -38,6 +39,9 @@ export function EscalationDock({ className }: EscalationDockProps) {
     takeCall,
     openPanel,
   } = useEscalation();
+
+  const { uiState } = useConfig();
+  const sidebarWidth = uiState.sidebarCollapsed ? 64 : 224;
 
   const drawerRef = useRef<HTMLDivElement>(null);
 
@@ -86,11 +90,12 @@ export function EscalationDock({ className }: EscalationDockProps) {
     <div
       ref={drawerRef}
       className={cn(
-        "fixed bottom-0 left-0 right-0 z-40 pointer-events-none",
+        "fixed bottom-0 right-0 z-40 pointer-events-none transition-all duration-200",
         className,
       )}
+      style={{ left: `${sidebarWidth}px` }}
     >
-      <div className="pointer-events-auto mx-auto max-w-7xl px-4 pb-4">
+      <div className="pointer-events-auto mx-auto max-w-5xl px-4 pb-4">
         {/* Expanded Drawer */}
         <AnimatePresence>
           {isDockExpanded && (
