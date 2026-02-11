@@ -1,101 +1,221 @@
 "use client";
 
-import * as React from "react";
-import { LucideIcon } from "lucide-react";
+import {
+  Phone,
+  Users,
+  Calendar,
+  Zap,
+  Bell,
+  Briefcase,
+  Search,
+  type LucideIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useIndustry } from "@/context/IndustryContext";
 import { cn } from "@/lib/utils";
 
-// ============================================================================
-// TYPES
-// ============================================================================
-
-export interface EmptyStateProps {
+interface EmptyStateProps {
   icon: LucideIcon;
   title: string;
   description?: string;
   action?: {
     label: string;
-    onClick: () => void;
-    icon?: LucideIcon;
+    onClick?: () => void;
+    href?: string;
+  };
+  secondaryAction?: {
+    label: string;
+    onClick?: () => void;
+    href?: string;
   };
   className?: string;
+  variant?: "default" | "compact" | "card";
 }
-
-// ============================================================================
-// COMPONENT
-// ============================================================================
 
 export function EmptyState({
   icon: Icon,
   title,
   description,
   action,
+  secondaryAction,
   className,
+  variant = "default",
 }: EmptyStateProps) {
+  const handleClick = (item: { onClick?: () => void; href?: string }) => {
+    if (item.onClick) {
+      item.onClick();
+    } else if (item.href) {
+      window.location.href = item.href;
+    }
+  };
+
+  if (variant === "compact") {
+    return (
+      <div
+        className={cn(
+          "flex flex-col items-center justify-center py-8 text-center",
+          className,
+        )}
+      >
+        <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center mb-3">
+          <Icon className="h-5 w-5 text-muted-foreground" />
+        </div>
+        <h3 className="text-sm font-medium text-foreground">{title}</h3>
+        {description && (
+          <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+            {description}
+          </p>
+        )}
+        {action && (
+          <Button
+            size="sm"
+            className="mt-3"
+            onClick={() => handleClick(action)}
+          >
+            {action.label}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (variant === "card") {
+    return (
+      <div
+        className={cn(
+          "rounded-xl border border-dashed border-border bg-card/50 p-8",
+          className,
+        )}
+      >
+        <div className="flex flex-col items-center text-center">
+          <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
+            <Icon className="h-6 w-6 text-primary" />
+          </div>
+          <h3 className="text-base font-semibold text-foreground">{title}</h3>
+          {description && (
+            <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+              {description}
+            </p>
+          )}
+          <div className="flex gap-3 mt-4">
+            {action && (
+              <Button onClick={() => handleClick(action)}>
+                {action.label}
+              </Button>
+            )}
+            {secondaryAction && (
+              <Button
+                variant="outline"
+                onClick={() => handleClick(secondaryAction)}
+              >
+                {secondaryAction.label}
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center py-16 text-center",
+        "flex flex-col items-center justify-center py-12 text-center",
         className,
       )}
     >
-      <div className="mb-4 rounded-full bg-zinc-900 p-4">
-        <Icon className="h-8 w-8 text-zinc-500" />
+      <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-4">
+        <Icon className="h-8 w-8 text-primary" />
       </div>
-      <h3 className="mb-2 text-lg font-medium text-zinc-200">{title}</h3>
+      <h3 className="text-lg font-semibold text-foreground">{title}</h3>
       {description && (
-        <p className="mb-6 max-w-sm text-sm text-zinc-500">{description}</p>
+        <p className="text-sm text-muted-foreground mt-2 max-w-md">
+          {description}
+        </p>
       )}
-      {action && (
-        <Button onClick={action.onClick}>
-          {action.icon && <action.icon className="mr-2 h-4 w-4" />}
-          {action.label}
-        </Button>
-      )}
+      <div className="flex gap-3 mt-6">
+        {action && (
+          <Button onClick={() => handleClick(action)}>{action.label}</Button>
+        )}
+        {secondaryAction && (
+          <Button
+            variant="outline"
+            onClick={() => handleClick(secondaryAction)}
+          >
+            {secondaryAction.label}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
 
-// ============================================================================
-// PRESET EMPTY STATES
-// ============================================================================
-
-import { Users, Calendar, Bell, Package, Search, Filter } from "lucide-react";
-
-export function EmptyContacts({ onAdd }: { onAdd?: () => void }) {
+// Pre-built empty states for common scenarios
+export function EmptyCallsState({ searchQuery }: { searchQuery?: string }) {
   return (
     <EmptyState
-      icon={Users}
-      title="No contacts yet"
-      description="Start building your contact list by adding your first contact."
+      icon={Phone}
+      title={searchQuery ? "No calls found" : "No calls yet"}
+      description={
+        searchQuery
+          ? "Try adjusting your search terms or filters"
+          : "Your AI agent is ready to handle calls. Share your number to get started."
+      }
       action={
-        onAdd
-          ? {
-              label: "Add Contact",
-              onClick: onAdd,
-              icon: Users,
+        searchQuery
+          ? undefined
+          : {
+              label: "View Phone Settings",
+              href: "/settings/phone",
             }
-          : undefined
       }
     />
   );
 }
 
-export function EmptyBookings({ onAdd }: { onAdd?: () => void }) {
+export function EmptyContactsState({ onAdd }: { onAdd?: () => void } = {}) {
+  const { customerPluralLabel } = useIndustry();
+  return (
+    <EmptyState
+      icon={Users}
+      title={`No ${customerPluralLabel.toLowerCase()} yet`}
+      description={`${customerPluralLabel} will appear here when callers reach out to your AI agent.`}
+      action={onAdd ? { label: "Add Contact", onClick: onAdd } : undefined}
+      variant="card"
+    />
+  );
+}
+
+export function EmptyBookingsState() {
+  const { transactionPluralLabel } = useIndustry();
   return (
     <EmptyState
       icon={Calendar}
-      title="No bookings scheduled"
-      description="Create your first booking to get started."
-      action={
-        onAdd
-          ? {
-              label: "Create Booking",
-              onClick: onAdd,
-              icon: Calendar,
-            }
-          : undefined
-      }
+      title={`No ${transactionPluralLabel.toLowerCase()} yet`}
+      description={`${transactionPluralLabel} made through your AI agent will appear here.`}
+      action={{
+        label: "View Calendar",
+        href: "/calendar",
+      }}
+      variant="card"
+    />
+  );
+}
+
+export function EmptyDashboardState() {
+  return (
+    <EmptyState
+      icon={Zap}
+      title="Welcome to Lumentra"
+      description="Your AI voice agent dashboard is ready. Complete your setup to start receiving calls."
+      action={{
+        label: "Complete Setup",
+        href: "/setup",
+      }}
+      secondaryAction={{
+        label: "View Settings",
+        href: "/settings",
+      }}
     />
   );
 }
@@ -104,8 +224,9 @@ export function EmptyNotifications() {
   return (
     <EmptyState
       icon={Bell}
-      title="No notifications"
-      description="Your notification queue is empty. Notifications will appear here when sent."
+      title="No notifications yet"
+      description="Notifications will appear here as your AI agent handles calls."
+      variant="card"
     />
   );
 }
@@ -113,18 +234,11 @@ export function EmptyNotifications() {
 export function EmptyResources({ onAdd }: { onAdd?: () => void }) {
   return (
     <EmptyState
-      icon={Package}
-      title="No resources"
-      description="Add staff members, rooms, or equipment to manage your resources."
-      action={
-        onAdd
-          ? {
-              label: "Add Resource",
-              onClick: onAdd,
-              icon: Package,
-            }
-          : undefined
-      }
+      icon={Briefcase}
+      title="No resources yet"
+      description="Add resources like rooms, services, or staff to help your AI agent provide accurate information."
+      action={onAdd ? { label: "Add Resource", onClick: onAdd } : undefined}
+      variant="card"
     />
   );
 }
@@ -134,25 +248,12 @@ export function EmptySearchResults() {
     <EmptyState
       icon={Search}
       title="No results found"
-      description="Try adjusting your search terms or filters to find what you're looking for."
+      description="Try adjusting your search terms or filters."
+      variant="compact"
     />
   );
 }
 
-export function EmptyFilterResults({ onClear }: { onClear?: () => void }) {
-  return (
-    <EmptyState
-      icon={Filter}
-      title="No matching results"
-      description="No items match your current filters."
-      action={
-        onClear
-          ? {
-              label: "Clear Filters",
-              onClick: onClear,
-            }
-          : undefined
-      }
-    />
-  );
-}
+// Aliases for consumers using shorter names
+export { EmptyContactsState as EmptyContacts };
+export { EmptyBookingsState as EmptyBookings };

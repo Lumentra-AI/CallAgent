@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createBooking, updateBooking, lookupByPhone } from "@/lib/api";
+import { useIndustry } from "@/context/IndustryContext";
 import type { Booking, Contact } from "@/types/crm";
 
 // ============================================================================
@@ -77,6 +78,7 @@ export function BookingForm({
   initialTime,
   onSuccess,
 }: BookingFormProps) {
+  const { transactionLabel } = useIndustry();
   const isEditing = !!booking;
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isLookingUp, setIsLookingUp] = React.useState(false);
@@ -234,12 +236,14 @@ export function BookingForm({
         <form onSubmit={handleSubmit}>
           <ModalHeader>
             <ModalTitle>
-              {isEditing ? "Edit Booking" : "New Booking"}
+              {isEditing
+                ? `Edit ${transactionLabel}`
+                : `New ${transactionLabel}`}
             </ModalTitle>
             <ModalDescription>
               {isEditing
-                ? "Update booking details"
-                : "Create a new booking manually"}
+                ? `Update ${transactionLabel.toLowerCase()} details`
+                : `Create a new ${transactionLabel.toLowerCase()} manually`}
             </ModalDescription>
           </ModalHeader>
 
@@ -318,7 +322,7 @@ export function BookingForm({
 
             {/* Booking Type */}
             <div className="space-y-2">
-              <Label htmlFor="booking_type">Booking Type *</Label>
+              <Label htmlFor="booking_type">{transactionLabel} Type *</Label>
               <Select
                 value={formData.booking_type}
                 onValueChange={(v) => handleSelectChange("booking_type", v)}
@@ -409,7 +413,7 @@ export function BookingForm({
               {isSubmitting && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              {isEditing ? "Save Changes" : "Create Booking"}
+              {isEditing ? "Save Changes" : `Create ${transactionLabel}`}
             </Button>
           </ModalFooter>
         </form>

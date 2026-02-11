@@ -8,6 +8,7 @@ import { IndustryProvider } from "@/context/IndustryContext";
 import { EscalationProvider } from "@/context/EscalationContext";
 import Sidebar from "@/components/dashboard/Sidebar";
 import TopBar from "@/components/dashboard/TopBar";
+import MobileNav from "@/components/dashboard/MobileNav";
 import { EscalationDock, EscalationPanel } from "@/components/escalation";
 import { SkipLinks } from "@/components/ui/skip-links";
 import { Loader2, Zap } from "lucide-react";
@@ -81,8 +82,12 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       />
 
       <div className="flex h-screen w-screen overflow-hidden bg-background">
-        {/* Navigation Sidebar with ARIA landmark */}
-        <nav id="navigation" aria-label="Main navigation">
+        {/* Desktop Navigation Sidebar */}
+        <nav
+          id="navigation"
+          aria-label="Main navigation"
+          className="hidden md:block"
+        >
           <Sidebar />
         </nav>
 
@@ -94,7 +99,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             role="main"
             aria-label="Dashboard content"
             tabIndex={-1}
-            className="flex-1 overflow-hidden pb-20 outline-none"
+            className="flex-1 overflow-hidden outline-none pb-16 md:pb-0"
           >
             {children}
           </main>
@@ -106,6 +111,9 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           <EscalationPanel />
         </aside>
       </div>
+
+      {/* Mobile Navigation */}
+      <MobileNav />
     </>
   );
 }

@@ -10,7 +10,7 @@ import {
   EmptyContacts,
   EmptySearchResults,
 } from "@/components/crm/shared/EmptyState";
-import { Badge } from "@/components/ui/badge";
+// Badge unused currently but kept for future filter chips
 import { ContactForm } from "./ContactForm";
 import { ContactDetail } from "./ContactDetail";
 import { useContacts } from "@/hooks/useContacts";
@@ -173,7 +173,8 @@ export default function ContactsPage() {
     refresh,
   } = useContacts();
 
-  const { customerPluralLabel, transactionPluralLabel } = useIndustry();
+  const { customerLabel, customerPluralLabel, transactionPluralLabel } =
+    useIndustry();
 
   const [searchQuery, setSearchQuery] = React.useState("");
   const [selectedContact, setSelectedContact] = React.useState<Contact | null>(
@@ -194,6 +195,7 @@ export default function ContactsPage() {
       setFilters({ ...filters, search: searchQuery || undefined });
     }, 300);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
   const handleSort = (column: string) => {
@@ -241,9 +243,13 @@ export default function ContactsPage() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
         <div>
-          <h1 className="text-xl font-semibold text-white">Contacts</h1>
+          <h1 className="text-xl font-semibold text-white">
+            {customerPluralLabel}
+          </h1>
           <p className="text-sm text-zinc-500">
-            {total} contact{total !== 1 ? "s" : ""} in your database
+            {total}{" "}
+            {(total !== 1 ? customerPluralLabel : customerLabel).toLowerCase()}{" "}
+            in your database
           </p>
         </div>
         <div className="flex items-center gap-2">

@@ -1,183 +1,192 @@
 "use client";
 
-import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SETUP_STEPS, STEP_LABELS, canAccessStep } from "./SetupContext";
-import type { SetupStep } from "@/types";
-import { useState } from "react";
+import { Check } from "lucide-react";
+
+interface Step {
+  id: string;
+  label: string;
+  description?: string;
+}
 
 interface SetupProgressBarProps {
-  currentStep: SetupStep;
-  completedSteps: SetupStep[];
-  onStepClick?: (step: SetupStep) => void;
+  steps: Step[];
+  currentStep: number;
+  className?: string;
+  variant?: "horizontal" | "vertical";
 }
 
 export function SetupProgressBar({
+  steps,
   currentStep,
-  completedSteps,
-  onStepClick,
+  className,
+  variant = "horizontal",
 }: SetupProgressBarProps) {
-  const [mobileDropdownOpen, setMobileDropdownOpen] = useState(false);
-  const currentIndex = SETUP_STEPS.indexOf(currentStep);
+  if (variant === "vertical") {
+    return (
+      <div className={cn("flex flex-col gap-1", className)}>
+        {steps.map((step, index) => {
+          const isCompleted = index < currentStep;
+          const isCurrent = index === currentStep;
+          const isPending = index > currentStep;
 
-  return (
-    <div className="border-b bg-background">
-      {/* Desktop view */}
-      <div className="mx-auto hidden max-w-4xl px-4 py-4 md:block">
-        <div className="flex items-center justify-between">
-          {SETUP_STEPS.map((step, index) => {
-            const isCompleted = completedSteps.includes(step);
-            const isCurrent = step === currentStep;
-            const isAccessible = canAccessStep(step, completedSteps);
-            const isClickable = isAccessible && onStepClick;
-
-            return (
-              <div key={step} className="flex items-center">
-                {/* Step circle and label */}
-                <button
-                  type="button"
-                  onClick={() => isClickable && onStepClick(step)}
-                  disabled={!isAccessible}
+          return (
+            <div key={step.id} className="flex gap-3">
+              {/* Step indicator line */}
+              <div className="flex flex-col items-center">
+                <div
                   className={cn(
-                    "flex flex-col items-center gap-1",
-                    isClickable && "cursor-pointer",
-                    !isAccessible && "cursor-not-allowed opacity-50",
+                    "h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors",
+                    isCompleted && "bg-primary text-primary-foreground",
+                    isCurrent &&
+                      "bg-primary/10 text-primary border-2 border-primary",
+                    isPending && "bg-muted text-muted-foreground",
                   )}
                 >
+                  {isCompleted ? <Check className="h-4 w-4" /> : index + 1}
+                </div>
+                {index < steps.length - 1 && (
                   <div
                     className={cn(
-                      "flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-medium transition-colors",
-                      isCompleted &&
-                        "border-primary bg-primary text-primary-foreground",
-                      isCurrent &&
-                        !isCompleted &&
-                        "border-primary bg-primary/10 text-primary",
-                      !isCurrent &&
-                        !isCompleted &&
-                        "border-muted-foreground/30 text-muted-foreground",
-                    )}
-                  >
-                    {isCompleted ? (
-                      <Check className="h-4 w-4" />
-                    ) : (
-                      <span>{index + 1}</span>
-                    )}
-                  </div>
-                  <span
-                    className={cn(
-                      "text-xs font-medium",
-                      isCurrent && "text-primary",
-                      !isCurrent && "text-muted-foreground",
-                    )}
-                  >
-                    {STEP_LABELS[step]}
-                  </span>
-                </button>
-
-                {/* Connector line */}
-                {index < SETUP_STEPS.length - 1 && (
-                  <div
-                    className={cn(
-                      "mx-2 h-0.5 w-8 flex-1 transition-colors lg:w-12",
-                      completedSteps.includes(step)
-                        ? "bg-primary"
-                        : "bg-muted-foreground/30",
+                      "w-0.5 flex-1 my-1",
+                      isCompleted ? "bg-primary" : "bg-border",
                     )}
                   />
                 )}
               </div>
-            );
-          })}
-        </div>
+
+              {/* Step label */}
+              <div className="pb-6">
+                <div
+                  className={cn(
+                    "text-sm font-medium",
+                    isCurrent ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {step.label}
+                </div>
+                {step.description && (
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {step.description}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Horizontal variant
+  return (
+    <div className={cn("w-full", className)}>
+      {/* Progress steps */}
+      <div className="flex items-center justify-between">
+        {steps.map((step, index) => {
+          const isCompleted = index < currentStep;
+          const isCurrent = index === currentStep;
+          const isPending = index > currentStep;
+          const isLast = index === steps.length - 1;
+
+          return (
+            <div
+              key={step.id}
+              className={cn("flex items-center", !isLast && "flex-1")}
+            >
+              {/* Step circle */}
+              <div className="flex flex-col items-center">
+                <div
+                  className={cn(
+                    "h-10 w-10 rounded-full flex items-center justify-center text-sm font-medium transition-all",
+                    isCompleted && "bg-primary text-primary-foreground",
+                    isCurrent &&
+                      "bg-primary text-primary-foreground ring-4 ring-primary/20",
+                    isPending &&
+                      "bg-muted text-muted-foreground border-2 border-border",
+                  )}
+                >
+                  {isCompleted ? <Check className="h-5 w-5" /> : index + 1}
+                </div>
+                <span
+                  className={cn(
+                    "mt-2 text-xs font-medium hidden sm:block",
+                    isCurrent ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {step.label}
+                </span>
+              </div>
+
+              {/* Connector line */}
+              {!isLast && (
+                <div className="flex-1 h-0.5 mx-2 sm:mx-4 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className={cn(
+                      "h-full transition-all duration-500",
+                      isCompleted ? "bg-primary w-full" : "w-0",
+                    )}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Mobile view */}
-      <div className="relative px-4 py-3 md:hidden">
-        <button
-          type="button"
-          onClick={() => setMobileDropdownOpen(!mobileDropdownOpen)}
-          className="flex w-full items-center justify-between"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-primary bg-primary/10 text-sm font-medium text-primary">
-              {currentIndex + 1}
-            </div>
-            <div className="text-left">
-              <p className="font-medium">{STEP_LABELS[currentStep]}</p>
-              <p className="text-xs text-muted-foreground">
-                Step {currentIndex + 1} of {SETUP_STEPS.length}
-              </p>
-            </div>
-          </div>
-          <ChevronDown
-            className={cn(
-              "h-5 w-5 text-muted-foreground transition-transform",
-              mobileDropdownOpen && "rotate-180",
-            )}
-          />
-        </button>
-
-        {/* Mobile dropdown */}
-        {mobileDropdownOpen && (
-          <div className="absolute left-0 right-0 top-full z-10 border-b bg-background shadow-lg">
-            <div className="max-h-64 overflow-y-auto">
-              {SETUP_STEPS.map((step, index) => {
-                const isCompleted = completedSteps.includes(step);
-                const isCurrent = step === currentStep;
-                const isAccessible = canAccessStep(step, completedSteps);
-
-                return (
-                  <button
-                    key={step}
-                    type="button"
-                    onClick={() => {
-                      if (isAccessible && onStepClick) {
-                        onStepClick(step);
-                        setMobileDropdownOpen(false);
-                      }
-                    }}
-                    disabled={!isAccessible}
-                    className={cn(
-                      "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors",
-                      isCurrent && "bg-primary/5",
-                      isAccessible && !isCurrent && "hover:bg-muted/50",
-                      !isAccessible && "cursor-not-allowed opacity-50",
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "flex h-6 w-6 items-center justify-center rounded-full border-2 text-xs font-medium",
-                        isCompleted &&
-                          "border-primary bg-primary text-primary-foreground",
-                        isCurrent &&
-                          !isCompleted &&
-                          "border-primary bg-primary/10 text-primary",
-                        !isCurrent &&
-                          !isCompleted &&
-                          "border-muted-foreground/30 text-muted-foreground",
-                      )}
-                    >
-                      {isCompleted ? (
-                        <Check className="h-3 w-3" />
-                      ) : (
-                        <span>{index + 1}</span>
-                      )}
-                    </div>
-                    <span
-                      className={cn(
-                        "text-sm font-medium",
-                        isCurrent && "text-primary",
-                        !isCurrent && "text-foreground",
-                      )}
-                    >
-                      {STEP_LABELS[step]}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+      {/* Mobile: Show current step label */}
+      <div className="sm:hidden text-center mt-2">
+        <span className="text-sm font-medium text-foreground">
+          Step {currentStep + 1}: {steps[currentStep]?.label}
+        </span>
+        {steps[currentStep]?.description && (
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {steps[currentStep].description}
+          </p>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Compact version for inline display
+export function SetupProgressCompact({
+  steps,
+  currentStep,
+  className,
+}: SetupProgressBarProps) {
+  const progress = ((currentStep + 1) / steps.length) * 100;
+
+  return (
+    <div className={cn("w-full", className)}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-medium text-foreground">
+          Setup Progress
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {currentStep + 1} of {steps.length}
+        </span>
+      </div>
+      <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+        <div
+          className="h-full bg-primary transition-all duration-500 rounded-full"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="flex justify-between mt-1">
+        {steps.map((step, index) => (
+          <span
+            key={step.id}
+            className={cn(
+              "text-[10px]",
+              index <= currentStep
+                ? "text-primary font-medium"
+                : "text-muted-foreground",
+            )}
+          >
+            {step.label}
+          </span>
+        ))}
       </div>
     </div>
   );

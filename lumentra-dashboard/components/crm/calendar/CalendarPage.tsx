@@ -5,13 +5,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Plus,
-  Calendar as CalendarIcon,
   Clock,
   User,
   RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { EmptyBookings } from "@/components/crm/shared/EmptyState";
+import { useIndustry } from "@/context/IndustryContext";
 import {
   getCalendarEvents,
   getDateRangeForView,
@@ -19,12 +18,7 @@ import {
   getDaySummary,
 } from "@/lib/api";
 import { BookingForm } from "./BookingForm";
-import type {
-  CalendarEvent,
-  CalendarView,
-  DaySummary,
-  Booking,
-} from "@/types/crm";
+import type { CalendarEvent, CalendarView, DaySummary } from "@/types/crm";
 import { cn } from "@/lib/utils";
 
 // Auto-refresh interval in milliseconds (5 seconds for real-time feel)
@@ -249,6 +243,7 @@ function DaySummaryPanel({
   onClose: () => void;
   onAddBooking: () => void;
 }) {
+  const { transactionLabel, transactionPluralLabel } = useIndustry();
   return (
     <div className="w-80 border-l border-zinc-800 flex flex-col">
       {/* Header */}
@@ -272,7 +267,9 @@ function DaySummaryPanel({
               <div className="text-lg font-semibold text-zinc-100">
                 {summary.total_bookings}
               </div>
-              <div className="text-xs text-zinc-500">Bookings</div>
+              <div className="text-xs text-zinc-500">
+                {transactionPluralLabel}
+              </div>
             </div>
             <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-2 text-center">
               <div className="text-lg font-semibold text-emerald-400">
@@ -288,7 +285,7 @@ function DaySummaryPanel({
       <div className="flex-1 overflow-y-auto p-4">
         {events.length === 0 ? (
           <div className="text-center text-zinc-500 py-8">
-            No bookings for this day
+            No {transactionPluralLabel.toLowerCase()} for this day
           </div>
         ) : (
           <div className="space-y-3">
@@ -335,7 +332,7 @@ function DaySummaryPanel({
       <div className="border-t border-zinc-800 p-4">
         <Button className="w-full" onClick={onAddBooking}>
           <Plus className="mr-2 h-4 w-4" />
-          Add Booking
+          Add {transactionLabel}
         </Button>
       </div>
     </div>
@@ -347,6 +344,7 @@ function DaySummaryPanel({
 // ============================================================================
 
 export default function CalendarPage() {
+  const { transactionLabel } = useIndustry();
   const [currentDate, setCurrentDate] = React.useState(new Date());
   const [view, setView] = React.useState<CalendarView>("month");
   const [events, setEvents] = React.useState<CalendarEvent[]>([]);
@@ -426,7 +424,7 @@ export default function CalendarPage() {
     loadEvents(false);
   };
 
-  const handleBookingSuccess = (booking: Booking) => {
+  const handleBookingSuccess = () => {
     loadEvents(false);
     // If we have a selected date, reload summary too
     if (selectedDate) {
@@ -509,7 +507,7 @@ export default function CalendarPage() {
             </div>
             <Button onClick={() => setIsFormOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              New Booking
+              New {transactionLabel}
             </Button>
           </div>
         </div>

@@ -192,6 +192,8 @@ export interface IndustryPreset {
   availableCapabilities?: string[];
   defaultCapabilities?: string[];
   capabilities?: CapabilityDefinition[];
+  // Short labels for mobile navigation tabs
+  navLabels?: { calendarTab: string };
 }
 
 export interface IndustryTerminology {

@@ -8,6 +8,7 @@ import {
   useSetup,
   isValidStep,
   canAccessStep,
+  SETUP_STEPS,
   STEP_LABELS,
 } from "@/components/setup/SetupContext";
 import { SetupProgressBar } from "@/components/setup/SetupProgressBar";
@@ -21,6 +22,7 @@ import { HoursStep } from "@/components/setup/steps/HoursStep";
 import { EscalationStep } from "@/components/setup/steps/EscalationStep";
 import { ReviewStep } from "@/components/setup/steps/ReviewStep";
 import type { SetupStep } from "@/types";
+import { useToast } from "@/context/ToastContext";
 
 const STEP_COMPONENTS: Record<SetupStep, React.ComponentType> = {
   business: BusinessStep,
@@ -34,11 +36,18 @@ const STEP_COMPONENTS: Record<SetupStep, React.ComponentType> = {
   review: ReviewStep,
 };
 
+// Create steps array for progress bar
+const STEPS = SETUP_STEPS.map((id) => ({
+  id,
+  label: STEP_LABELS[id],
+}));
+
 export default function SetupStepPage() {
   const params = useParams();
   const step = params.step as string;
   const { user, isLoading: authLoading } = useAuth();
   const { state, goToStep } = useSetup();
+  const { toast } = useToast();
   const router = useRouter();
 
   // Redirect to login if not authenticated
@@ -77,6 +86,13 @@ export default function SetupStepPage() {
     goToStep,
   ]);
 
+  // Show error toast
+  useEffect(() => {
+    if (state.error) {
+      toast.error("Setup Error", state.error);
+    }
+  }, [state.error, toast]);
+
   // Show loading while checking auth or loading progress
   if (authLoading || state.isLoading) {
     return (
@@ -97,28 +113,25 @@ export default function SetupStepPage() {
   }
 
   const StepComponent = STEP_COMPONENTS[step];
+  const currentStepIndex = SETUP_STEPS.indexOf(step);
 
   return (
     <div className="min-h-screen bg-background">
-      <SetupProgressBar
-        currentStep={step}
-        completedSteps={state.completedSteps}
-        onStepClick={(clickedStep) => {
-          if (canAccessStep(clickedStep, state.completedSteps)) {
-            router.push(`/setup/${clickedStep}`);
-          }
-        }}
-      />
+      {/* Progress Bar */}
+      <div className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+        <div className="mx-auto max-w-4xl px-4 py-4">
+          <SetupProgressBar
+            steps={STEPS}
+            currentStep={currentStepIndex}
+            variant="horizontal"
+          />
+        </div>
+      </div>
+
+      {/* Step Content */}
       <div className="mx-auto max-w-2xl px-4 py-8">
         <StepComponent />
       </div>
-
-      {/* Error display */}
-      {state.error && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-lg">
-          {state.error}
-        </div>
-      )}
     </div>
   );
 }

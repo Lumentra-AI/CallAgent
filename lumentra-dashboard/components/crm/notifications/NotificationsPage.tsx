@@ -19,12 +19,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DataTable, Column } from "@/components/crm/shared/DataTable";
 import { Pagination } from "@/components/crm/shared/Pagination";
 import { EmptyNotifications } from "@/components/crm/shared/EmptyState";
+import { useIndustry } from "@/context/IndustryContext";
 import { Badge } from "@/components/ui/badge";
 import {
   listNotifications,
   listTemplates,
   getNotificationTypeLabel,
-  getNotificationStatusInfo,
 } from "@/lib/api";
 import type {
   Notification,
@@ -201,6 +201,7 @@ function TemplateCard({ template }: { template: NotificationTemplate }) {
 // ============================================================================
 
 export default function NotificationsPage() {
+  const { transactionLabel, transactionPluralLabel } = useIndustry();
   const [notifications, setNotifications] = React.useState<Notification[]>([]);
   const [templates, setTemplates] = React.useState<NotificationTemplate[]>([]);
   const [total, setTotal] = React.useState(0);
@@ -359,18 +360,19 @@ export default function NotificationsPage() {
             </h2>
 
             <div className="space-y-6">
-              {/* Booking Confirmations */}
+              {/* Transaction Confirmations */}
               <div className="rounded-lg border border-zinc-800 p-4">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-medium text-zinc-100">
-                    Booking Confirmations
+                    {transactionLabel} Confirmations
                   </span>
                   <Badge className="bg-emerald-500/20 text-emerald-400">
                     Enabled
                   </Badge>
                 </div>
                 <p className="text-sm text-zinc-400">
-                  Send confirmation notifications when bookings are created
+                  Send confirmation notifications when{" "}
+                  {transactionPluralLabel.toLowerCase()} are created
                 </p>
                 <div className="mt-3 flex gap-4">
                   <label className="flex items-center gap-2 text-sm text-zinc-300">
@@ -388,14 +390,15 @@ export default function NotificationsPage() {
               <div className="rounded-lg border border-zinc-800 p-4">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-medium text-zinc-100">
-                    Appointment Reminders
+                    {transactionLabel} Reminders
                   </span>
                   <Badge className="bg-emerald-500/20 text-emerald-400">
                     Enabled
                   </Badge>
                 </div>
                 <p className="text-sm text-zinc-400">
-                  Automatically send reminders before appointments
+                  Automatically send reminders before{" "}
+                  {transactionPluralLabel.toLowerCase()}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Badge variant="outline">24 hours before</Badge>
@@ -414,7 +417,8 @@ export default function NotificationsPage() {
                   </Badge>
                 </div>
                 <p className="text-sm text-zinc-400">
-                  Request reviews after completed appointments
+                  Request reviews after completed{" "}
+                  {transactionPluralLabel.toLowerCase()}
                 </p>
               </div>
             </div>

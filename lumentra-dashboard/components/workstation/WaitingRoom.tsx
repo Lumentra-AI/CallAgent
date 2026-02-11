@@ -2,16 +2,10 @@
 
 import { useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Clock,
-  User,
-  AlertCircle,
-  CheckCircle,
-  ChevronRight,
-  Users,
-} from "lucide-react";
+import { Clock, User, CheckCircle, ChevronRight, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
+import { useIndustry } from "@/context/IndustryContext";
 
 export interface WaitingPatient {
   id: string;
@@ -117,6 +111,7 @@ export function WaitingRoom({
   onReadyClick,
   className,
 }: WaitingRoomProps) {
+  const { customerPluralLabel } = useIndustry();
   const { waiting, ready, inRoom } = useMemo(() => {
     const waiting = patients.filter((p) => p.status === "waiting");
     const ready = patients.filter((p) => p.status === "ready");
@@ -240,7 +235,7 @@ export function WaitingRoom({
         <div className="flex flex-col items-center justify-center py-8 text-center">
           <Users className="h-10 w-10 text-muted-foreground/50 mb-2" />
           <p className="text-sm text-muted-foreground">
-            No patients in waiting room
+            No {customerPluralLabel.toLowerCase()} in waiting room
           </p>
         </div>
       ) : (

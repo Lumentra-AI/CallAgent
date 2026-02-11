@@ -59,9 +59,10 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
     description: "Full-service hotels and resorts",
     icon: "Building2",
     popular: true,
+    navLabels: { calendarTab: "Reserve" },
     terminology: {
-      transaction: "Booking",
-      transactionPlural: "Bookings",
+      transaction: "Reservation",
+      transactionPlural: "Reservations",
       customer: "Guest",
       customerPlural: "Guests",
       availability: "Room Availability",
@@ -89,8 +90,8 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
       },
       {
         id: "bookings",
-        label: "Bookings Today",
-        shortLabel: "BOOK",
+        label: "Reservations Today",
+        shortLabel: "RES",
         format: "number",
       },
     ],
@@ -197,9 +198,10 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
     description: "Budget-friendly roadside lodging",
     icon: "Building",
     popular: true,
+    navLabels: { calendarTab: "Reserve" },
     terminology: {
-      transaction: "Booking",
-      transactionPlural: "Bookings",
+      transaction: "Reservation",
+      transactionPlural: "Reservations",
       customer: "Guest",
       customerPlural: "Guests",
       availability: "Room Availability",
@@ -296,6 +298,7 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
     description: "Restaurants and dining establishments",
     icon: "UtensilsCrossed",
     popular: true,
+    navLabels: { calendarTab: "Reserve" },
     terminology: {
       transaction: "Reservation",
       transactionPlural: "Reservations",
@@ -405,6 +408,7 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
     description: "Primary care and specialty clinics",
     icon: "Stethoscope",
     popular: true,
+    navLabels: { calendarTab: "Appts" },
     terminology: {
       transaction: "Appointment",
       transactionPlural: "Appointments",
@@ -531,6 +535,7 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
     description: "Dental practices and clinics",
     icon: "Smile",
     popular: true,
+    navLabels: { calendarTab: "Appts" },
     terminology: {
       transaction: "Appointment",
       transactionPlural: "Appointments",
@@ -632,6 +637,7 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
     description: "Auto repair and service centers",
     icon: "Wrench",
     popular: true,
+    navLabels: { calendarTab: "Service" },
     terminology: {
       transaction: "Service",
       transactionPlural: "Services",
@@ -737,6 +743,7 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
     description: "Hair salons and styling studios",
     icon: "Scissors",
     popular: true,
+    navLabels: { calendarTab: "Appts" },
     terminology: {
       transaction: "Appointment",
       transactionPlural: "Appointments",

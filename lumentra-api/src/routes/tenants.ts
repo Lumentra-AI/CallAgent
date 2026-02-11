@@ -320,6 +320,20 @@ tenantsRoutes.put("/:id", async (c) => {
     delete body.created_at;
     delete body.phone_number; // Phone number changes need special handling
 
+    // Validate industry if provided
+    const VALID_INDUSTRIES = [
+      "hotel",
+      "motel",
+      "restaurant",
+      "medical",
+      "dental",
+      "salon",
+      "auto_service",
+    ];
+    if (body.industry && !VALID_INDUSTRIES.includes(body.industry)) {
+      return c.json({ error: "Invalid industry type" }, 400);
+    }
+
     body.updated_at = new Date().toISOString();
 
     const data = await updateOne<TenantRow>("tenants", body, { id });

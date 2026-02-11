@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTenant } from "@/context/TenantContext";
+import { useIndustry } from "@/context/IndustryContext";
 import { get, put } from "@/lib/api/client";
 import { PendingBookingsList } from "@/components/pending";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -33,6 +34,7 @@ type FilterTab = "pending" | "all";
 
 export default function PendingBookingsPage() {
   const { currentTenant } = useTenant();
+  const { transactionLabel, transactionPluralLabel } = useIndustry();
   const [bookings, setBookings] = useState<PendingBooking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -148,12 +150,13 @@ export default function PendingBookingsPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <TextGenerateEffect
-              words="Pending Bookings"
+              words={`Pending ${transactionPluralLabel}`}
               className="text-2xl md:text-3xl text-foreground"
               duration={0.3}
             />
             <p className="text-sm text-muted-foreground mt-1">
-              Review and confirm booking requests from callers
+              Review and confirm {transactionLabel.toLowerCase()} requests from
+              callers
             </p>
           </div>
           <button
@@ -275,7 +278,7 @@ export default function PendingBookingsPage() {
               </TabsTrigger>
               <TabsTrigger value="all" className="gap-2">
                 <Inbox className="h-4 w-4" />
-                All Bookings
+                All {transactionPluralLabel}
               </TabsTrigger>
             </TabsList>
           </div>
@@ -287,8 +290,8 @@ export default function PendingBookingsPage() {
               onConfirm={handleConfirm}
               onReject={handleReject}
               onViewTranscript={handleViewTranscript}
-              emptyTitle="No pending bookings"
-              emptyDescription="All booking requests have been processed. New requests will appear here."
+              emptyTitle={`No pending ${transactionPluralLabel.toLowerCase()}`}
+              emptyDescription={`All ${transactionLabel.toLowerCase()} requests have been processed. New requests will appear here.`}
             />
           </TabsContent>
 
@@ -299,8 +302,8 @@ export default function PendingBookingsPage() {
               onConfirm={handleConfirm}
               onReject={handleReject}
               onViewTranscript={handleViewTranscript}
-              emptyTitle="No bookings yet"
-              emptyDescription="Booking requests from callers will appear here when they're collected."
+              emptyTitle={`No ${transactionPluralLabel.toLowerCase()} yet`}
+              emptyDescription={`${transactionLabel} requests from callers will appear here when they're collected.`}
             />
           </TabsContent>
         </Tabs>
@@ -309,8 +312,10 @@ export default function PendingBookingsPage() {
         {displayBookings.length > 0 && (
           <div className="flex items-center justify-between border-t border-border pt-4 text-sm text-muted-foreground">
             <span>
-              Showing {displayBookings.length} booking
-              {displayBookings.length !== 1 ? "s" : ""}
+              Showing {displayBookings.length}{" "}
+              {displayBookings.length !== 1
+                ? transactionPluralLabel.toLowerCase()
+                : transactionLabel.toLowerCase()}
             </span>
             {activeTab === "pending" && pendingCount > 0 && (
               <span className="text-amber-600 dark:text-amber-400">

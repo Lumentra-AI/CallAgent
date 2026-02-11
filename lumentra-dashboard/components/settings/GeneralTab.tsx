@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useConfig } from "@/context/ConfigContext";
 import { useTenant } from "@/context/TenantContext";
 import { useTenantConfig } from "@/hooks/useTenantConfig";
+import { useToast } from "@/context/ToastContext";
 import { put } from "@/lib/api/client";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -85,8 +86,8 @@ const DEFAULT_FEATURES = {
 export default function GeneralTab() {
   const { config, updateConfig, industryPresets, hasPermission } = useConfig();
   const { refreshCurrentTenant } = useTenant();
-  const { tenant, saveStatus, error, clearError, updateSettings } =
-    useTenantConfig();
+  const { toast } = useToast();
+  const { tenant, error, clearError, updateSettings } = useTenantConfig();
 
   const [showAllIndustries, setShowAllIndustries] = useState(false);
   const [selectedCategory, setSelectedCategory] =
@@ -117,12 +118,17 @@ export default function GeneralTab() {
         phone_number: phoneNumber,
       });
       setPhoneSuccess(true);
+      toast.success(
+        "Phone number updated",
+        "Your business phone has been saved successfully.",
+      );
       await refreshCurrentTenant();
       setTimeout(() => setPhoneSuccess(false), 3000);
     } catch (err) {
-      setPhoneError(
-        err instanceof Error ? err.message : "Failed to update phone number",
-      );
+      const message =
+        err instanceof Error ? err.message : "Failed to update phone number";
+      setPhoneError(message);
+      toast.error("Failed to save", message);
     } finally {
       setPhoneSaving(false);
     }
@@ -164,19 +170,7 @@ export default function GeneralTab() {
             Configure your business identity and agent personality
           </p>
         </div>
-        {/* Save Status Indicator */}
-        {saveStatus === "saving" && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Saving...
-          </div>
-        )}
-        {saveStatus === "saved" && (
-          <div className="flex items-center gap-2 text-sm text-green-600">
-            <Check className="h-4 w-4" />
-            Saved
-          </div>
-        )}
+        {/* Save Status Indicator - Only show error, success uses toast */}
         {error && (
           <button
             onClick={clearError}

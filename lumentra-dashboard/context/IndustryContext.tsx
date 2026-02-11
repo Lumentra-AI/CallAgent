@@ -1,12 +1,7 @@
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, type ReactNode } from "react";
+import { useTenant } from "./TenantContext";
 import { INDUSTRY_PRESETS } from "@/lib/industryPresets";
 import type { IndustryPreset, IndustryType } from "@/types";
 
@@ -31,10 +26,12 @@ interface IndustryContextValue {
   transactionPluralLabel: string;
   customerLabel: string;
   customerPluralLabel: string;
+  availabilityLabel: string;
+  revenueLabel: string;
+  industryLabel: string;
 
   // Loading state
   isLoading: boolean;
-  error: string | null;
 
   // Check if industry is fully supported
   isSupported: boolean;
@@ -60,69 +57,24 @@ interface IndustryProviderProps {
 }
 
 export function IndustryProvider({ children }: IndustryProviderProps) {
-  const [tenant, setTenant] = useState<TenantInfo | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { currentTenant, isLoading: tenantLoading } = useTenant();
 
-  useEffect(() => {
-    async function fetchTenant() {
-      try {
-        const tenantId = process.env.NEXT_PUBLIC_TENANT_ID;
-        const apiUrl =
-          process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-
-        if (!tenantId) {
-          // No tenant configured - use default
-          setTenant({
-            id: "default",
-            industry: DEFAULT_INDUSTRY,
-            business_name: "Demo Business",
-            agent_name: "Assistant",
-          });
-          setIsLoading(false);
-          return;
-        }
-
-        const response = await fetch(`${apiUrl}/api/tenants/${tenantId}`, {
-          headers: {
-            "X-Tenant-ID": tenantId,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch tenant");
-        }
-
-        const data = await response.json();
-        setTenant({
-          id: data.id,
-          industry: data.industry as IndustryType,
-          business_name: data.business_name,
-          agent_name: data.agent_name || "Assistant",
-        });
-      } catch (err) {
-        console.error("Failed to load tenant:", err);
-        setError(err instanceof Error ? err.message : "Failed to load tenant");
-        // Set fallback tenant on error
-        setTenant({
-          id: "fallback",
-          industry: DEFAULT_INDUSTRY,
-          business_name: "Business",
-          agent_name: "Assistant",
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    fetchTenant();
-  }, []);
-
-  // Get preset for current industry (with fallback)
-  const industry = tenant?.industry || DEFAULT_INDUSTRY;
+  // Derive industry from TenantContext (single source of truth)
+  const industry =
+    (currentTenant?.industry as IndustryType) || DEFAULT_INDUSTRY;
   const preset =
     INDUSTRY_PRESETS[industry] || INDUSTRY_PRESETS[DEFAULT_INDUSTRY];
   const terminology = preset.terminology;
+
+  // Derive tenant info for backward compatibility with existing consumers
+  const tenant: TenantInfo | null = currentTenant
+    ? {
+        id: currentTenant.id,
+        industry,
+        business_name: currentTenant.business_name,
+        agent_name: currentTenant.agent_name || "Assistant",
+      }
+    : null;
 
   const value: IndustryContextValue = {
     industry,
@@ -132,8 +84,10 @@ export function IndustryProvider({ children }: IndustryProviderProps) {
     transactionPluralLabel: terminology.transactionPlural,
     customerLabel: terminology.customer,
     customerPluralLabel: terminology.customerPlural,
-    isLoading,
-    error,
+    availabilityLabel: terminology.availability,
+    revenueLabel: terminology.revenue,
+    industryLabel: preset.label,
+    isLoading: tenantLoading,
     isSupported: SUPPORTED_INDUSTRIES.has(industry),
   };
 
