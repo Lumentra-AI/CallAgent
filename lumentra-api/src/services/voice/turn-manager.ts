@@ -305,6 +305,7 @@ export class TurnManager {
   // Multi-chunk TTS tracking - know when FULL response is complete
   private pendingTTSChunks = 0;
   private responseStreamComplete = false;
+  private ttsFinalizeRequested = false;
 
   constructor(
     callSid: string,
@@ -397,11 +398,13 @@ export class TurnManager {
           this.mediaHandler?.sendAudio(audioData);
         },
         onDone: () => {
-          // Decrement pending chunks counter
+          // Treat pending TTS as one active playback session (not per sentence chunk).
+          // Cartesia done events are completion boundaries, not guaranteed one-per-chunk.
           if (this.pendingTTSChunks > 0) {
-            this.pendingTTSChunks--;
+            this.pendingTTSChunks = 0;
+            this.ttsFinalizeRequested = false;
             console.log(
-              `[TURN] TTS chunk complete, ${this.pendingTTSChunks} chunks remaining`,
+              `[TURN] TTS playback complete`,
             );
           }
 
@@ -758,6 +761,7 @@ export class TurnManager {
     this.cancelFillerTimer();
     this.pendingTTSChunks = 0;
     this.responseStreamComplete = false;
+    this.ttsFinalizeRequested = false;
 
     // Transition to LISTENING so new speech is processed
     if (this.pipelineState.is(PipelineState.SPEAKING)) {
@@ -820,6 +824,7 @@ export class TurnManager {
     this.state = clearAudioQueue(this.state);
     this.pendingTTSChunks = 0;
     this.responseStreamComplete = false;
+    this.ttsFinalizeRequested = false;
     sessionManager.setPlaying(this.callSid, false);
 
     // Restore the transcript that was cleared when processing started
@@ -1023,6 +1028,7 @@ export class TurnManager {
     // Reset TTS tracking for new response
     this.pendingTTSChunks = 0;
     this.responseStreamComplete = false;
+    this.ttsFinalizeRequested = false;
 
     // Transition to PROCESSING state - blocks VAD during LLM generation
     this.pipelineState.transition(
@@ -1188,6 +1194,8 @@ export class TurnManager {
                 // Continue from previous chunks if any were spoken
                 this.speakChunk(remaining, !isFirstToolResultChunk);
               }
+              this.responseStreamComplete = true;
+              this.requestTtsFinalize("tool-result stream done");
             } else if (resultChunk.type === "error") {
               console.error(`[TURN] Tool-result stream error: ${resultChunk.error}`);
               if (resultChunk.error) {
@@ -1244,6 +1252,7 @@ export class TurnManager {
 
           // Mark that LLM stream is complete - TTS can transition state once all chunks finish
           this.responseStreamComplete = true;
+          this.requestTtsFinalize("llm stream done");
           console.log(
             `[TURN] LLM stream complete, waiting for ${this.pendingTTSChunks} TTS chunks to finish`,
           );
@@ -1362,13 +1371,24 @@ export class TurnManager {
       this.currentResponseWordTimestamps = []; // Reset for new response
     }
 
-    // Track pending TTS chunks
-    this.pendingTTSChunks++;
+    // Track active TTS playback session (single active response chain)
+    if (this.pendingTTSChunks === 0) {
+      this.pendingTTSChunks = 1;
+    }
     console.log(
       `[TURN] Sending TTS chunk (${this.pendingTTSChunks} pending): "${text.substring(0, 40)}..."`,
     );
 
     this.tts.speakChunk(text, isContinuation);
+  }
+
+  private requestTtsFinalize(reason: string): void {
+    if (!this.tts || this.pendingTTSChunks === 0 || this.ttsFinalizeRequested) {
+      return;
+    }
+    this.ttsFinalizeRequested = true;
+    console.log(`[TURN] Requesting TTS finalize (${reason})`);
+    this.tts.finalizeStream();
   }
 
   /**

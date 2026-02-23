@@ -185,6 +185,35 @@ export class CartesiaTTS {
     this.ws.send(JSON.stringify(request));
   }
 
+  /**
+   * Finalize the current streaming context so Cartesia emits a terminal done event.
+   * This should be called once after the final chunk of a streamed response.
+   */
+  finalizeStream(): void {
+    if (!this.ws || !this.isConnected) {
+      return;
+    }
+
+    const request = {
+      model_id: this.config.modelId,
+      transcript: "",
+      voice: {
+        mode: "id",
+        id: this.config.voiceId,
+        __experimental_controls: voiceControls,
+      },
+      output_format: {
+        container: this.config.outputFormat.container,
+        encoding: this.config.outputFormat.encoding,
+        sample_rate: this.config.outputFormat.sampleRate,
+      },
+      context_id: this.contextId,
+      continue: false,
+    };
+
+    this.ws.send(JSON.stringify(request));
+  }
+
   // Cancel current speech and clear queue
   cancel(): void {
     this.messageQueue = [];
