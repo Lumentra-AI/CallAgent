@@ -319,7 +319,7 @@ export async function executeTransferToHuman(
     };
   }
 
-  const voiceProvider = process.env.VOICE_PROVIDER || "vapi";
+  const voiceProvider = process.env.VOICE_PROVIDER || "custom";
 
   try {
     // Update call outcome
@@ -386,7 +386,7 @@ export async function executeEndCall(
 ): Promise<EndCallResult> {
   console.log(`[TOOLS] end_call called for tenant ${context.tenantId}:`, args);
 
-  const voiceProvider = process.env.VOICE_PROVIDER || "vapi";
+  const voiceProvider = process.env.VOICE_PROVIDER || "custom";
 
   try {
     // For Vapi: Just return success - Vapi has endCallFunctionEnabled and handles the hang up

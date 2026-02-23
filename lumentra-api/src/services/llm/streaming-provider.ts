@@ -30,6 +30,7 @@ export interface StreamingChatOptions {
   conversationHistory: ConversationMessage[];
   systemPrompt: string;
   tools?: FunctionDeclaration[];
+  abortSignal?: AbortSignal;
 }
 
 // Provider status tracking (shared with multi-provider.ts)
@@ -243,8 +244,7 @@ function convertSchema(schema: unknown): Record<string, unknown> {
   return result;
 }
 
-// Gemini streaming implementation (kept for potential future use)
-// @ts-expect-error - Unused but kept for potential future fallback
+// Gemini streaming implementation
 async function* _streamWithGemini(
   options: StreamingChatOptions,
 ): AsyncGenerator<StreamChunk> {
@@ -300,7 +300,8 @@ async function* streamWithOpenAI(
 ): AsyncGenerator<StreamChunk> {
   if (!openaiClient) throw new Error("OpenAI not initialized");
 
-  const { userMessage, conversationHistory, systemPrompt, tools } = options;
+  const { userMessage, conversationHistory, systemPrompt, tools, abortSignal } =
+    options;
 
   const messages = toOpenAIMessages(conversationHistory, systemPrompt);
   messages.push({ role: "user", content: userMessage });
@@ -311,10 +312,10 @@ async function* streamWithOpenAI(
     model: openaiModel,
     messages,
     tools: openaiTools,
-    temperature: 0.3,
-    max_tokens: 500,
+    temperature: 0.25,
+    max_tokens: 240,
     stream: true,
-  });
+  }, { signal: abortSignal });
 
   let currentToolCall: { id: string; name: string; args: string } | null = null;
 
@@ -364,8 +365,7 @@ async function* streamWithOpenAI(
   yield { type: "done", provider: "openai" };
 }
 
-// Groq streaming implementation (kept for potential future use)
-// @ts-expect-error - Unused but kept for potential future fallback
+// Groq streaming implementation
 async function* _streamWithGroq(
   options: StreamingChatOptions,
 ): AsyncGenerator<StreamChunk> {
@@ -386,8 +386,8 @@ async function* _streamWithGroq(
     tools: groqTools as Parameters<
       typeof groqClient.chat.completions.create
     >[0]["tools"],
-    temperature: 0.4,
-    max_tokens: 500,
+    temperature: 0.25,
+    max_tokens: 240,
     stream: true,
   });
 
@@ -439,6 +439,25 @@ async function* _streamWithGroq(
   yield { type: "done", provider: "groq" };
 }
 
+const DEFAULT_PROVIDER_ORDER = ["openai", "groq", "gemini"] as const;
+
+function getProviderOrder(): string[] {
+  const raw = process.env.VOICE_LLM_PROVIDER_ORDER?.trim();
+  if (!raw) return [...DEFAULT_PROVIDER_ORDER];
+
+  const parsed = raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0);
+
+  const valid = new Set(["openai", "groq", "gemini"]);
+  const deduped = parsed.filter(
+    (provider, idx) => valid.has(provider) && parsed.indexOf(provider) === idx,
+  );
+
+  return deduped.length > 0 ? deduped : [...DEFAULT_PROVIDER_ORDER];
+}
+
 // Main streaming function with fallback
 export async function* streamChatWithFallback(
   options: StreamingChatOptions,
@@ -449,11 +468,18 @@ export async function* streamChatWithFallback(
     tools: options.tools || voiceAgentFunctions,
   };
 
-  // Provider: OpenAI GPT-4.1 mini ONLY (no fallback)
-  // User requirement: Use only GPT, skip Groq and Gemini
-  const providers = [
-    { name: "openai", fn: () => streamWithOpenAI(optionsWithTools) },
-  ];
+  const providerOrder = getProviderOrder();
+  const providerMap: Record<
+    string,
+    { name: string; fn: () => AsyncGenerator<StreamChunk> }
+  > = {
+    openai: { name: "openai", fn: () => streamWithOpenAI(optionsWithTools) },
+    groq: { name: "groq", fn: () => _streamWithGroq(optionsWithTools) },
+    gemini: { name: "gemini", fn: () => _streamWithGemini(optionsWithTools) },
+  };
+  const providers = providerOrder
+    .map((name) => providerMap[name])
+    .filter(Boolean);
 
   // Log provider status on first call (helps debug why certain providers are used)
   logProviderStatus();

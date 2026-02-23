@@ -22,6 +22,19 @@ export const signalwireApiUrl = SIGNALWIRE_SPACE_URL
   ? `https://${SIGNALWIRE_SPACE_URL}/api/laml/2010-04-01/Accounts/${SIGNALWIRE_PROJECT_ID}`
   : null;
 
+function appendWebhookSecret(url: string): string {
+  const secret = process.env.SIGNALWIRE_WEBHOOK_SECRET;
+  if (!secret) return url;
+
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("webhook_secret", secret);
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 // Escape special characters for XML attribute values
 function escapeXmlAttr(str: string): string {
   return str
@@ -192,7 +205,15 @@ export async function transferCall(
 
     // Create a TwiML URL that will dial the destination
     // SignalWire will fetch this URL and execute the transfer
-    const twimlUrl = `${backendUrl}/signalwire/transfer?to=${encodeURIComponent(destinationPhone)}`;
+    const transferUrl = new URL(`${backendUrl}/signalwire/transfer`);
+    transferUrl.searchParams.set("to", destinationPhone);
+    if (process.env.SIGNALWIRE_WEBHOOK_SECRET) {
+      transferUrl.searchParams.set(
+        "webhook_secret",
+        process.env.SIGNALWIRE_WEBHOOK_SECRET,
+      );
+    }
+    const twimlUrl = transferUrl.toString();
 
     const response = await fetch(`${signalwireApiUrl}/Calls/${callSid}.json`, {
       method: "POST",
@@ -242,8 +263,8 @@ export async function setupSignalWirePhone(backendUrl: string): Promise<void> {
   console.log(`[SIGNALWIRE] Found phone SID: ${sid}`);
 
   // Configure webhooks
-  const voiceUrl = `${backendUrl}/signalwire/voice`;
-  const statusUrl = `${backendUrl}/signalwire/status`;
+  const voiceUrl = appendWebhookSecret(`${backendUrl}/signalwire/voice`);
+  const statusUrl = appendWebhookSecret(`${backendUrl}/signalwire/status`);
 
   const success = await configurePhoneNumberWebhook(sid, voiceUrl, statusUrl);
   if (!success) {

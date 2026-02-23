@@ -1,6 +1,7 @@
 // SignalWire Voice Routes
 // Handles incoming calls and WebSocket streams for custom voice stack
 
+import { createHmac, timingSafeEqual } from "crypto";
 import { Hono } from "hono";
 import {
   generateStreamXml,
@@ -8,8 +9,6 @@ import {
 } from "../services/signalwire/client.js";
 import {
   getTenantByPhoneWithFallback,
-  getTenantByPhone,
-  getTenantCacheStats,
   getTenantBySipUri,
 } from "../services/database/tenant-cache.js";
 
@@ -18,12 +17,51 @@ const signalwireVoice = new Hono();
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
 
 /**
+ * Generate a short-lived HMAC token for WebSocket stream authentication.
+ * Token is valid for ~2 minutes (current + previous minute window).
+ */
+export function generateStreamToken(callSid: string, tenantId: string): string {
+  const secret = process.env.STREAM_SIGNING_SECRET || process.env.SIGNALWIRE_API_TOKEN || "dev-stream-secret";
+  const minuteWindow = Math.floor(Date.now() / 60000);
+  const payload = `${callSid}:${tenantId}:${minuteWindow}`;
+  return createHmac("sha256", secret).update(payload).digest("hex").slice(0, 32);
+}
+
+/**
+ * Validate SignalWire webhook requests using a shared secret.
+ * The secret should be appended to the webhook URL configured in SignalWire.
+ */
+function validateWebhookSecret(c: { req: { query: (key: string) => string | undefined } }): boolean {
+  const secret = process.env.SIGNALWIRE_WEBHOOK_SECRET;
+  if (!secret) return true; // Skip if not configured
+  const provided = c.req.query("webhook_secret");
+  if (!provided) return false;
+  try {
+    const expectedBuf = Buffer.from(secret, "utf8");
+    const providedBuf = Buffer.from(provided, "utf8");
+    if (expectedBuf.length !== providedBuf.length) return false;
+    return timingSafeEqual(expectedBuf, providedBuf);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Incoming call webhook from SignalWire
  * POST /signalwire/voice
  */
 signalwireVoice.post("/voice", async (c) => {
+  // Validate webhook secret
+  if (!validateWebhookSecret(c)) {
+    console.error("[SIGNALWIRE] Invalid webhook secret");
+    return c.text(
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Reject/></Response>`,
+      403,
+      { "Content-Type": "application/xml" },
+    );
+  }
+
   try {
-    // Debug: log raw request info
     const contentType = c.req.header("content-type");
     console.log(`[SIGNALWIRE] Content-Type: ${contentType}`);
 
@@ -32,7 +70,6 @@ signalwireVoice.post("/voice", async (c) => {
     console.log(
       `[SIGNALWIRE] Form data keys: ${Object.keys(formData).join(", ")}`,
     );
-    console.log(`[SIGNALWIRE] Form data: ${JSON.stringify(formData)}`);
 
     const callSid = formData.CallSid as string;
     const from = formData.From as string;
@@ -45,13 +82,11 @@ signalwireVoice.post("/voice", async (c) => {
     let tenant = await getTenantByPhoneWithFallback(to);
 
     if (!tenant && to.includes("@")) {
-      // SIP-originated call: 'to' may be a SIP URI like user@space.signalwire.com
       tenant = await getTenantBySipUri(to);
     }
 
     if (!tenant) {
       console.warn(`[SIGNALWIRE] No tenant found for: ${to}`);
-      // Return basic response
       return c.text(
         `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -65,12 +100,13 @@ signalwireVoice.post("/voice", async (c) => {
 
     console.log(`[SIGNALWIRE] Tenant: ${tenant.business_name}`);
 
-    // Generate WebSocket URL for media stream
+    // Generate signed WebSocket URL for media stream
+    const streamToken = generateStreamToken(callSid, tenant.id);
     const wsProtocol = BACKEND_URL.startsWith("https") ? "wss" : "ws";
     const wsHost = BACKEND_URL.replace(/^https?:\/\//, "");
-    const websocketUrl = `${wsProtocol}://${wsHost}/signalwire/stream?callSid=${callSid}&tenantId=${tenant.id}&callerPhone=${encodeURIComponent(from)}`;
+    const websocketUrl = `${wsProtocol}://${wsHost}/signalwire/stream?callSid=${callSid}&tenantId=${tenant.id}&callerPhone=${encodeURIComponent(from)}&token=${streamToken}`;
 
-    console.log(`[SIGNALWIRE] WebSocket URL: ${websocketUrl}`);
+    console.log(`[SIGNALWIRE] WebSocket URL generated for call ${callSid}`);
 
     // Return TwiML to connect to media stream
     const xml = generateStreamXml(websocketUrl);
@@ -94,6 +130,10 @@ signalwireVoice.post("/voice", async (c) => {
  * POST /signalwire/status
  */
 signalwireVoice.post("/status", async (c) => {
+  if (!validateWebhookSecret(c)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
   try {
     const formData = await c.req.parseBody();
     const callSid = formData.CallSid as string;
@@ -101,7 +141,6 @@ signalwireVoice.post("/status", async (c) => {
 
     console.log(`[SIGNALWIRE] Call ${callSid} status: ${callStatus}`);
 
-    // Handle call completion, recording, etc.
     if (callStatus === "completed") {
       // Could save call record to database here
     }
@@ -119,8 +158,15 @@ signalwireVoice.post("/status", async (c) => {
  * SignalWire redirects calls here when transfer is initiated
  */
 signalwireVoice.all("/transfer", async (c) => {
+  if (!validateWebhookSecret(c)) {
+    return c.text(
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Reject/></Response>`,
+      403,
+      { "Content-Type": "application/xml" },
+    );
+  }
+
   try {
-    // Get destination from query params (from redirect URL)
     const to = c.req.query("to");
 
     if (!to) {
@@ -161,40 +207,6 @@ signalwireVoice.get("/health", (c) => {
   return c.json({
     provider: "signalwire",
     enabled: true,
-  });
-});
-
-/**
- * Debug endpoint to test tenant lookup
- * GET /signalwire/debug?phone=+19458001233
- */
-signalwireVoice.get("/debug", async (c) => {
-  const phone = c.req.query("phone");
-  if (!phone) {
-    return c.json({ error: "phone query param required" }, 400);
-  }
-
-  const cacheStats = getTenantCacheStats();
-  const cachedTenant = getTenantByPhone(phone);
-  const dbTenant = await getTenantByPhoneWithFallback(phone);
-
-  return c.json({
-    input: phone,
-    cacheStats,
-    cachedResult: cachedTenant
-      ? {
-          id: cachedTenant.id,
-          name: cachedTenant.business_name,
-          phone: cachedTenant.phone_number,
-        }
-      : null,
-    dbResult: dbTenant
-      ? {
-          id: dbTenant.id,
-          name: dbTenant.business_name,
-          phone: dbTenant.phone_number,
-        }
-      : null,
   });
 });
 

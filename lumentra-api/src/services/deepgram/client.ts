@@ -101,7 +101,7 @@ export const defaultDeepgramConfig: DeepgramConfig = {
   encoding: "linear16", // 16-bit signed PCM (matches SignalWire L16@24000h)
   sampleRate: 24000, // 24kHz - high quality audio
   channels: 1,
-  endpointing: 500, // 500ms silence = end of utterance. Lower = faster but cuts off slow speakers
+  endpointing: 250, // Faster turn-taking while still avoiding most mid-word cutoffs
 };
 
 export { LiveTranscriptionEvents };

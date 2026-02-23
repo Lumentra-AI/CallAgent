@@ -135,7 +135,7 @@ dashboardRoutes.get("/metrics", async (c) => {
         today: bookingsToday,
       },
       voice: {
-        stack: "signalwire+deepgram+gemini+cartesia",
+        stack: "signalwire+deepgram+multi-llm+cartesia",
         sttStatus: "connected",
         llmStatus: "connected",
         ttsStatus: "connected",

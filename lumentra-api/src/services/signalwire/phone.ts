@@ -9,6 +9,34 @@ const SIGNALWIRE_API_TOKEN = process.env.SIGNALWIRE_API_TOKEN || "";
 
 const BASE_URL = `https://${SIGNALWIRE_SPACE_URL}/api/laml/2010-04-01/Accounts/${SIGNALWIRE_PROJECT_ID}`;
 
+function appendWebhookSecret(url: string): string {
+  const secret = process.env.SIGNALWIRE_WEBHOOK_SECRET;
+  if (!secret) return url;
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("webhook_secret", secret);
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+function buildStatusCallbackUrl(voiceUrl: string): string {
+  try {
+    const parsed = new URL(voiceUrl);
+    if (parsed.pathname.endsWith("/voice")) {
+      parsed.pathname = parsed.pathname.slice(0, -"/voice".length) + "/status";
+    } else {
+      parsed.pathname = `${parsed.pathname.replace(/\/+$/, "")}/status`;
+    }
+    return parsed.toString();
+  } catch {
+    return voiceUrl.endsWith("/voice")
+      ? `${voiceUrl.slice(0, -"/voice".length)}/status`
+      : `${voiceUrl}/status`;
+  }
+}
+
 async function signalwireRequest(
   path: string,
   method: "GET" | "POST" | "DELETE" = "GET",
@@ -110,13 +138,18 @@ export async function configureNumberWebhooks(
   webhookUrl: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const voiceUrl = appendWebhookSecret(webhookUrl);
+    const statusCallbackUrl = appendWebhookSecret(
+      buildStatusCallbackUrl(webhookUrl),
+    );
+
     const response = await signalwireRequest(
       `/IncomingPhoneNumbers/${sid}.json`,
       "POST",
       {
-        VoiceUrl: webhookUrl,
+        VoiceUrl: voiceUrl,
         VoiceMethod: "POST",
-        StatusCallback: `${webhookUrl}/status`,
+        StatusCallback: statusCallbackUrl,
         StatusCallbackMethod: "POST",
       },
     );

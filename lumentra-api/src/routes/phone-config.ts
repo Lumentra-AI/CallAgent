@@ -6,6 +6,7 @@ import {
   upsert,
 } from "../services/database/query-helpers.js";
 import { getAuthUserId } from "../middleware/index.js";
+import { encryptIfNeeded } from "../services/crypto/encryption.js";
 import {
   searchAvailableNumbers,
   provisionNumber,
@@ -18,6 +19,18 @@ import {
 } from "../services/signalwire/sip.js";
 
 export const phoneConfigRoutes = new Hono();
+
+function withWebhookSecret(url: string): string {
+  const secret = process.env.SIGNALWIRE_WEBHOOK_SECRET;
+  if (!secret) return url;
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("webhook_secret", secret);
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
 
 /** Type definitions for database rows */
 interface MembershipRow {
@@ -252,8 +265,8 @@ phoneConfigRoutes.post("/port", async (c) => {
       tenant_id: tenantId,
       phone_number: body.phone_number,
       current_carrier: body.current_carrier,
-      account_number: body.account_number || null, // TODO: Encrypt
-      pin: body.pin || null, // TODO: Encrypt
+      account_number: encryptIfNeeded(body.account_number),
+      pin: encryptIfNeeded(body.pin),
       authorized_name: body.authorized_name,
       status: "draft",
     });
@@ -554,7 +567,7 @@ phoneConfigRoutes.post("/sip", async (c) => {
 
     const tenantId = membership.tenant_id;
     const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-    const webhookUrl = `${backendUrl}/signalwire/voice`;
+    const webhookUrl = withWebhookSecret(`${backendUrl}/signalwire/voice`);
 
     // Create SIP endpoint on SignalWire
     const { endpoint, error: sipError } = await createSipEndpoint(tenantId);

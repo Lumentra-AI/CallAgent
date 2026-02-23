@@ -17,7 +17,7 @@ function getLlmStatus() {
     configured: hasAnyProvider,
     providers,
     availableProviders,
-    fallbackOrder: ["gemini", "openai", "groq"],
+    fallbackOrder: ["openai", "groq", "gemini"],
   };
 }
 
@@ -42,7 +42,7 @@ healthRoutes.get("/", async (c) => {
       },
       config: {
         voiceStack: "signalwire+deepgram+multi-llm+cartesia",
-        llmFallback: "gemini->openai->groq",
+        llmFallback: "openai->groq->gemini",
         nodeEnv: process.env.NODE_ENV || "development",
       },
     },

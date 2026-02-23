@@ -49,24 +49,25 @@ import type WebSocket from "ws";
 
 // === Vapi-inspired layered endpointing configuration ===
 // Layer 1: Context-aware (assistant asked for structured data)
-const STRUCTURED_DATA_WAIT_MS = 3000; // Name, phone, address, email - user needs time
-const DATE_COLLECTION_WAIT_MS = 2000; // Date/time - moderate wait
+const STRUCTURED_DATA_WAIT_MS = 1400; // Name, phone, address, email - still allow thinking time
+const DATE_COLLECTION_WAIT_MS = 1000; // Date/time collection
 
 // Layer 2: Filler detection
-const FILLER_WAIT_MS = 2000; // Caller is thinking (umm, uh, etc.)
+const FILLER_WAIT_MS = 1000; // Caller is thinking (umm, uh, etc.)
 
 // Layer 3: Transcription heuristics (Vapi-style punctuation/number/no-punctuation)
-const ON_PUNCTUATION_MS = 400; // Text ends with .!? - likely complete
-const ON_NUMBER_MS = 1000; // Text ends with a number - might be part of longer sequence
-const ON_NO_PUNCTUATION_MS = 1500; // No punctuation - user may still be talking
+const ON_PUNCTUATION_MS = 180; // Text ends with .!? - likely complete
+const ON_NUMBER_MS = 450; // Text ends with a number - might be part of longer sequence
+const ON_NO_PUNCTUATION_MS = 700; // No punctuation - user may still be talking
 
 // General
-const INCOMPLETE_WAIT_MS = 1500; // Structurally incomplete (ends with "the", "for", etc.)
-const MAX_ACCUMULATION_MS = 6000; // Max time per speech burst before forcing process
+const INCOMPLETE_WAIT_MS = 650; // Structurally incomplete (ends with "the", "for", etc.)
+const MAX_ACCUMULATION_MS = 3500; // Max time per speech burst before forcing process
 const MIN_TRANSCRIPT_LENGTH = 3; // Minimum characters before processing
-const BARGE_IN_TRANSCRIPT_WAIT_MS = 350; // Wait for transcript before deciding barge-in
-const GREEDY_CANCEL_CONFIRM_MS = 400; // Wait for transcript before aborting LLM (Vapi/Retell pattern)
+const BARGE_IN_TRANSCRIPT_WAIT_MS = 220; // Wait for transcript before deciding barge-in
+const GREEDY_CANCEL_CONFIRM_MS = 250; // Wait for transcript before aborting LLM (Vapi/Retell pattern)
 const SPEECH_STARTED_DEBOUNCE_MS = 200; // Ignore rapid-fire duplicate SpeechStarted events
+const MIN_BARGE_IN_INTERIM_CHARS = 8; // Require meaningful interim speech before interrupting TTS
 
 // Acknowledgement phrases - these should NOT trigger barge-in during TTS
 // Vapi pattern: user says "yeah" or "uh-huh" while listening, not interrupting
@@ -201,13 +202,35 @@ const FILLER_DELAY_MAX_MS = 500; // Unused - fillers disabled
 const FILLER_SKIP_CHANCE = 1.0; // Skip all code-based fillers - LLM handles naturalness
 
 // Filler responses for tool calls - spoken immediately while tool executes
-const TOOL_FILLERS: Record<string, string> = {
-  check_availability: "Let me check that for you.",
-  create_booking: "One moment while I book that.",
-  get_business_hours: "Let me look that up.",
-  transfer_to_human: "I'll connect you with someone right away.",
-  default: "One moment please.",
+const TOOL_FILLERS: Record<string, string[]> = {
+  check_availability: [
+    "Let me check that for you.",
+    "One second, checking now.",
+    "Give me a moment to look that up.",
+  ],
+  create_booking: [
+    "Perfect, I'll lock that in now.",
+    "One moment while I book that.",
+    "Got it, booking that now.",
+  ],
+  get_business_hours: [
+    "Let me pull that up.",
+    "One sec, checking hours now.",
+    "I'll look that up right now.",
+  ],
+  transfer_to_human: [
+    "I'll connect you with someone right away.",
+    "Alright, transferring you now.",
+    "Sure, putting you through now.",
+  ],
+  default: ["One moment please.", "One sec.", "Got it, give me a moment."],
 };
+
+const RECOVERY_RESPONSES = [
+  "Sorry, could you say that one more time?",
+  "I missed that. Can you repeat it quickly?",
+  "Sorry, say that again for me.",
+];
 
 export interface TurnManagerCallbacks {
   onResponse: (text: string) => void;
@@ -507,6 +530,38 @@ export class TurnManager {
   private handleTranscript(text: string, isFinal: boolean): void {
     this.state = updateTranscript(this.state, text, isFinal);
 
+    // Fast path: interim transcript can confirm real user interruption while processing.
+    // This avoids waiting for a final transcript before canceling stale LLM output.
+    if (this.pendingGreedyCancel && !isFinal) {
+      const interim = text.trim();
+      if (interim.length >= 8 && /[a-z]/i.test(interim)) {
+        console.log(
+          `[TURN] Greedy cancel confirmed by interim transcript ("${interim.substring(0, 40)}...")`,
+        );
+        this.cancelPendingGreedyCancel();
+        this.abortCurrentProcessing();
+      }
+    }
+
+    // Fast path for barge-in: only interrupt when interim transcript shows meaningful speech.
+    // This prevents timer-only interruptions from echo/noise while TTS is playing.
+    if (this.pendingBargeIn && !isFinal) {
+      const interim = text.trim();
+      if (interim.length >= MIN_BARGE_IN_INTERIM_CHARS && /[a-z]/i.test(interim)) {
+        if (this.isAcknowledgement(interim)) {
+          console.log(
+            `[TURN] Interim acknowledgement detected ("${interim}"), cancelling barge-in`,
+          );
+          this.cancelPendingBargeIn();
+        } else {
+          console.log(
+            `[TURN] Interim speech confirms barge-in ("${interim.substring(0, 40)}..."), interrupting`,
+          );
+          this.executeBargeIn();
+        }
+      }
+    }
+
     if (isFinal) {
       console.log(`[TURN] Final transcript: "${text}"`);
 
@@ -533,8 +588,7 @@ export class TurnManager {
 
       // Check if we have a pending barge-in waiting for transcript
       if (this.pendingBargeIn) {
-        const lower = text.trim().toLowerCase();
-        if (ACKNOWLEDGEMENT_PHRASES.has(lower)) {
+        if (this.isAcknowledgement(text)) {
           // User said "yeah", "uh-huh", etc. - NOT an interruption
           console.log(
             `[TURN] Acknowledgement detected ("${text}"), cancelling barge-in`,
@@ -620,8 +674,8 @@ export class TurnManager {
         return;
       }
 
-      // Prevent false positives from echo during first 800ms of TTS
-      const MIN_TTS_DURATION_MS = 800;
+      // Prevent false positives from echo during earliest TTS frames
+      const MIN_TTS_DURATION_MS = 700;
       const ttsDuration = this.ttsStartTime
         ? Date.now() - this.ttsStartTime
         : 999999;
@@ -641,13 +695,14 @@ export class TurnManager {
       this.pendingBargeIn = true;
       this.bargeInHandled = true; // Prevent repeated triggers
 
-      // Safety: if no transcript arrives in time, execute barge-in anyway
+      // Safety: if no transcript arrives, treat SpeechStarted as likely noise/echo and ignore.
+      // Real interruptions should produce interim/final transcript and will interrupt there.
       this.bargeInTimer = setTimeout(() => {
         if (this.pendingBargeIn) {
           console.log(
-            `[TURN] Barge-in timer expired, executing without transcript`,
+            `[TURN] Barge-in timer expired with no transcript, cancelling pending barge-in`,
           );
-          this.executeBargeIn();
+          this.cancelPendingBargeIn();
         }
       }, BARGE_IN_TRANSCRIPT_WAIT_MS);
     }
@@ -725,6 +780,14 @@ export class TurnManager {
       clearTimeout(this.bargeInTimer);
       this.bargeInTimer = null;
     }
+  }
+
+  private isAcknowledgement(text: string): boolean {
+    const normalized = text
+      .trim()
+      .toLowerCase()
+      .replace(/[.,!?]+$/g, "");
+    return ACKNOWLEDGEMENT_PHRASES.has(normalized);
   }
 
   /**
@@ -1001,6 +1064,7 @@ export class TurnManager {
         conversationHistory,
         systemPrompt: this.systemPrompt,
         tools: voiceAgentFunctions,
+        abortSignal: this.abortController.signal,
       });
 
       const sentenceBuffer = createSentenceBuffer();
@@ -1009,6 +1073,7 @@ export class TurnManager {
       let sentenceCount = 0;
       let currentProvider = "unknown";
       let shouldEscalate = false;
+      const providerErrors: string[] = [];
 
       // Start filler timer - will speak natural filler if LLM is slow
       this.startFillerTimer(transcript);
@@ -1023,6 +1088,9 @@ export class TurnManager {
         // Handle errors
         if (chunk.type === "error") {
           console.error(`[TURN] Stream error: ${chunk.error}`);
+          if (chunk.error) {
+            providerErrors.push(chunk.error);
+          }
           continue;
         }
 
@@ -1044,16 +1112,19 @@ export class TurnManager {
           });
 
           // Speak filler IMMEDIATELY while tool executes
-          const filler = TOOL_FILLERS[name] || TOOL_FILLERS.default;
+          const filler = this.selectToolFiller(name);
           this.speakChunk(filler, false);
-
-          // Check for transfer
-          if (name === "transfer_to_human") {
-            shouldEscalate = true;
-          }
 
           // Execute tool
           const result = await executeTool(name, args, toolContext);
+
+          // For custom SignalWire stack, tool executes transfer directly.
+          // Keep callback-based escalation only for Vapi compatibility paths.
+          if (name === "transfer_to_human") {
+            const transferResult = result as { transferred?: boolean };
+            const voiceProvider = process.env.VOICE_PROVIDER || "custom";
+            shouldEscalate = voiceProvider === "vapi" && !!transferResult.transferred;
+          }
 
           // Save tool result to conversation history
           // This is required for OpenAI's API - tool results must follow tool_calls
@@ -1085,6 +1156,7 @@ export class TurnManager {
             conversationHistory: updatedHistory,
             systemPrompt: this.systemPrompt,
             tools: voiceAgentFunctions,
+            abortSignal: this.abortController.signal,
           });
 
           // Continue streaming from tool result
@@ -1115,6 +1187,11 @@ export class TurnManager {
               if (remaining) {
                 // Continue from previous chunks if any were spoken
                 this.speakChunk(remaining, !isFirstToolResultChunk);
+              }
+            } else if (resultChunk.type === "error") {
+              console.error(`[TURN] Tool-result stream error: ${resultChunk.error}`);
+              if (resultChunk.error) {
+                providerErrors.push(resultChunk.error);
               }
             }
           }
@@ -1179,6 +1256,14 @@ export class TurnManager {
           `(provider: ${currentProvider}, total: ${totalLatency}ms)`,
       );
 
+      if (!fullResponse.trim() && providerErrors.length > 0) {
+        const recovery = this.selectRecoveryResponse();
+        console.warn(
+          `[TURN] Empty response after provider errors (${providerErrors.length}), using recovery prompt`,
+        );
+        await this.speak(recovery);
+      }
+
       // Add assistant response to history (check session exists first)
       if (fullResponse && this.shouldContinueProcessing()) {
         sessionManager.addMessage(this.callSid, "assistant", fullResponse);
@@ -1200,8 +1285,7 @@ export class TurnManager {
       console.error(`[TURN] Error processing turn:`, error);
 
       // Fallback response
-      const fallback =
-        "I'm sorry, I'm having trouble processing that. Could you please repeat?";
+      const fallback = this.selectRecoveryResponse();
       await this.speak(fallback);
     } finally {
       this.processingLock = false;
@@ -1347,6 +1431,26 @@ export class TurnManager {
 
     this.lastFillerUsed = selected;
     return selected;
+  }
+
+  /**
+   * Pick a short tool filler phrase with light variation to avoid repetitive speech.
+   */
+  private selectToolFiller(toolName: string): string {
+    const pool = TOOL_FILLERS[toolName] || TOOL_FILLERS.default;
+    const available = pool.filter((p) => p !== this.lastFillerUsed);
+    const selected =
+      available[Math.floor(Math.random() * available.length)] || pool[0];
+    this.lastFillerUsed = selected;
+    return selected;
+  }
+
+  private selectRecoveryResponse(): string {
+    return (
+      RECOVERY_RESPONSES[
+        Math.floor(Math.random() * RECOVERY_RESPONSES.length)
+      ] || RECOVERY_RESPONSES[0]
+    );
   }
 
   /**
