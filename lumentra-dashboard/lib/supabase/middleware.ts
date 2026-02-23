@@ -58,12 +58,36 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Redirect authenticated users who haven't completed setup to /setup
-  // (except if they're already on /setup)
+  // Check setup completion from the database (tenant record) instead of
+  // a client-controllable cookie.
   const isSetupRoute = request.nextUrl.pathname.startsWith("/setup");
   if (isProtectedRoute && user && !isSetupRoute) {
-    const setupComplete = request.cookies.get("setup_completed");
-    if (!setupComplete) {
+    const { data: membership } = await supabase
+      .from("tenant_members")
+      .select("tenant_id")
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .limit(1)
+      .single();
+
+    if (!membership) {
+      // No tenant membership - redirect to setup
+      const url = request.nextUrl.clone();
+      url.pathname = "/setup";
+      return NextResponse.redirect(url);
+    }
+
+    const { data: tenant } = await supabase
+      .from("tenants")
+      .select("setup_completed, setup_completed_at")
+      .eq("id", membership.tenant_id)
+      .single();
+
+    const isSetupComplete = Boolean(
+      tenant?.setup_completed || tenant?.setup_completed_at,
+    );
+
+    if (!isSetupComplete) {
       const url = request.nextUrl.clone();
       url.pathname = "/setup";
       return NextResponse.redirect(url);
@@ -77,8 +101,30 @@ export async function updateSession(request: NextRequest) {
 
   if (isAuthRoute && user) {
     const url = request.nextUrl.clone();
-    const setupComplete = request.cookies.get("setup_completed");
-    url.pathname = setupComplete ? "/dashboard" : "/setup";
+    // Check tenant setup state from DB
+    const { data: membership } = await supabase
+      .from("tenant_members")
+      .select("tenant_id")
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .limit(1)
+      .single();
+
+    if (membership) {
+      const { data: tenant } = await supabase
+        .from("tenants")
+        .select("setup_completed, setup_completed_at")
+        .eq("id", membership.tenant_id)
+        .single();
+
+      const isSetupComplete = Boolean(
+        tenant?.setup_completed || tenant?.setup_completed_at,
+      );
+
+      url.pathname = isSetupComplete ? "/dashboard" : "/setup";
+    } else {
+      url.pathname = "/setup";
+    }
     return NextResponse.redirect(url);
   }
 

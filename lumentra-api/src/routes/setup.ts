@@ -598,6 +598,7 @@ setupRoutes.post("/complete", async (c) => {
     // Build update data
     const updateData: Record<string, unknown> = {
       status: "active",
+      setup_completed: true,
       setup_completed_at: new Date().toISOString(),
       is_active: true,
       updated_at: new Date().toISOString(),

@@ -13,7 +13,7 @@ interface ProgressResponse {
 }
 
 export default function SetupPage() {
-  const { tenants, isLoading: tenantLoading, refreshTenants } = useTenant();
+  const { isLoading: tenantLoading, refreshTenants } = useTenant();
   const router = useRouter();
   const [loadingProgress, setLoadingProgress] = useState(false);
 
@@ -22,16 +22,6 @@ export default function SetupPage() {
   useEffect(() => {
     async function checkProgress() {
       if (!tenantLoading) {
-        // If user has active tenants, go to dashboard
-        if (tenants.length > 0) {
-          const activeTenants = tenants.filter((t) => t.is_active);
-          if (activeTenants.length > 0) {
-            document.cookie = "setup_completed=1; path=/; max-age=31536000";
-            router.replace("/dashboard");
-            return;
-          }
-        }
-
         // Load setup progress and redirect to current step
         setLoadingProgress(true);
         try {
@@ -54,7 +44,7 @@ export default function SetupPage() {
     }
 
     checkProgress();
-  }, [tenantLoading, tenants, router, refreshTenants]);
+  }, [tenantLoading, router, refreshTenants]);
 
   if (tenantLoading || loadingProgress) {
     return (
