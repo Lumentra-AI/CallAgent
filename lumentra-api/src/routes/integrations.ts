@@ -60,14 +60,64 @@ const OAUTH_CONFIGS: Record<
   },
 };
 
+import { randomBytes } from "crypto";
+import { encrypt, decrypt } from "../services/crypto/encryption.js";
+
 function generateState(): string {
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let result = "";
-  for (let i = 0; i < 32; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  return randomBytes(32).toString("hex");
+}
+
+function getFrontendBaseUrl(): string {
+  const configured = process.env.FRONTEND_URL || "http://localhost:3000";
+  return configured.split(",")[0].trim();
+}
+
+function renderOAuthCallbackResultHtml(params: {
+  frontendUrl: string;
+  provider: string;
+  success: boolean;
+  error?: string;
+}): string {
+  const { frontendUrl, provider, success, error } = params;
+  const redirectUrl = new URL("/setup/integrations", frontendUrl);
+  if (success) {
+    redirectUrl.searchParams.set("success", "true");
+    redirectUrl.searchParams.set("provider", provider);
+  } else {
+    redirectUrl.searchParams.set("error", error || "unknown_error");
+    redirectUrl.searchParams.set("provider", provider);
   }
-  return result;
+
+  const payload = success
+    ? { type: "oauth_success", provider }
+    : { type: "oauth_error", provider, error: error || "unknown_error" };
+
+  const payloadJson = JSON.stringify(payload);
+  const redirectHref = redirectUrl.toString();
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>OAuth Complete</title>
+  </head>
+  <body>
+    <script>
+      (function () {
+        const payload = ${payloadJson};
+        const redirectHref = ${JSON.stringify(redirectHref)};
+        try {
+          if (window.opener && !window.opener.closed) {
+            window.opener.postMessage(payload, "*");
+            window.close();
+            return;
+          }
+        } catch (_) {}
+        window.location.replace(redirectHref);
+      })();
+    </script>
+  </body>
+</html>`;
 }
 
 /** Type definitions for database rows */
@@ -262,23 +312,43 @@ integrationsRoutes.get("/:provider/callback", async (c) => {
   const state = c.req.query("state");
   const error = c.req.query("error");
 
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-  const redirectBase = `${frontendUrl}/setup/integrations`;
+  const frontendUrl = getFrontendBaseUrl();
 
   // Handle OAuth errors
   if (error) {
-    return c.redirect(`${redirectBase}?error=${encodeURIComponent(error)}`);
+    return c.html(
+      renderOAuthCallbackResultHtml({
+        frontendUrl,
+        provider,
+        success: false,
+        error,
+      }),
+    );
   }
 
   if (!code || !state) {
-    return c.redirect(`${redirectBase}?error=missing_params`);
+    return c.html(
+      renderOAuthCallbackResultHtml({
+        frontendUrl,
+        provider,
+        success: false,
+        error: "missing_params",
+      }),
+    );
   }
 
   // Verify state
   const stateData = oauthStates.get(state);
   if (!stateData || stateData.expiresAt < Date.now()) {
     oauthStates.delete(state);
-    return c.redirect(`${redirectBase}?error=invalid_state`);
+    return c.html(
+      renderOAuthCallbackResultHtml({
+        frontendUrl,
+        provider,
+        success: false,
+        error: "invalid_state",
+      }),
+    );
   }
 
   // Remove used state
@@ -287,14 +357,28 @@ integrationsRoutes.get("/:provider/callback", async (c) => {
   // Get OAuth config
   const config = OAUTH_CONFIGS[provider];
   if (!config) {
-    return c.redirect(`${redirectBase}?error=unsupported_provider`);
+    return c.html(
+      renderOAuthCallbackResultHtml({
+        frontendUrl,
+        provider,
+        success: false,
+        error: "unsupported_provider",
+      }),
+    );
   }
 
   const clientId = process.env[config.clientIdEnv];
   const clientSecret = process.env[config.clientSecretEnv];
 
   if (!clientId || !clientSecret) {
-    return c.redirect(`${redirectBase}?error=server_config_error`);
+    return c.html(
+      renderOAuthCallbackResultHtml({
+        frontendUrl,
+        provider,
+        success: false,
+        error: "server_config_error",
+      }),
+    );
   }
 
   try {
@@ -322,7 +406,14 @@ integrationsRoutes.get("/:provider/callback", async (c) => {
         `[OAUTH] Token exchange failed for ${provider}:`,
         errorText,
       );
-      return c.redirect(`${redirectBase}?error=token_exchange_failed`);
+      return c.html(
+        renderOAuthCallbackResultHtml({
+          frontendUrl,
+          provider,
+          success: false,
+          error: "token_exchange_failed",
+        }),
+      );
     }
 
     const tokens = (await tokenResponse.json()) as {
@@ -371,8 +462,10 @@ integrationsRoutes.get("/:provider/callback", async (c) => {
       {
         tenant_id: stateData.tenantId,
         provider,
-        access_token: tokens.access_token, // TODO: Encrypt in production
-        refresh_token: tokens.refresh_token || null,
+        access_token: encrypt(tokens.access_token),
+        refresh_token: tokens.refresh_token
+          ? encrypt(tokens.refresh_token)
+          : null,
         token_expires_at: expiresAt,
         scopes: config.scopes,
         external_account_id: externalAccountId,
@@ -382,10 +475,23 @@ integrationsRoutes.get("/:provider/callback", async (c) => {
       ["tenant_id", "provider"],
     );
 
-    return c.redirect(`${redirectBase}?success=true&provider=${provider}`);
+    return c.html(
+      renderOAuthCallbackResultHtml({
+        frontendUrl,
+        provider,
+        success: true,
+      }),
+    );
   } catch (e) {
     console.error(`[OAUTH] Error during callback for ${provider}:`, e);
-    return c.redirect(`${redirectBase}?error=server_error`);
+    return c.html(
+      renderOAuthCallbackResultHtml({
+        frontendUrl,
+        provider,
+        success: false,
+        error: "server_error",
+      }),
+    );
   }
 });
 
@@ -507,7 +613,7 @@ integrationsRoutes.post("/:id/refresh", async (c) => {
       body: new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,
-        refresh_token: integration.refresh_token,
+        refresh_token: decrypt(integration.refresh_token),
         grant_type: "refresh_token",
       }),
     });
@@ -540,8 +646,10 @@ integrationsRoutes.post("/:id/refresh", async (c) => {
     await updateOne(
       "tenant_integrations",
       {
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token || integration.refresh_token,
+        access_token: encrypt(tokens.access_token),
+        refresh_token: tokens.refresh_token
+          ? encrypt(tokens.refresh_token)
+          : integration.refresh_token,
         token_expires_at: expiresAt,
         status: "active",
         updated_at: new Date().toISOString(),

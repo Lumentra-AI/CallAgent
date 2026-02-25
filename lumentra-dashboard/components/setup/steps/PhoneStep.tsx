@@ -127,6 +127,9 @@ export function PhoneStep() {
   // New number state
   const [searchingNumbers, setSearchingNumbers] = useState(false);
   const [availableNumbers, setAvailableNumbers] = useState<string[]>([]);
+  const [numberSearchError, setNumberSearchError] = useState<string | null>(
+    null,
+  );
 
   // Port state
   const [selectedCarrier, setSelectedCarrier] = useState("");
@@ -164,20 +167,17 @@ export function PhoneStep() {
     if (!areaCode) return;
 
     setSearchingNumbers(true);
+    setNumberSearchError(null);
     try {
       const data = await get<{ numbers: string[] }>(
         `/api/phone/available?areaCode=${areaCode}`,
       );
       setAvailableNumbers(data.numbers || []);
     } catch {
-      // Mock numbers for demo
-      setAvailableNumbers([
-        `+1 (${areaCode}) 555-0123`,
-        `+1 (${areaCode}) 555-0456`,
-        `+1 (${areaCode}) 555-0789`,
-        `+1 (${areaCode}) 555-0147`,
-        `+1 (${areaCode}) 555-0258`,
-      ]);
+      setAvailableNumbers([]);
+      setNumberSearchError(
+        "Could not fetch available numbers right now. Please try again.",
+      );
     } finally {
       setSearchingNumbers(false);
     }
@@ -242,6 +242,9 @@ export function PhoneStep() {
       </div>
 
       {/* Available numbers */}
+      {numberSearchError && (
+        <p className="text-sm text-destructive">{numberSearchError}</p>
+      )}
       {availableNumbers.length > 0 && (
         <div className="space-y-3">
           <Label>Select a number</Label>

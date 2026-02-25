@@ -29,14 +29,16 @@ import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect
 import { SpotlightNew } from "@/components/aceternity/spotlight";
 import { ShineBorder } from "@/components/magicui/shine-border";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-
 interface IntegrationOption {
   id: IntegrationProvider;
   name: string;
   description: string;
   type: "calendar" | "booking" | "pos";
   industries?: string[];
+}
+
+interface AuthorizeResponse {
+  authUrl: string;
 }
 
 const INTEGRATION_OPTIONS: IntegrationOption[] = [
@@ -174,7 +176,7 @@ export default function IntegrationsSettingsPage() {
 
       try {
         const data = await get<{ integrations: TenantIntegration[] }>(
-          `/api/tenants/${currentTenant.id}/integrations`,
+          "/api/integrations",
         );
         setIntegrations(data.integrations || []);
 
@@ -199,47 +201,58 @@ export default function IntegrationsSettingsPage() {
     loadIntegrations();
   }, [currentTenant]);
 
-  const handleConnect = (provider: IntegrationProvider) => {
+  const handleConnect = async (provider: IntegrationProvider) => {
     if (!currentTenant) return;
 
-    // Open OAuth in new window
-    const width = 600;
-    const height = 700;
-    const left = window.screenX + (window.outerWidth - width) / 2;
-    const top = window.screenY + (window.outerHeight - height) / 2;
+    setError(null);
 
-    const popup = window.open(
-      `${API_URL}/api/integrations/${provider}/authorize?tenant_id=${currentTenant.id}`,
-      "oauth",
-      `width=${width},height=${height},left=${left},top=${top}`,
-    );
+    try {
+      const { authUrl } = await get<AuthorizeResponse>(
+        `/api/integrations/${provider}/authorize`,
+      );
+      const expectedOrigin = new URL(authUrl).origin;
 
-    // Listen for message from callback
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== API_URL) return;
+      // Open OAuth provider URL in a popup window
+      const width = 600;
+      const height = 700;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
 
-      if (event.data.type === "oauth_success") {
-        // Add the new integration
-        const newIntegration: TenantIntegration = {
-          id: `int_${Date.now()}`,
-          tenant_id: currentTenant.id,
-          provider,
-          status: "active",
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        setIntegrations((prev) => [...prev, newIntegration]);
-        setIntegrationMode("external");
-        popup?.close();
-      } else if (event.data.type === "oauth_error") {
-        setError(event.data.error || "Failed to connect integration");
-        popup?.close();
+      const popup = window.open(
+        authUrl,
+        "oauth",
+        `width=${width},height=${height},left=${left},top=${top}`,
+      );
+
+      if (!popup) {
+        setError("Popup blocked. Please allow popups and try again.");
+        return;
       }
 
-      window.removeEventListener("message", handleMessage);
-    };
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.origin !== expectedOrigin) return;
 
-    window.addEventListener("message", handleMessage);
+        if (event.data?.type === "oauth_success") {
+          const data = await get<{ integrations: TenantIntegration[] }>(
+            "/api/integrations",
+          );
+          setIntegrations(data.integrations || []);
+          setIntegrationMode("external");
+          popup.close();
+        } else if (event.data?.type === "oauth_error") {
+          setError(event.data.error || "Failed to connect integration");
+          popup.close();
+        }
+
+        window.removeEventListener("message", handleMessage);
+      };
+
+      window.addEventListener("message", handleMessage);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to start OAuth flow",
+      );
+    }
   };
 
   const handleDisconnect = async (integrationId: string) => {
@@ -249,9 +262,7 @@ export default function IntegrationsSettingsPage() {
     setError(null);
 
     try {
-      await del(
-        `/api/tenants/${currentTenant.id}/integrations/${integrationId}`,
-      );
+      await del(`/api/integrations/${integrationId}`);
       setIntegrations((prev) => prev.filter((i) => i.id !== integrationId));
 
       // Update mode if no integrations left

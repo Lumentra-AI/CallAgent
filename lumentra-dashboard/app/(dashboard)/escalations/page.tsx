@@ -16,10 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useEscalation } from "@/context/EscalationContext";
 import { EscalationCard } from "@/components/escalation";
-import type {
-  EscalationPriority,
-  EscalationStatus,
-} from "@/lib/mock/escalations";
+import type { EscalationPriority, EscalationStatus } from "@/types/escalation";
 
 type FilterStatus = "all" | EscalationStatus;
 type FilterPriority = "all" | EscalationPriority;

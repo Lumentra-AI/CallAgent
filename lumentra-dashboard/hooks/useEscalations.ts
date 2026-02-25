@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { get } from "@/lib/api/client";
 import {
-  getEscalationQueue,
-  getEscalationStats,
-  getWaitingCount,
-  type MockEscalation,
+  computeEscalationStats,
+  mapApiEscalation,
+  type EscalationItem,
   type EscalationStatus,
   type EscalationPriority,
-} from "@/lib/mock/escalations";
+  type EscalationQueueResponse,
+} from "@/types/escalation";
 
 interface UseEscalationsOptions {
   status?: EscalationStatus;
@@ -20,7 +21,7 @@ interface UseEscalationsOptions {
 
 interface UseEscalationsReturn {
   // Data
-  escalations: MockEscalation[];
+  escalations: EscalationItem[];
   waitingCount: number;
   stats: {
     totalWaiting: number;
@@ -36,7 +37,7 @@ interface UseEscalationsReturn {
 
   // Actions
   refresh: () => void;
-  getEscalationById: (id: string) => MockEscalation | undefined;
+  getEscalationById: (id: string) => EscalationItem | undefined;
 }
 
 export function useEscalations(
@@ -50,43 +51,70 @@ export function useEscalations(
     refreshInterval = 5000,
   } = options;
 
-  const [escalations, setEscalations] = useState<MockEscalation[]>([]);
+  const [escalations, setEscalations] = useState<EscalationItem[]>([]);
+  const [allEscalations, setAllEscalations] = useState<EscalationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadEscalations = useCallback(() => {
+  const loadEscalations = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const queue = getEscalationQueue({ status, priority, limit });
-      setEscalations(queue);
+      const data = await get<EscalationQueueResponse>("/api/escalation/queue");
+      const queue = (data.queue || []).map(mapApiEscalation);
+      setAllEscalations(queue);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load escalations",
       );
+      setAllEscalations([]);
       setEscalations([]);
     } finally {
       setIsLoading(false);
     }
-  }, [status, priority, limit]);
+  }, []);
 
   // Initial load
   useEffect(() => {
-    loadEscalations();
+    void loadEscalations();
   }, [loadEscalations]);
+
+  // Apply client-side filters from source queue
+  useEffect(() => {
+    let filtered = [...allEscalations];
+
+    if (status) {
+      filtered = filtered.filter((item) => item.status === status);
+    }
+
+    if (priority) {
+      filtered = filtered.filter((item) => item.priority === priority);
+    }
+
+    if (limit) {
+      filtered = filtered.slice(0, limit);
+    }
+
+    setEscalations(filtered);
+  }, [allEscalations, status, priority, limit]);
 
   // Auto refresh
   useEffect(() => {
     if (!autoRefresh) return;
 
-    const interval = setInterval(loadEscalations, refreshInterval);
+    const interval = setInterval(() => {
+      void loadEscalations();
+    }, refreshInterval);
     return () => clearInterval(interval);
   }, [autoRefresh, refreshInterval, loadEscalations]);
 
   // Get stats
-  const stats = getEscalationStats();
-  const waitingCount = getWaitingCount();
+  const stats = useMemo(
+    () => computeEscalationStats(allEscalations),
+    [allEscalations],
+  );
+  const waitingCount = stats.totalWaiting;
 
   // Get by ID
   const getEscalationById = useCallback(
@@ -107,16 +135,40 @@ export function useEscalations(
 
 // Hook for just the queue stats (lightweight)
 export function useEscalationQueueStats() {
-  const [stats, setStats] = useState(() => getEscalationStats());
-  const [waitingCount, setWaitingCount] = useState(() => getWaitingCount());
+  const [stats, setStats] = useState(() => computeEscalationStats([]));
+  const [waitingCount, setWaitingCount] = useState(0);
 
   useEffect(() => {
+    let isMounted = true;
+
+    const loadStats = async () => {
+      try {
+        const data = await get<EscalationQueueResponse>(
+          "/api/escalation/queue",
+        );
+        const queue = (data.queue || []).map(mapApiEscalation);
+        const nextStats = computeEscalationStats(queue);
+
+        if (!isMounted) return;
+        setStats(nextStats);
+        setWaitingCount(nextStats.totalWaiting);
+      } catch {
+        if (!isMounted) return;
+        setStats(computeEscalationStats([]));
+        setWaitingCount(0);
+      }
+    };
+
+    void loadStats();
+
     const interval = setInterval(() => {
-      setStats(getEscalationStats());
-      setWaitingCount(getWaitingCount());
+      void loadStats();
     }, 1000);
 
-    return () => clearInterval(interval);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   return { ...stats, waitingCount };

@@ -85,7 +85,7 @@ export default function PromotionsSettingsPage() {
 
       try {
         const data = await get<{ promotions: TenantPromotion[] }>(
-          `/api/tenants/${currentTenant.id}/promotions`,
+          "/api/promotions",
         );
         setPromotions(data.promotions || []);
       } catch (err) {
@@ -106,18 +106,15 @@ export default function PromotionsSettingsPage() {
     setError(null);
 
     try {
-      const data = await post<{ promotion: TenantPromotion }>(
-        `/api/tenants/${currentTenant.id}/promotions`,
-        {
-          offer_text: newPromotion.offer_text,
-          mention_behavior: newPromotion.mention_behavior,
-          is_active: true,
-          starts_at: newPromotion.starts_at || null,
-          ends_at: newPromotion.ends_at || null,
-        },
-      );
+      const data = await post<TenantPromotion>("/api/promotions", {
+        offer_text: newPromotion.offer_text,
+        mention_behavior: newPromotion.mention_behavior,
+        is_active: true,
+        starts_at: newPromotion.starts_at || null,
+        ends_at: newPromotion.ends_at || null,
+      });
 
-      setPromotions((prev) => [...prev, data.promotion]);
+      setPromotions((prev) => [...prev, data]);
       setNewPromotion(DEFAULT_NEW_PROMOTION);
       setShowNewForm(false);
     } catch (err) {
@@ -136,7 +133,7 @@ export default function PromotionsSettingsPage() {
     if (!currentTenant) return;
 
     try {
-      await put(`/api/tenants/${currentTenant.id}/promotions/${id}`, updates);
+      await put(`/api/promotions/${id}`, updates);
       setPromotions((prev) =>
         prev.map((p) => (p.id === id ? { ...p, ...updates } : p)),
       );
@@ -155,7 +152,7 @@ export default function PromotionsSettingsPage() {
     setError(null);
 
     try {
-      await del(`/api/tenants/${currentTenant.id}/promotions/${id}`);
+      await del(`/api/promotions/${id}`);
       setPromotions((prev) => prev.filter((p) => p.id !== id));
     } catch (err) {
       setError(

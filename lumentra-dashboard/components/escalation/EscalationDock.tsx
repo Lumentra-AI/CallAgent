@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { useEscalation } from "@/context/EscalationContext";
 import { useConfig } from "@/context/ConfigContext";
 import { EscalationCard } from "./EscalationCard";
-import type { MockEscalation } from "@/lib/mock/escalations";
+import type { EscalationItem } from "@/types/escalation";
 
 interface EscalationDockProps {
   className?: string;
@@ -76,7 +76,7 @@ export function EscalationDock({ className }: EscalationDockProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isDockExpanded, setDockExpanded]);
 
-  const handleCardClick = (escalation: MockEscalation) => {
+  const handleCardClick = (escalation: EscalationItem) => {
     openPanel(escalation);
   };
 

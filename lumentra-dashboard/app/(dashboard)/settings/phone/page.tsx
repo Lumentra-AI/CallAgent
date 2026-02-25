@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTenant } from "@/context/TenantContext";
-import { get, put } from "@/lib/api/client";
+import { get } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -103,8 +103,21 @@ interface PhoneConfig {
   port_rejection_reason?: string;
 }
 
+interface PhoneConfigResponse {
+  config: {
+    phone_number: string | null;
+    setup_type: PhoneSetupType;
+    status: PhoneStatus;
+  } | null;
+  portRequest?: {
+    status?: PortStatus;
+    estimated_completion?: string | null;
+    rejection_reason?: string | null;
+  } | null;
+}
+
 export default function PhoneSettingsPage() {
-  const { currentTenant, refreshTenants } = useTenant();
+  const { currentTenant } = useTenant();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -118,10 +131,21 @@ export default function PhoneSettingsPage() {
       if (!currentTenant) return;
 
       try {
-        const data = await get<PhoneConfig>(
-          `/api/tenants/${currentTenant.id}/phone`,
-        );
-        setPhoneConfig(data);
+        const data = await get<PhoneConfigResponse>("/api/phone/config");
+        const mappedConfig: PhoneConfig = {
+          phone_number:
+            data.config?.phone_number || currentTenant.phone_number || "",
+          setup_type: data.config?.setup_type || "new",
+          status:
+            data.config?.status ||
+            (currentTenant.phone_number ? "active" : "pending"),
+          port_status: data.portRequest?.status,
+          port_estimated_completion:
+            data.portRequest?.estimated_completion || undefined,
+          port_rejection_reason:
+            data.portRequest?.rejection_reason || undefined,
+        };
+        setPhoneConfig(mappedConfig);
       } catch (err) {
         // If no config exists, use defaults from tenant
         setPhoneConfig({

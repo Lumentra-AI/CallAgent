@@ -52,24 +52,27 @@ pendingBookingsRoutes.get("/", async (c) => {
 });
 
 /**
- * GET /api/pending-bookings/:id
- * Returns a single pending booking by ID
+ * GET /api/pending-bookings/stats
+ * Returns statistics about pending bookings
  */
-pendingBookingsRoutes.get("/:id", async (c) => {
+pendingBookingsRoutes.get("/stats", async (c) => {
   try {
-    const { id } = c.req.param();
     const tenantId = getAuthTenantId(c);
 
-    const booking = await getPendingBookingById(id, tenantId);
+    // Get all pending bookings and calculate stats
+    const allBookings = await getPendingBookings(tenantId);
 
-    if (!booking) {
-      return c.json({ error: "Booking not found" }, 404);
-    }
+    const stats = {
+      total: allBookings.length,
+      pending: allBookings.filter((b) => b.status === "pending").length,
+      confirmed: allBookings.filter((b) => b.status === "confirmed").length,
+      rejected: allBookings.filter((b) => b.status === "rejected").length,
+    };
 
-    return c.json({ booking });
+    return c.json({ stats });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("[PENDING_BOOKINGS] GET /:id error:", error);
+    console.error("[PENDING_BOOKINGS] GET /stats error:", error);
     return c.json({ error: message }, 500);
   }
 });
@@ -202,27 +205,24 @@ pendingBookingsRoutes.post("/:id/convert", async (c) => {
 });
 
 /**
- * GET /api/pending-bookings/stats
- * Returns statistics about pending bookings
+ * GET /api/pending-bookings/:id
+ * Returns a single pending booking by ID
  */
-pendingBookingsRoutes.get("/stats", async (c) => {
+pendingBookingsRoutes.get("/:id", async (c) => {
   try {
+    const { id } = c.req.param();
     const tenantId = getAuthTenantId(c);
 
-    // Get all pending bookings and calculate stats
-    const allBookings = await getPendingBookings(tenantId);
+    const booking = await getPendingBookingById(id, tenantId);
 
-    const stats = {
-      total: allBookings.length,
-      pending: allBookings.filter((b) => b.status === "pending").length,
-      confirmed: allBookings.filter((b) => b.status === "confirmed").length,
-      rejected: allBookings.filter((b) => b.status === "rejected").length,
-    };
+    if (!booking) {
+      return c.json({ error: "Booking not found" }, 404);
+    }
 
-    return c.json({ stats });
+    return c.json({ booking });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("[PENDING_BOOKINGS] GET /stats error:", error);
+    console.error("[PENDING_BOOKINGS] GET /:id error:", error);
     return c.json({ error: message }, 500);
   }
 });

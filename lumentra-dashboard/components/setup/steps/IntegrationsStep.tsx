@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Link,
@@ -14,7 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
-import type { IntegrationProvider } from "@/types";
+import { get } from "@/lib/api/client";
+import type { IntegrationProvider, TenantIntegration } from "@/types";
 
 // Aceternity & MagicUI components
 import { WobbleCard } from "@/components/aceternity/wobble-card";
@@ -22,7 +23,9 @@ import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect
 import { SpotlightNew } from "@/components/aceternity/spotlight";
 import { ShineBorder } from "@/components/magicui/shine-border";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+interface AuthorizeResponse {
+  authUrl: string;
+}
 
 interface IntegrationOption {
   id: IntegrationProvider;
@@ -159,49 +162,55 @@ export function IntegrationsStep() {
     }
   };
 
-  const handleConnect = (provider: IntegrationProvider) => {
-    // Open OAuth in new window
-    const width = 600;
-    const height = 700;
-    const left = window.screenX + (window.outerWidth - width) / 2;
-    const top = window.screenY + (window.outerHeight - height) / 2;
+  const handleConnect = async (provider: IntegrationProvider) => {
+    try {
+      const { authUrl } = await get<AuthorizeResponse>(
+        `/api/integrations/${provider}/authorize`,
+      );
+      const expectedOrigin = new URL(authUrl).origin;
 
-    const popup = window.open(
-      `${API_URL}/api/integrations/${provider}/authorize`,
-      "oauth",
-      `width=${width},height=${height},left=${left},top=${top}`,
-    );
+      // Open OAuth in new window
+      const width = 600;
+      const height = 700;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
 
-    // Listen for message from callback
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== API_URL) return;
+      const popup = window.open(
+        authUrl,
+        "oauth",
+        `width=${width},height=${height},left=${left},top=${top}`,
+      );
 
-      if (event.data.type === "oauth_success") {
-        // Refresh integrations list
-        dispatch({
-          type: "SET_INTEGRATIONS",
-          payload: [
-            ...state.integrations,
-            {
-              id: `int_${Date.now()}`,
-              tenant_id: state.tenantId || "",
-              provider,
-              status: "active",
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            },
-          ],
-        });
-        popup?.close();
-      } else if (event.data.type === "oauth_error") {
-        console.error("OAuth error:", event.data.error);
-        popup?.close();
+      if (!popup) {
+        console.error("Popup blocked while starting OAuth");
+        return;
       }
 
-      window.removeEventListener("message", handleMessage);
-    };
+      // Listen for message from callback
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.origin !== expectedOrigin) return;
 
-    window.addEventListener("message", handleMessage);
+        if (event.data?.type === "oauth_success") {
+          const data = await get<{ integrations: TenantIntegration[] }>(
+            "/api/integrations",
+          );
+          dispatch({
+            type: "SET_INTEGRATIONS",
+            payload: data.integrations || [],
+          });
+          popup.close();
+        } else if (event.data?.type === "oauth_error") {
+          console.error("OAuth error:", event.data.error);
+          popup.close();
+        }
+
+        window.removeEventListener("message", handleMessage);
+      };
+
+      window.addEventListener("message", handleMessage);
+    } catch (error) {
+      console.error("Failed to start OAuth flow:", error);
+    }
   };
 
   const handleDisconnect = (provider: IntegrationProvider) => {

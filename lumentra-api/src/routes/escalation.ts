@@ -42,6 +42,483 @@ interface TenantRow {
   transfer_behavior: Record<string, unknown> | null;
 }
 
+interface EscalationQueueRow {
+  id: string;
+  original_call_id: string | null;
+  contact_id: string | null;
+  phone_number: string;
+  reason: string | null;
+  priority: string;
+  callback_status: string;
+  created_at: string;
+  completed_at: string | null;
+  notes: string | null;
+  call_summary: string | null;
+  sentiment_score: number | null;
+  intents_detected: string[] | null;
+  call_transcript: unknown;
+  first_name: string | null;
+  last_name: string | null;
+}
+
+function mapQueueStatus(
+  callbackStatus: string,
+  notes: string | null,
+): "waiting" | "in-progress" | "resolved" | "callback-scheduled" {
+  if (
+    callbackStatus === "pending" &&
+    typeof notes === "string" &&
+    notes.startsWith("callback_scheduled")
+  ) {
+    return "callback-scheduled";
+  }
+
+  switch (callbackStatus) {
+    case "in_progress":
+      return "in-progress";
+    case "completed":
+    case "failed":
+      return "resolved";
+    case "pending":
+    default:
+      return "waiting";
+  }
+}
+
+function mapQueuePriority(
+  callbackPriority: string,
+  reason: string | null,
+  sentimentScore: number | null,
+): "urgent" | "high" | "normal" | "low" {
+  const normalizedReason = (reason || "").toLowerCase();
+  if (
+    callbackPriority === "high" &&
+    (normalizedReason.includes("emergency") ||
+      normalizedReason.includes("urgent") ||
+      (sentimentScore !== null && sentimentScore <= -0.6))
+  ) {
+    return "urgent";
+  }
+
+  switch (callbackPriority) {
+    case "high":
+      return "high";
+    case "low":
+      return "low";
+    default:
+      return "normal";
+  }
+}
+
+function mapSentiment(
+  sentimentScore: number | null,
+): "positive" | "neutral" | "negative" | "frustrated" {
+  if (sentimentScore === null || Number.isNaN(sentimentScore)) {
+    return "neutral";
+  }
+  if (sentimentScore <= -0.55) return "frustrated";
+  if (sentimentScore < -0.15) return "negative";
+  if (sentimentScore >= 0.35) return "positive";
+  return "neutral";
+}
+
+function buildConversation(
+  transcript: unknown,
+  fallbackTimestamp: string,
+  reason: string | null,
+  summary: string | null,
+): Array<{ role: "ai" | "caller"; content: string; timestamp: string }> {
+  const normalized: Array<{
+    role: "ai" | "caller";
+    content: string;
+    timestamp: string;
+  }> = [];
+
+  const pushEntry = (item: Record<string, unknown>) => {
+    const text = item.content || item.text;
+    if (typeof text !== "string" || text.trim().length === 0) {
+      return;
+    }
+    const speaker = String(item.role || item.speaker || "").toLowerCase();
+    const role: "ai" | "caller" =
+      speaker.includes("assistant") || speaker.includes("ai") ? "ai" : "caller";
+
+    const rawTimestamp = item.timestamp || item.time;
+    let timestamp = fallbackTimestamp;
+    if (typeof rawTimestamp === "string") {
+      const parsed = Date.parse(rawTimestamp);
+      if (!Number.isNaN(parsed)) {
+        timestamp = new Date(parsed).toISOString();
+      }
+    }
+
+    normalized.push({ role, content: text.trim(), timestamp });
+  };
+
+  const parseTranscript = (value: unknown) => {
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (entry && typeof entry === "object") {
+          pushEntry(entry as Record<string, unknown>);
+        }
+      }
+      return;
+    }
+
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value) as unknown;
+        parseTranscript(parsed);
+      } catch {
+        // Ignore non-JSON transcripts and use fallback below.
+      }
+    }
+  };
+
+  parseTranscript(transcript);
+
+  if (normalized.length === 0) {
+    if (reason) {
+      normalized.push({
+        role: "caller",
+        content: reason,
+        timestamp: fallbackTimestamp,
+      });
+    }
+
+    normalized.push({
+      role: "ai",
+      content: summary || "Escalated to a team member for follow-up.",
+      timestamp: fallbackTimestamp,
+    });
+  }
+
+  return normalized.slice(-30);
+}
+
+/**
+ * GET /api/escalation/queue
+ * Returns live escalation queue data from callback_queue and calls
+ */
+escalationRoutes.get("/queue", async (c) => {
+  const userId = getAuthUserId(c);
+
+  const statusFilter = c.req.query("status");
+  const priorityFilter = c.req.query("priority");
+  const limit = Math.min(parseInt(c.req.query("limit") || "100", 10), 200);
+
+  try {
+    const membershipSql = `
+      SELECT tenant_id
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+      LIMIT 1
+    `;
+    const membership = await queryOne<{ tenant_id: string }>(membershipSql, [
+      userId,
+    ]);
+
+    if (!membership) {
+      return c.json({ queue: [] });
+    }
+
+    const statusMap: Record<string, string> = {
+      waiting: "pending",
+      "in-progress": "in_progress",
+      resolved: "completed",
+      "callback-scheduled": "pending",
+    };
+    const priorityMap: Record<string, string> = {
+      urgent: "high",
+      high: "high",
+      normal: "medium",
+      low: "low",
+    };
+
+    const conditions: string[] = ["cq.tenant_id = $1"];
+    const params: unknown[] = [membership.tenant_id];
+    let paramIndex = 2;
+
+    if (statusFilter === "callback-scheduled") {
+      conditions.push(`cq.status = $${paramIndex++}`);
+      params.push("pending");
+      conditions.push(`cq.notes LIKE $${paramIndex++}`);
+      params.push("callback_scheduled%");
+    } else if (statusFilter === "waiting") {
+      conditions.push(`cq.status = $${paramIndex++}`);
+      params.push("pending");
+      conditions.push(
+        `(cq.notes IS NULL OR cq.notes NOT LIKE $${paramIndex++})`,
+      );
+      params.push("callback_scheduled%");
+    } else if (statusFilter && statusMap[statusFilter]) {
+      conditions.push(`cq.status = $${paramIndex++}`);
+      params.push(statusMap[statusFilter]);
+    }
+
+    if (priorityFilter && priorityMap[priorityFilter]) {
+      conditions.push(`cq.priority = $${paramIndex++}`);
+      params.push(priorityMap[priorityFilter]);
+    }
+
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+    const queueSql = `
+      SELECT
+        cq.id,
+        cq.original_call_id,
+        cq.contact_id,
+        cq.phone_number,
+        cq.reason,
+        cq.priority,
+        cq.status AS callback_status,
+        cq.created_at,
+        cq.completed_at,
+        cq.notes,
+        c.summary AS call_summary,
+        c.sentiment_score,
+        c.intents_detected,
+        c.transcript AS call_transcript,
+        ct.first_name,
+        ct.last_name
+      FROM callback_queue cq
+      LEFT JOIN calls c ON c.id = cq.original_call_id
+      LEFT JOIN contacts ct ON ct.id = cq.contact_id
+      ${whereClause}
+      ORDER BY
+        CASE cq.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+        cq.created_at ASC
+      LIMIT $${paramIndex}
+    `;
+
+    const rows = await queryAll<EscalationQueueRow>(queueSql, [
+      ...params,
+      limit,
+    ]);
+
+    const nowMs = Date.now();
+    const queue = (rows || []).map((row) => {
+      const status = mapQueueStatus(row.callback_status, row.notes);
+      const startedAt = new Date(row.created_at).toISOString();
+      const waitTime =
+        status === "waiting" || status === "in-progress"
+          ? Math.max(0, Math.floor((nowMs - Date.parse(startedAt)) / 1000))
+          : 0;
+
+      const contactName = [row.first_name, row.last_name]
+        .filter((part) => !!part)
+        .join(" ")
+        .trim();
+
+      const aiSummary = row.call_summary || row.reason || "Escalated call";
+
+      return {
+        id: row.id,
+        callId: row.original_call_id || row.id,
+        contactId: row.contact_id || undefined,
+        contactName: contactName || undefined,
+        phone: row.phone_number,
+        priority: mapQueuePriority(
+          row.priority,
+          row.reason,
+          row.sentiment_score,
+        ),
+        status,
+        reason: row.reason || "Escalation requested",
+        waitTime,
+        startedAt,
+        assignedTo:
+          row.notes && row.notes.startsWith("callback_scheduled:")
+            ? row.notes.replace("callback_scheduled:", "").trim()
+            : undefined,
+        resolvedAt: row.completed_at || undefined,
+        conversation: buildConversation(
+          row.call_transcript,
+          startedAt,
+          row.reason,
+          row.call_summary,
+        ),
+        aiSummary,
+        extractedIntents: row.intents_detected || [],
+        suggestedActions: [
+          "Review caller request and context",
+          "Confirm next steps with caller",
+          "Log resolution outcome",
+        ],
+        sentiment: mapSentiment(row.sentiment_score),
+      };
+    });
+
+    return c.json({ queue });
+  } catch (error) {
+    console.error("[ESCALATION] Error fetching queue:", error);
+    return c.json({ error: "Failed to fetch escalation queue" }, 500);
+  }
+});
+
+/**
+ * PUT /api/escalation/queue/:id/take
+ * Mark an escalation queue item as in-progress
+ */
+escalationRoutes.put("/queue/:id/take", async (c) => {
+  const id = c.req.param("id");
+  const userId = getAuthUserId(c);
+
+  try {
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
+
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const updateSql = `
+      UPDATE callback_queue
+      SET
+        status = 'in_progress',
+        attempts = COALESCE(attempts, 0) + 1,
+        last_attempt_at = $1
+      WHERE id = $2 AND tenant_id = $3
+      RETURNING id
+    `;
+    const updated = await queryOne<{ id: string }>(updateSql, [
+      new Date().toISOString(),
+      id,
+      membership.tenant_id,
+    ]);
+
+    if (!updated) {
+      return c.json({ error: "Queue item not found" }, 404);
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("[ESCALATION] Error taking queue item:", error);
+    return c.json({ error: "Failed to update queue item" }, 500);
+  }
+});
+
+/**
+ * PUT /api/escalation/queue/:id/resolve
+ * Mark an escalation queue item as resolved
+ */
+escalationRoutes.put("/queue/:id/resolve", async (c) => {
+  const id = c.req.param("id");
+  const userId = getAuthUserId(c);
+
+  try {
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
+
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const updateSql = `
+      UPDATE callback_queue
+      SET
+        status = 'completed',
+        completed_at = $1
+      WHERE id = $2 AND tenant_id = $3
+      RETURNING id
+    `;
+    const updated = await queryOne<{ id: string }>(updateSql, [
+      new Date().toISOString(),
+      id,
+      membership.tenant_id,
+    ]);
+
+    if (!updated) {
+      return c.json({ error: "Queue item not found" }, 404);
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("[ESCALATION] Error resolving queue item:", error);
+    return c.json({ error: "Failed to resolve queue item" }, 500);
+  }
+});
+
+/**
+ * PUT /api/escalation/queue/:id/schedule-callback
+ * Mark an escalation queue item for callback follow-up
+ */
+escalationRoutes.put("/queue/:id/schedule-callback", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const userId = getAuthUserId(c);
+
+  try {
+    const membershipSql = `
+      SELECT tenant_id, role
+      FROM tenant_members
+      WHERE user_id = $1
+        AND is_active = true
+        AND role = ANY($2)
+      LIMIT 1
+    `;
+    const membership = await queryOne<MembershipRow>(membershipSql, [
+      userId,
+      ["owner", "admin"],
+    ]);
+
+    if (!membership) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const assignedTo =
+      typeof body.assigned_to === "string" ? body.assigned_to.trim() : "";
+    const note = assignedTo
+      ? `callback_scheduled:${assignedTo}`
+      : "callback_scheduled";
+
+    const updateSql = `
+      UPDATE callback_queue
+      SET
+        status = 'pending',
+        notes = $1,
+        completed_at = NULL
+      WHERE id = $2 AND tenant_id = $3
+      RETURNING id
+    `;
+    const updated = await queryOne<{ id: string }>(updateSql, [
+      note,
+      id,
+      membership.tenant_id,
+    ]);
+
+    if (!updated) {
+      return c.json({ error: "Queue item not found" }, 404);
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("[ESCALATION] Error scheduling callback:", error);
+    return c.json({ error: "Failed to schedule callback" }, 500);
+  }
+});
+
 /**
  * GET /api/escalation/contacts
  * Get escalation contacts for tenant

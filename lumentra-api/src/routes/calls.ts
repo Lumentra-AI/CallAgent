@@ -141,97 +141,6 @@ callsRoutes.get("/", async (c) => {
 });
 
 /**
- * GET /api/calls/:id
- * Get call details with transcript
- */
-callsRoutes.get("/:id", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const tenantId = getAuthTenantId(c);
-
-    const data = await queryOne<CallRow>(
-      `SELECT * FROM calls WHERE id = $1 AND tenant_id = $2`,
-      [id, tenantId],
-    );
-
-    if (!data) {
-      return c.json({ error: "Call not found" }, 404);
-    }
-
-    // Get linked contact if exists
-    let contact: ContactRow | null = null;
-    if (data.contact_id) {
-      contact = await queryOne<ContactRow>(
-        `SELECT id, first_name, last_name, phone, email FROM contacts WHERE id = $1`,
-        [data.contact_id],
-      );
-    }
-
-    // Get linked booking if exists
-    let booking: BookingRow | null = null;
-    if (data.booking_id) {
-      booking = await queryOne<BookingRow>(
-        `SELECT id, booking_date, booking_time, booking_type, status, confirmation_code
-         FROM bookings WHERE id = $1`,
-        [data.booking_id],
-      );
-    }
-
-    return c.json({
-      ...data,
-      contact,
-      booking,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return c.json({ error: message }, 500);
-  }
-});
-
-/**
- * GET /api/calls/:id/transcript
- * Get call transcript
- */
-callsRoutes.get("/:id/transcript", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const tenantId = getAuthTenantId(c);
-
-    const data = await queryOne<{
-      id: string;
-      transcript: unknown;
-      summary: string | null;
-    }>(
-      `SELECT id, transcript, summary FROM calls WHERE id = $1 AND tenant_id = $2`,
-      [id, tenantId],
-    );
-
-    if (!data) {
-      return c.json({ error: "Call not found" }, 404);
-    }
-
-    // Parse transcript if it's a string
-    let transcript = data.transcript;
-    if (typeof transcript === "string") {
-      try {
-        transcript = JSON.parse(transcript);
-      } catch {
-        // Keep as string if not valid JSON
-      }
-    }
-
-    return c.json({
-      id: data.id,
-      transcript,
-      summary: data.summary,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return c.json({ error: message }, 500);
-  }
-});
-
-/**
  * GET /api/calls/stats
  * Get call statistics
  */
@@ -482,6 +391,97 @@ callsRoutes.get("/recent", async (c) => {
     );
 
     return c.json({ calls: data || [] });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
+/**
+ * GET /api/calls/:id
+ * Get call details with transcript
+ */
+callsRoutes.get("/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const tenantId = getAuthTenantId(c);
+
+    const data = await queryOne<CallRow>(
+      `SELECT * FROM calls WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId],
+    );
+
+    if (!data) {
+      return c.json({ error: "Call not found" }, 404);
+    }
+
+    // Get linked contact if exists
+    let contact: ContactRow | null = null;
+    if (data.contact_id) {
+      contact = await queryOne<ContactRow>(
+        `SELECT id, first_name, last_name, phone, email FROM contacts WHERE id = $1`,
+        [data.contact_id],
+      );
+    }
+
+    // Get linked booking if exists
+    let booking: BookingRow | null = null;
+    if (data.booking_id) {
+      booking = await queryOne<BookingRow>(
+        `SELECT id, booking_date, booking_time, booking_type, status, confirmation_code
+         FROM bookings WHERE id = $1`,
+        [data.booking_id],
+      );
+    }
+
+    return c.json({
+      ...data,
+      contact,
+      booking,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
+
+/**
+ * GET /api/calls/:id/transcript
+ * Get call transcript
+ */
+callsRoutes.get("/:id/transcript", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const tenantId = getAuthTenantId(c);
+
+    const data = await queryOne<{
+      id: string;
+      transcript: unknown;
+      summary: string | null;
+    }>(
+      `SELECT id, transcript, summary FROM calls WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId],
+    );
+
+    if (!data) {
+      return c.json({ error: "Call not found" }, 404);
+    }
+
+    // Parse transcript if it's a string
+    let transcript = data.transcript;
+    if (typeof transcript === "string") {
+      try {
+        transcript = JSON.parse(transcript);
+      } catch {
+        // Keep as string if not valid JSON
+      }
+    }
+
+    return c.json({
+      id: data.id,
+      transcript,
+      summary: data.summary,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return c.json({ error: message }, 500);

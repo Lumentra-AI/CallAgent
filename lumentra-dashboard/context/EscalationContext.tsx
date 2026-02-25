@@ -8,20 +8,18 @@ import {
   useEffect,
   type ReactNode,
 } from "react";
+import { get, put } from "@/lib/api/client";
 import {
-  MOCK_ESCALATIONS,
-  getEscalationQueue,
-  getWaitingCount,
-  getEscalationStats,
-  type MockEscalation,
+  mapApiEscalation,
+  type EscalationItem,
+  type EscalationQueueResponse,
   type EscalationStatus,
-  type EscalationPriority,
-} from "@/lib/mock/escalations";
+} from "@/types/escalation";
 
 // State types
 interface EscalationState {
-  queue: MockEscalation[];
-  activeEscalation: MockEscalation | null;
+  queue: EscalationItem[];
+  activeEscalation: EscalationItem | null;
   isPanelOpen: boolean;
   isDockExpanded: boolean;
   isLoading: boolean;
@@ -30,9 +28,9 @@ interface EscalationState {
 
 // Action types
 type EscalationAction =
-  | { type: "SET_QUEUE"; payload: MockEscalation[] }
-  | { type: "SET_ACTIVE"; payload: MockEscalation | null }
-  | { type: "OPEN_PANEL"; payload: MockEscalation }
+  | { type: "SET_QUEUE"; payload: EscalationItem[] }
+  | { type: "SET_ACTIVE"; payload: EscalationItem | null }
+  | { type: "OPEN_PANEL"; payload: EscalationItem }
   | { type: "CLOSE_PANEL" }
   | { type: "TOGGLE_DOCK" }
   | { type: "SET_DOCK_EXPANDED"; payload: boolean }
@@ -157,9 +155,9 @@ const initialState: EscalationState = {
 // Context value type
 interface EscalationContextValue {
   // State
-  queue: MockEscalation[];
-  waitingQueue: MockEscalation[];
-  activeEscalation: MockEscalation | null;
+  queue: EscalationItem[];
+  waitingQueue: EscalationItem[];
+  activeEscalation: EscalationItem | null;
   isPanelOpen: boolean;
   isDockExpanded: boolean;
   isLoading: boolean;
@@ -175,7 +173,7 @@ interface EscalationContextValue {
   takeCall: (escalationId: string) => void;
   resolveEscalation: (escalationId: string) => void;
   scheduleCallback: (escalationId: string, assignedTo: string) => void;
-  openPanel: (escalation: MockEscalation) => void;
+  openPanel: (escalation: EscalationItem) => void;
   closePanel: () => void;
   toggleDock: () => void;
   setDockExpanded: (expanded: boolean) => void;
@@ -193,22 +191,24 @@ interface EscalationProviderProps {
 export function EscalationProvider({ children }: EscalationProviderProps) {
   const [state, dispatch] = useReducer(escalationReducer, initialState);
 
+  const loadQueue = useCallback(async () => {
+    dispatch({ type: "SET_LOADING", payload: true });
+    try {
+      const data = await get<EscalationQueueResponse>("/api/escalation/queue");
+      const queue = (data.queue || []).map(mapApiEscalation);
+      dispatch({ type: "SET_QUEUE", payload: queue });
+    } catch (err) {
+      dispatch({
+        type: "SET_ERROR",
+        payload: err instanceof Error ? err.message : "Failed to load queue",
+      });
+    }
+  }, []);
+
   // Load initial data
   useEffect(() => {
-    const loadQueue = () => {
-      try {
-        const queue = getEscalationQueue();
-        dispatch({ type: "SET_QUEUE", payload: queue });
-      } catch (err) {
-        dispatch({
-          type: "SET_ERROR",
-          payload: err instanceof Error ? err.message : "Failed to load queue",
-        });
-      }
-    };
-
-    loadQueue();
-  }, []);
+    void loadQueue();
+  }, [loadQueue]);
 
   // Update wait times every second for waiting escalations
   useEffect(() => {
@@ -239,10 +239,19 @@ export function EscalationProvider({ children }: EscalationProviderProps) {
   // Actions
   const takeCall = useCallback((escalationId: string) => {
     dispatch({ type: "TAKE_CALL", payload: escalationId });
+    void put(`/api/escalation/queue/${escalationId}/take`).catch(() => {
+      dispatch({
+        type: "SET_ERROR",
+        payload: "Failed to update escalation status",
+      });
+    });
   }, []);
 
   const resolveEscalation = useCallback((escalationId: string) => {
     dispatch({ type: "RESOLVE_ESCALATION", payload: escalationId });
+    void put(`/api/escalation/queue/${escalationId}/resolve`).catch(() => {
+      dispatch({ type: "SET_ERROR", payload: "Failed to resolve escalation" });
+    });
   }, []);
 
   const scheduleCallback = useCallback(
@@ -251,11 +260,16 @@ export function EscalationProvider({ children }: EscalationProviderProps) {
         type: "SCHEDULE_CALLBACK",
         payload: { id: escalationId, assignedTo },
       });
+      void put(`/api/escalation/queue/${escalationId}/schedule-callback`, {
+        assigned_to: assignedTo,
+      }).catch(() => {
+        dispatch({ type: "SET_ERROR", payload: "Failed to schedule callback" });
+      });
     },
     [],
   );
 
-  const openPanel = useCallback((escalation: MockEscalation) => {
+  const openPanel = useCallback((escalation: EscalationItem) => {
     dispatch({ type: "OPEN_PANEL", payload: escalation });
   }, []);
 
@@ -272,10 +286,8 @@ export function EscalationProvider({ children }: EscalationProviderProps) {
   }, []);
 
   const refresh = useCallback(() => {
-    dispatch({ type: "SET_LOADING", payload: true });
-    const queue = getEscalationQueue();
-    dispatch({ type: "SET_QUEUE", payload: queue });
-  }, []);
+    void loadQueue();
+  }, [loadQueue]);
 
   const value: EscalationContextValue = {
     queue: state.queue,

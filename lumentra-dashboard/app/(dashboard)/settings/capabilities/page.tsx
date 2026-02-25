@@ -131,7 +131,7 @@ const CAPABILITY_SETTINGS_LINKS: Record<string, string> = {
   promotions: "/settings/promotions",
   after_hours: "/settings/hours",
   emergency_dispatch: "/settings/escalation",
-  faq: "/settings/responses",
+  faq: "/settings/assistant",
 };
 
 export default function CapabilitiesSettingsPage() {
@@ -156,7 +156,7 @@ export default function CapabilitiesSettingsPage() {
 
       try {
         const data = await get<{ capabilities: TenantCapability[] }>(
-          `/api/tenants/${currentTenant.id}/capabilities`,
+          "/api/capabilities",
         );
         const enabledCapabilities = (data.capabilities || [])
           .filter((c) => c.is_enabled)
@@ -189,7 +189,7 @@ export default function CapabilitiesSettingsPage() {
     setSaveSuccess(false);
 
     try {
-      await put(`/api/tenants/${currentTenant.id}/capabilities`, {
+      await put("/api/capabilities", {
         capabilities: capabilities.map((c) => ({
           capability: c,
           is_enabled: true,

@@ -21,7 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useEscalation } from "@/context/EscalationContext";
 import { AISummary } from "./AISummary";
-import type { EscalationMessage } from "@/lib/mock/escalations";
+import type { EscalationMessage } from "@/types/escalation";
 
 interface EscalationPanelProps {
   className?: string;

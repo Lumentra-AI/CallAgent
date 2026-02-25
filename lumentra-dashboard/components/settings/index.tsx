@@ -30,7 +30,6 @@ import GeneralTab from "./GeneralTab";
 import VoiceTab from "./VoiceTab";
 import PricingTab from "./PricingTab";
 import HoursTab from "./HoursTab";
-import IntegrationsTab from "./IntegrationsTab";
 import BillingTab from "./BillingTab";
 import GreetingsTab from "./GreetingsTab";
 import ResponsesTab from "./ResponsesTab";
@@ -457,8 +456,23 @@ export default function SettingsPanel() {
             {settingsTab === "escalation" && <EscalationTab />}
             {settingsTab === "billing" && <BillingTab />}
             {settingsTab === "pricing" && isDeveloper && <PricingTab />}
-            {settingsTab === "integrations" && isDeveloper && (
-              <IntegrationsTab />
+            {settingsTab === "integrations" && (
+              <div className="max-w-2xl space-y-4">
+                <h3 className="text-lg font-semibold text-foreground">
+                  Integrations
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Manage connected services from the standalone integrations
+                  settings page.
+                </p>
+                <Link
+                  href="/settings/integrations"
+                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
+                >
+                  Open Integrations
+                  <ExternalLink className="h-4 w-4" />
+                </Link>
+              </div>
             )}
             {settingsTab === "advanced" && isDeveloper && <AdvancedTab />}
           </motion.div>
@@ -691,7 +705,6 @@ export {
   VoiceTab,
   PricingTab,
   HoursTab,
-  IntegrationsTab,
   BillingTab,
   GreetingsTab,
   ResponsesTab,

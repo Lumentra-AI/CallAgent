@@ -963,8 +963,10 @@ export class TurnManager {
       clearTimeout(this.silenceTimer);
     }
 
-    // Compute initial wait based on transcript content and context (layered endpointing)
-    const transcript = getCompleteTranscript(this.state);
+    // Prefer finalized transcript for endpointing. Interim text is noisy and should
+    // not dominate timing once we already have a final chunk.
+    const transcript =
+      this.state.transcriptBuffer.trim() || getCompleteTranscript(this.state);
     const waitMs = this.getEndpointingTimeout(transcript);
 
     this.silenceTimer = setTimeout(() => {
@@ -1007,7 +1009,9 @@ export class TurnManager {
       return;
     }
 
-    const transcript = getCompleteTranscript(this.state);
+    const finalizedTranscript = this.state.transcriptBuffer.trim();
+    const interimTranscript = this.state.interimTranscript.trim();
+    const transcript = finalizedTranscript || interimTranscript;
     if (transcript.length < MIN_TRANSCRIPT_LENGTH) {
       console.log(`[TURN] Transcript too short, ignoring: "${transcript}"`);
       this.processingLock = false;
@@ -1026,7 +1030,7 @@ export class TurnManager {
 
     // Prefer finalized transcript before deciding completeness.
     // Processing interim text can split one utterance into multiple turns.
-    if (this.state.interimTranscript.trim().length > 0 && !forceProcess) {
+    if (!finalizedTranscript && interimTranscript.length > 0 && !forceProcess) {
       console.log(
         `[TURN] Interim transcript active, waiting ${INTERIM_FINALIZATION_WAIT_MS}ms for final`,
       );
@@ -1587,9 +1591,11 @@ export class TurnManager {
       return;
     }
 
-    // Only process finalized transcript here.
+    const finalizedTranscript = this.state.transcriptBuffer.trim();
+    const interimTranscript = this.state.interimTranscript.trim();
+
     // Interim-only text can still change and causes duplicate turns.
-    if (this.state.interimTranscript.trim().length > 0) {
+    if (!finalizedTranscript && interimTranscript.length > 0) {
       if (!this.silenceTimer) {
         this.silenceTimer = setTimeout(() => {
           this.silenceTimer = null;
@@ -1599,8 +1605,7 @@ export class TurnManager {
       return;
     }
 
-    const transcript = this.state.transcriptBuffer.trim();
-    if (transcript.length >= MIN_TRANSCRIPT_LENGTH) {
+    if (finalizedTranscript.length >= MIN_TRANSCRIPT_LENGTH) {
       this.processUserTurn();
     }
   }

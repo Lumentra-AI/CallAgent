@@ -110,6 +110,16 @@ interface EscalationSettings {
   };
 }
 
+interface EscalationTriggersResponse {
+  enabled: boolean;
+  triggers: string[];
+  customTriggers: string[];
+  transfer_behavior: {
+    type: TransferType;
+    no_answer: NoAnswerBehavior;
+  };
+}
+
 export default function EscalationSettingsPage() {
   const { currentTenant, refreshTenants } = useTenant();
   const [isLoading, setIsLoading] = useState(true);
@@ -118,6 +128,7 @@ export default function EscalationSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [customTriggerInput, setCustomTriggerInput] = useState("");
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [deletedContactIds, setDeletedContactIds] = useState<string[]>([]);
 
   const [formData, setFormData] = useState<EscalationSettings>({
     contacts: [],
@@ -134,23 +145,21 @@ export default function EscalationSettingsPage() {
       if (!currentTenant) return;
 
       try {
-        // Load contacts
-        const contactsData = await get<{ contacts: EscalationContact[] }>(
-          `/api/tenants/${currentTenant.id}/escalation/contacts`,
-        );
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const tenantData = currentTenant as Record<string, any>;
+        const [contactsData, triggersData] = await Promise.all([
+          get<{ contacts: EscalationContact[] }>("/api/escalation/contacts"),
+          get<EscalationTriggersResponse>("/api/escalation/triggers"),
+        ]);
 
         setFormData({
           contacts: contactsData.contacts || [],
-          triggers: tenantData.escalation_triggers || [],
-          customTriggers: tenantData.custom_escalation_triggers || [],
-          transferBehavior: tenantData.transfer_behavior || {
+          triggers: triggersData.triggers || [],
+          customTriggers: triggersData.customTriggers || [],
+          transferBehavior: triggersData.transfer_behavior || {
             type: "warm",
             no_answer: "next_contact",
           },
         });
+        setDeletedContactIds([]);
       } catch (err) {
         // Use defaults if API fails
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -209,6 +218,10 @@ export default function EscalationSettingsPage() {
   };
 
   const removeContact = (id: string) => {
+    if (!id.startsWith("temp_")) {
+      setDeletedContactIds((prev) => [...prev, id]);
+    }
+
     setFormData((prev) => {
       const updated = prev.contacts.filter((c) => c.id !== id);
       // Update is_primary if needed
@@ -260,11 +273,15 @@ export default function EscalationSettingsPage() {
     setSaveSuccess(false);
 
     try {
+      for (const contactId of deletedContactIds) {
+        await del(`/api/escalation/contacts/${contactId}`);
+      }
+
       // Save contacts
       for (const contact of formData.contacts) {
         if (contact.id.startsWith("temp_")) {
           // Create new contact
-          await post(`/api/tenants/${currentTenant.id}/escalation/contacts`, {
+          await post("/api/escalation/contacts", {
             name: contact.name,
             phone: contact.phone,
             role: contact.role,
@@ -274,28 +291,26 @@ export default function EscalationSettingsPage() {
           });
         } else {
           // Update existing contact
-          await put(
-            `/api/tenants/${currentTenant.id}/escalation/contacts/${contact.id}`,
-            {
-              name: contact.name,
-              phone: contact.phone,
-              role: contact.role,
-              is_primary: contact.is_primary,
-              availability: contact.availability,
-              sort_order: contact.sort_order,
-            },
-          );
+          await put(`/api/escalation/contacts/${contact.id}`, {
+            name: contact.name,
+            phone: contact.phone,
+            role: contact.role,
+            is_primary: contact.is_primary,
+            availability: contact.availability,
+            sort_order: contact.sort_order,
+          });
         }
       }
 
       // Save triggers and transfer behavior
-      await put(`/api/tenants/${currentTenant.id}`, {
-        escalation_triggers: formData.triggers,
-        custom_escalation_triggers: formData.customTriggers,
+      await put("/api/escalation/triggers", {
+        enabled: formData.contacts.length > 0,
+        triggers: [...formData.triggers, ...formData.customTriggers],
         transfer_behavior: formData.transferBehavior,
       });
 
       await refreshTenants();
+      setDeletedContactIds([]);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {

@@ -15,13 +15,13 @@ import {
 import { cn } from "@/lib/utils";
 import { AISummaryInline } from "./AISummary";
 import type {
-  MockEscalation,
+  EscalationItem,
   EscalationPriority,
   EscalationStatus,
-} from "@/lib/mock/escalations";
+} from "@/types/escalation";
 
 interface EscalationCardProps {
-  escalation: MockEscalation;
+  escalation: EscalationItem;
   onTakeCall?: () => void;
   onScheduleCallback?: () => void;
   onClick?: () => void;
