@@ -58,13 +58,13 @@ const FILLER_WAIT_MS = 1000; // Caller is thinking (umm, uh, etc.)
 // Layer 3: Transcription heuristics (Vapi-style punctuation/number/no-punctuation)
 const ON_PUNCTUATION_MS = 180; // Text ends with .!? - likely complete
 const ON_NUMBER_MS = 450; // Text ends with a number - might be part of longer sequence
-const ON_NO_PUNCTUATION_MS = 700; // No punctuation - user may still be talking
+const ON_NO_PUNCTUATION_MS = 520; // No punctuation - user may still be talking
 
 // General
-const INCOMPLETE_WAIT_MS = 650; // Structurally incomplete (ends with "the", "for", etc.)
-const MAX_ACCUMULATION_MS = 3500; // Max time per speech burst before forcing process
+const INCOMPLETE_WAIT_MS = 450; // Structurally incomplete (ends with "the", "for", etc.)
+const MAX_ACCUMULATION_MS = 2500; // Max time per speech burst before forcing process
 const MIN_TRANSCRIPT_LENGTH = 3; // Minimum characters before processing
-const INTERIM_FINALIZATION_WAIT_MS = 240; // Briefly wait for Deepgram final to replace interim text
+const INTERIM_FINALIZATION_WAIT_MS = 120; // Briefly wait for Deepgram final to replace interim text
 const BARGE_IN_TRANSCRIPT_WAIT_MS = 220; // Wait for transcript before deciding barge-in
 const GREEDY_CANCEL_CONFIRM_MS = 250; // Wait for transcript before aborting LLM (Vapi/Retell pattern)
 const SPEECH_STARTED_DEBOUNCE_MS = 200; // Ignore rapid-fire duplicate SpeechStarted events
@@ -645,6 +645,11 @@ export class TurnManager {
     }
     this.lastSpeechStartedTime = now;
 
+    const existingSession = sessionManager.getSession(this.callSid);
+    if (existingSession?.isSpeaking) {
+      return; // Duplicate SpeechStarted while already in a speaking segment
+    }
+
     console.log(`[TURN] User started speaking`);
     sessionManager.setSpeaking(this.callSid, true);
 
@@ -684,11 +689,10 @@ export class TurnManager {
     }
 
     // Cancel any pending processing - user is still talking
-    const hadPendingProcessing = this.silenceTimer !== null;
     this.cancelScheduledProcessing();
 
-    // Reset accumulation timer for each new speech burst
-    if (hadPendingProcessing || !this.accumulationStartTime) {
+    // Set accumulation timer once per turn (avoid extending turns from duplicate VAD events)
+    if (!this.accumulationStartTime) {
       this.accumulationStartTime = Date.now();
     }
 

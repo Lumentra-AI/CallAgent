@@ -22,6 +22,7 @@ export class MediaStreamHandler {
   private isActive = false;
   private lastAudioSentTime: number = Date.now();
   private silenceInjectionInterval: NodeJS.Timeout | null = null;
+  private lastIgnoredTrackLogTime = 0;
 
   // Generate silence frames (20ms of mulaw silence = 160 bytes of 0xFF)
   private static readonly SILENCE_FRAME = Buffer.alloc(160, 0xff);
@@ -83,6 +84,19 @@ export class MediaStreamHandler {
 
       case "media":
         if (event.media?.payload) {
+          // Only feed inbound caller audio to STT.
+          // Outbound track is assistant TTS and causes self-transcription loops.
+          if (event.media.track !== "inbound") {
+            const now = Date.now();
+            if (now - this.lastIgnoredTrackLogTime > 5000) {
+              console.log(
+                `[MEDIA-STREAM] Ignoring non-inbound track for STT: ${event.media.track}`,
+              );
+              this.lastIgnoredTrackLogTime = now;
+            }
+            return;
+          }
+
           // Decode base64 audio
           const audioBuffer = Buffer.from(event.media.payload, "base64");
           this.callbacks.onAudio(audioBuffer);
