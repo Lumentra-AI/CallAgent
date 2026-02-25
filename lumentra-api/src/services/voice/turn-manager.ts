@@ -1587,12 +1587,15 @@ export class TurnManager {
 
   private checkForPendingResponse(): void {
     const session = sessionManager.getSession(this.callSid);
-    if (session?.isSpeaking) {
-      return;
-    }
-
     const finalizedTranscript = this.state.transcriptBuffer.trim();
     const interimTranscript = this.state.interimTranscript.trim();
+
+    // If user is actively speaking and we only have interim text, wait.
+    // But if we already have finalized text, allow processing to avoid
+    // long stalls when Deepgram emits noisy repeated SpeechStarted events.
+    if (session?.isSpeaking && finalizedTranscript.length === 0) {
+      return;
+    }
 
     // Interim-only text can still change and causes duplicate turns.
     if (!finalizedTranscript && interimTranscript.length > 0) {
