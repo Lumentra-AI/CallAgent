@@ -64,10 +64,12 @@ const ON_NO_PUNCTUATION_MS = 700; // No punctuation - user may still be talking
 const INCOMPLETE_WAIT_MS = 650; // Structurally incomplete (ends with "the", "for", etc.)
 const MAX_ACCUMULATION_MS = 3500; // Max time per speech burst before forcing process
 const MIN_TRANSCRIPT_LENGTH = 3; // Minimum characters before processing
+const INTERIM_FINALIZATION_WAIT_MS = 240; // Briefly wait for Deepgram final to replace interim text
 const BARGE_IN_TRANSCRIPT_WAIT_MS = 220; // Wait for transcript before deciding barge-in
 const GREEDY_CANCEL_CONFIRM_MS = 250; // Wait for transcript before aborting LLM (Vapi/Retell pattern)
 const SPEECH_STARTED_DEBOUNCE_MS = 200; // Ignore rapid-fire duplicate SpeechStarted events
 const MIN_BARGE_IN_INTERIM_CHARS = 8; // Require meaningful interim speech before interrupting TTS
+const FINAL_TRANSCRIPT_DEDUPE_MS = 1500; // Ignore duplicate final transcripts emitted in quick succession
 
 // Acknowledgement phrases - these should NOT trigger barge-in during TTS
 // Vapi pattern: user says "yeah" or "uh-huh" while listening, not interrupting
@@ -118,6 +120,11 @@ function checkUtteranceCompleteness(
   const allFillers =
     /^(\s*(u+m+|u+h+|h+m+|m+m+|a+h+|e+r+|you know|like|well|so|yeah|ok)\s*)+$/i;
   if (allFillers.test(lower)) return "filler";
+
+  // Bridge words are usually mid-thought even if STT inserts punctuation ("Okay. So.").
+  if (/\b(and|but|or|so|because|if|when|then|also)[.!?]?$/i.test(lower)) {
+    return "incomplete";
+  }
 
   // Ends with sentence-ending punctuation - complete!
   if (/[.!?]$/.test(trimmed)) return "complete";
@@ -282,6 +289,10 @@ export class TurnManager {
   // SpeechStarted debounce - filter rapid-fire duplicate events from Deepgram
   private lastSpeechStartedTime = 0;
 
+  // Final transcript dedupe - prevents duplicate Deepgram finals from double-processing turns
+  private lastFinalTranscriptNormalized: string | null = null;
+  private lastFinalTranscriptAt = 0;
+
   // Word-level TTS timestamps - track what the user heard before barge-in
   // Vapi pattern: reconstruct exactly which words were spoken before interruption
   private currentResponseWordTimestamps: WordTimestamp[] = [];
@@ -403,9 +414,7 @@ export class TurnManager {
           if (this.pendingTTSChunks > 0) {
             this.pendingTTSChunks = 0;
             this.ttsFinalizeRequested = false;
-            console.log(
-              `[TURN] TTS playback complete`,
-            );
+            console.log(`[TURN] TTS playback complete`);
           }
 
           // Only transition state when ALL chunks are done AND stream is complete
@@ -531,6 +540,19 @@ export class TurnManager {
   }
 
   private handleTranscript(text: string, isFinal: boolean): void {
+    if (isFinal) {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        return;
+      }
+      if (this.isDuplicateFinalTranscript(trimmed)) {
+        console.log(
+          `[TURN] Ignoring duplicate final transcript: "${trimmed.substring(0, 40)}..."`,
+        );
+        return;
+      }
+    }
+
     this.state = updateTranscript(this.state, text, isFinal);
 
     // Fast path: interim transcript can confirm real user interruption while processing.
@@ -550,7 +572,10 @@ export class TurnManager {
     // This prevents timer-only interruptions from echo/noise while TTS is playing.
     if (this.pendingBargeIn && !isFinal) {
       const interim = text.trim();
-      if (interim.length >= MIN_BARGE_IN_INTERIM_CHARS && /[a-z]/i.test(interim)) {
+      if (
+        interim.length >= MIN_BARGE_IN_INTERIM_CHARS &&
+        /[a-z]/i.test(interim)
+      ) {
         if (this.isAcknowledgement(interim)) {
           console.log(
             `[TURN] Interim acknowledgement detected ("${interim}"), cancelling barge-in`,
@@ -794,6 +819,25 @@ export class TurnManager {
     return ACKNOWLEDGEMENT_PHRASES.has(normalized);
   }
 
+  private isDuplicateFinalTranscript(text: string): boolean {
+    const normalized = text
+      .toLowerCase()
+      .replace(/[^\w\s]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const now = Date.now();
+
+    const isDuplicate =
+      normalized.length > 0 &&
+      normalized === this.lastFinalTranscriptNormalized &&
+      now - this.lastFinalTranscriptAt < FINAL_TRANSCRIPT_DEDUPE_MS;
+
+    this.lastFinalTranscriptNormalized = normalized || null;
+    this.lastFinalTranscriptAt = now;
+
+    return isDuplicate;
+  }
+
   /**
    * Cancel a pending greedy cancel (no transcript confirmed it was real speech)
    */
@@ -951,6 +995,14 @@ export class TurnManager {
     // ACQUIRE LOCK IMMEDIATELY - before any other operations
     this.processingLock = true;
 
+    // Avoid starting a new turn while assistant audio is still playing.
+    // Buffered final transcript will be handled when playback completes.
+    if (this.pipelineState.is(PipelineState.SPEAKING)) {
+      console.log(`[TURN] Deferring processing while assistant is speaking`);
+      this.processingLock = false;
+      return;
+    }
+
     const transcript = getCompleteTranscript(this.state);
     if (transcript.length < MIN_TRANSCRIPT_LENGTH) {
       console.log(`[TURN] Transcript too short, ignoring: "${transcript}"`);
@@ -967,6 +1019,20 @@ export class TurnManager {
     // Check if we've been accumulating too long (force process)
     const accumulationTime = Date.now() - this.accumulationStartTime;
     const forceProcess = accumulationTime >= MAX_ACCUMULATION_MS;
+
+    // Prefer finalized transcript before deciding completeness.
+    // Processing interim text can split one utterance into multiple turns.
+    if (this.state.interimTranscript.trim().length > 0 && !forceProcess) {
+      console.log(
+        `[TURN] Interim transcript active, waiting ${INTERIM_FINALIZATION_WAIT_MS}ms for final`,
+      );
+      this.processingLock = false;
+      this.silenceTimer = setTimeout(() => {
+        this.silenceTimer = null;
+        this.processUserTurn();
+      }, INTERIM_FINALIZATION_WAIT_MS);
+      return;
+    }
 
     // Completeness check
     const completeness = checkUtteranceCompleteness(transcript);
@@ -1129,7 +1195,8 @@ export class TurnManager {
           if (name === "transfer_to_human") {
             const transferResult = result as { transferred?: boolean };
             const voiceProvider = process.env.VOICE_PROVIDER || "custom";
-            shouldEscalate = voiceProvider === "vapi" && !!transferResult.transferred;
+            shouldEscalate =
+              voiceProvider === "vapi" && !!transferResult.transferred;
           }
 
           // Save tool result to conversation history
@@ -1197,7 +1264,9 @@ export class TurnManager {
               this.responseStreamComplete = true;
               this.requestTtsFinalize("tool-result stream done");
             } else if (resultChunk.type === "error") {
-              console.error(`[TURN] Tool-result stream error: ${resultChunk.error}`);
+              console.error(
+                `[TURN] Tool-result stream error: ${resultChunk.error}`,
+              );
               if (resultChunk.error) {
                 providerErrors.push(resultChunk.error);
               }
@@ -1514,7 +1583,19 @@ export class TurnManager {
       return;
     }
 
-    const transcript = getCompleteTranscript(this.state);
+    // Only process finalized transcript here.
+    // Interim-only text can still change and causes duplicate turns.
+    if (this.state.interimTranscript.trim().length > 0) {
+      if (!this.silenceTimer) {
+        this.silenceTimer = setTimeout(() => {
+          this.silenceTimer = null;
+          this.processUserTurn();
+        }, INTERIM_FINALIZATION_WAIT_MS);
+      }
+      return;
+    }
+
+    const transcript = this.state.transcriptBuffer.trim();
     if (transcript.length >= MIN_TRANSCRIPT_LENGTH) {
       this.processUserTurn();
     }
