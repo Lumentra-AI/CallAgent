@@ -33,6 +33,15 @@ export interface StreamingChatOptions {
   abortSignal?: AbortSignal;
 }
 
+const PROVIDER_REQUEST_TIMEOUT_MS = Number.parseInt(
+  process.env.VOICE_LLM_PROVIDER_TIMEOUT_MS || "12000",
+  10,
+);
+const FIRST_TOKEN_TIMEOUT_MS = Number.parseInt(
+  process.env.VOICE_LLM_FIRST_TOKEN_TIMEOUT_MS || "5000",
+  10,
+);
+
 // Provider status tracking (shared with multi-provider.ts)
 type ProviderStatus = "available" | "rate_limited" | "error";
 const providerStatus: Record<
@@ -250,7 +259,12 @@ async function* _streamWithGemini(
 ): AsyncGenerator<StreamChunk> {
   if (!genAI) throw new Error("Gemini not initialized");
 
-  const { userMessage, conversationHistory, systemPrompt, tools } = options;
+  const { userMessage, conversationHistory, systemPrompt, tools, abortSignal } =
+    options;
+
+  if (abortSignal?.aborted) {
+    throw new Error("Gemini request aborted before start");
+  }
 
   const model = genAI.getGenerativeModel({
     model: geminiModel,
@@ -267,6 +281,10 @@ async function* _streamWithGemini(
   const stream = await chatSession.sendMessageStream(userMessage);
 
   for await (const chunk of stream.stream) {
+    if (abortSignal?.aborted) {
+      throw new Error("Gemini request aborted");
+    }
+
     // Check for function calls
     const functionCalls = chunk.functionCalls();
     if (functionCalls && functionCalls.length > 0) {
@@ -317,7 +335,11 @@ async function* streamWithOpenAI(
       max_tokens: 240,
       stream: true,
     },
-    { signal: abortSignal },
+    {
+      signal: abortSignal,
+      timeout: PROVIDER_REQUEST_TIMEOUT_MS,
+      maxRetries: 0,
+    },
   );
 
   let currentToolCall: { id: string; name: string; args: string } | null = null;
@@ -374,25 +396,33 @@ async function* _streamWithGroq(
 ): AsyncGenerator<StreamChunk> {
   if (!groqClient) throw new Error("Groq not initialized");
 
-  const { userMessage, conversationHistory, systemPrompt, tools } = options;
+  const { userMessage, conversationHistory, systemPrompt, tools, abortSignal } =
+    options;
 
   const messages = toOpenAIMessages(conversationHistory, systemPrompt);
   messages.push({ role: "user", content: userMessage });
 
   const groqTools = tools ? toOpenAITools(tools) : undefined;
 
-  const stream = await groqClient.chat.completions.create({
-    model: toolConfig.model,
-    messages: messages as Parameters<
-      typeof groqClient.chat.completions.create
-    >[0]["messages"],
-    tools: groqTools as Parameters<
-      typeof groqClient.chat.completions.create
-    >[0]["tools"],
-    temperature: 0.25,
-    max_tokens: 240,
-    stream: true,
-  });
+  const stream = await groqClient.chat.completions.create(
+    {
+      model: toolConfig.model,
+      messages: messages as Parameters<
+        typeof groqClient.chat.completions.create
+      >[0]["messages"],
+      tools: groqTools as Parameters<
+        typeof groqClient.chat.completions.create
+      >[0]["tools"],
+      temperature: 0.25,
+      max_tokens: 240,
+      stream: true,
+    },
+    {
+      signal: abortSignal,
+      timeout: PROVIDER_REQUEST_TIMEOUT_MS,
+      maxRetries: 0,
+    },
+  );
 
   let currentToolCall: { id: string; name: string; args: string } | null = null;
 
@@ -462,6 +492,36 @@ function getProviderOrder(): string[] {
   return deduped.length > 0 ? deduped : [...DEFAULT_PROVIDER_ORDER];
 }
 
+function createScopedAbortController(parent?: AbortSignal): {
+  controller: AbortController;
+  cleanup: () => void;
+} {
+  const controller = new AbortController();
+
+  const onParentAbort = () => {
+    if (!controller.signal.aborted) {
+      controller.abort(parent?.reason ?? new Error("Upstream abort"));
+    }
+  };
+
+  if (parent) {
+    if (parent.aborted) {
+      controller.abort(parent.reason ?? new Error("Upstream abort"));
+    } else {
+      parent.addEventListener("abort", onParentAbort, { once: true });
+    }
+  }
+
+  return {
+    controller,
+    cleanup: () => {
+      if (parent) {
+        parent.removeEventListener("abort", onParentAbort);
+      }
+    },
+  };
+}
+
 // Main streaming function with fallback
 export async function* streamChatWithFallback(
   options: StreamingChatOptions,
@@ -475,11 +535,16 @@ export async function* streamChatWithFallback(
   const providerOrder = getProviderOrder();
   const providerMap: Record<
     string,
-    { name: string; fn: () => AsyncGenerator<StreamChunk> }
+    {
+      name: string;
+      fn: (
+        providerOptions: StreamingChatOptions,
+      ) => AsyncGenerator<StreamChunk>;
+    }
   > = {
-    openai: { name: "openai", fn: () => streamWithOpenAI(optionsWithTools) },
-    groq: { name: "groq", fn: () => _streamWithGroq(optionsWithTools) },
-    gemini: { name: "gemini", fn: () => _streamWithGemini(optionsWithTools) },
+    openai: { name: "openai", fn: streamWithOpenAI },
+    groq: { name: "groq", fn: _streamWithGroq },
+    gemini: { name: "gemini", fn: _streamWithGemini },
   };
   const providers = providerOrder
     .map((name) => providerMap[name])
@@ -510,12 +575,46 @@ export async function* streamChatWithFallback(
       continue;
     }
 
+    const { controller, cleanup } = createScopedAbortController(
+      optionsWithTools.abortSignal,
+    );
+    let firstTokenTimeoutTriggered = false;
+    let firstTokenTimer: ReturnType<typeof setTimeout> | null = null;
+
     try {
       console.log(`[STREAM] Using ${provider.name}`);
-      const stream = provider.fn();
+      const providerOptions: StreamingChatOptions = {
+        ...optionsWithTools,
+        abortSignal: controller.signal,
+      };
+      const stream = provider.fn(providerOptions);
+      let firstSignalReceived = false;
+      firstTokenTimer =
+        FIRST_TOKEN_TIMEOUT_MS > 0
+          ? setTimeout(() => {
+              if (!controller.signal.aborted) {
+                firstTokenTimeoutTriggered = true;
+                console.warn(
+                  `[STREAM] ${provider.name} first token timeout (${FIRST_TOKEN_TIMEOUT_MS}ms), aborting provider`,
+                );
+                controller.abort(new Error("first token timeout"));
+              }
+            }, FIRST_TOKEN_TIMEOUT_MS)
+          : null;
 
       // Yield all chunks from this provider
       for await (const chunk of stream) {
+        if (
+          !firstSignalReceived &&
+          (chunk.type === "text" ||
+            chunk.type === "tool_call" ||
+            chunk.type === "done")
+        ) {
+          firstSignalReceived = true;
+          if (firstTokenTimer) {
+            clearTimeout(firstTokenTimer);
+          }
+        }
         yield chunk;
       }
 
@@ -523,6 +622,21 @@ export async function* streamChatWithFallback(
       return;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
+      const lower = errMsg.toLowerCase();
+      const upstreamAborted = !!optionsWithTools.abortSignal?.aborted;
+      const isAbort =
+        (error instanceof Error && error.name === "AbortError") ||
+        lower.includes("abort");
+      const isTimeout =
+        firstTokenTimeoutTriggered ||
+        lower.includes("timeout") ||
+        lower.includes("timed out");
+
+      if (upstreamAborted && isAbort) {
+        console.log(`[STREAM] ${provider.name} aborted by upstream signal`);
+        return;
+      }
+
       console.error(`[STREAM] ${provider.name} failed: ${errMsg}`);
 
       const isRateLimit =
@@ -530,7 +644,11 @@ export async function* streamChatWithFallback(
         errMsg.includes("rate") ||
         errMsg.includes("quota");
 
-      markProviderError(provider.name, isRateLimit);
+      if (!isAbort || isTimeout) {
+        markProviderError(provider.name, isRateLimit);
+      } else {
+        console.warn(`[STREAM] ${provider.name} aborted, trying next provider`);
+      }
 
       // Yield error and try next provider
       yield {
@@ -538,6 +656,11 @@ export async function* streamChatWithFallback(
         error: `${provider.name} failed: ${errMsg}`,
         provider: provider.name,
       };
+    } finally {
+      if (firstTokenTimer) {
+        clearTimeout(firstTokenTimer);
+      }
+      cleanup();
     }
   }
 

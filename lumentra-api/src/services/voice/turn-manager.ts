@@ -1059,6 +1059,10 @@ export class TurnManager {
    * This is the core of the low-latency architecture
    */
   private async processUserTurn(): Promise<void> {
+    if (this.isCleanedUp) {
+      return;
+    }
+
     // LOCK CHECK - Prevents race condition where two calls enter simultaneously
     // Must be the FIRST thing we check, before any transcript access
     if (this.processingLock) {
@@ -1069,6 +1073,12 @@ export class TurnManager {
 
     // ACQUIRE LOCK IMMEDIATELY - before any other operations
     this.processingLock = true;
+
+    // Guard against duplicate PROCESSING re-entry from racey timers.
+    if (this.pipelineState.is(PipelineState.PROCESSING)) {
+      this.processingLock = false;
+      return;
+    }
 
     // Avoid starting a new turn while assistant audio is still playing.
     // Buffered final transcript will be handled when playback completes.
@@ -1466,6 +1476,10 @@ export class TurnManager {
         }
       }
 
+      if (!this.shouldContinueProcessing()) {
+        return;
+      }
+
       const totalLatency = Date.now() - startTime;
       const finalResponse = spokenResponse.trim() || rawResponse.trim();
       console.log(
@@ -1507,6 +1521,10 @@ export class TurnManager {
       await this.speak(fallback);
     } finally {
       this.processingLock = false;
+
+      if (this.isCleanedUp) {
+        return;
+      }
 
       // Check if new transcript arrived while we were processing
       if (this.pendingTranscript) {
@@ -2106,6 +2124,10 @@ ${missingLines.length > 0 ? missingLines.join("\n") : "- none"}
   }
 
   private checkForPendingResponse(): void {
+    if (this.isCleanedUp) {
+      return;
+    }
+
     const session = sessionManager.getSession(this.callSid);
     const finalizedTranscript = this.state.transcriptBuffer.trim();
     const interimTranscript = this.state.interimTranscript.trim();
@@ -2158,6 +2180,10 @@ ${missingLines.length > 0 ? missingLines.join("\n") : "- none"}
 
     this.cancelFillerTimer();
     this.cancelPendingGreedyCancel();
+    this.cancelPendingBargeIn();
+    this.pendingTranscript = false;
+    this.processingLock = false;
+    this.state = clearTranscript(this.state);
 
     await Promise.all([this.transcriber?.stop(), this.tts?.disconnect()]);
 
