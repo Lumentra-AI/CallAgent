@@ -11,9 +11,12 @@ export const groqClient = GROQ_API_KEY
   ? new Groq({ apiKey: GROQ_API_KEY })
   : null;
 
-// Use 70B for tools (better function calling), 8B for simple chat
-const CHAT_MODEL = process.env.GROQ_CHAT_MODEL || "llama-3.1-8b-instant";
-const TOOL_MODEL = process.env.GROQ_TOOL_MODEL || "llama-3.3-70b-versatile";
+// Default to GPT OSS 20B for fast conversational + tool-capable voice turns.
+// Env vars still override these defaults when needed.
+const CHAT_MODEL =
+  process.env.GROQ_CHAT_MODEL || process.env.GROQ_MODEL || "openai/gpt-oss-20b";
+const TOOL_MODEL =
+  process.env.GROQ_TOOL_MODEL || process.env.GROQ_MODEL || "openai/gpt-oss-20b";
 
 if (groqClient) {
   console.log(`[GROQ] Initialized - Chat: ${CHAT_MODEL}, Tool: ${TOOL_MODEL}`);

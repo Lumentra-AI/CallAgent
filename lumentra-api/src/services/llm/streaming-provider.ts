@@ -308,14 +308,17 @@ async function* streamWithOpenAI(
 
   const openaiTools = tools ? toOpenAITools(tools) : undefined;
 
-  const stream = await openaiClient.chat.completions.create({
-    model: openaiModel,
-    messages,
-    tools: openaiTools,
-    temperature: 0.25,
-    max_tokens: 240,
-    stream: true,
-  }, { signal: abortSignal });
+  const stream = await openaiClient.chat.completions.create(
+    {
+      model: openaiModel,
+      messages,
+      tools: openaiTools,
+      temperature: 0.25,
+      max_tokens: 240,
+      stream: true,
+    },
+    { signal: abortSignal },
+  );
 
   let currentToolCall: { id: string; name: string; args: string } | null = null;
 
@@ -439,7 +442,7 @@ async function* _streamWithGroq(
   yield { type: "done", provider: "groq" };
 }
 
-const DEFAULT_PROVIDER_ORDER = ["openai", "groq", "gemini"] as const;
+const DEFAULT_PROVIDER_ORDER = ["groq", "openai", "gemini"] as const;
 
 function getProviderOrder(): string[] {
   const raw = process.env.VOICE_LLM_PROVIDER_ORDER?.trim();
