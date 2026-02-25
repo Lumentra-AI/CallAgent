@@ -252,6 +252,43 @@ const RECOVERY_RESPONSES = [
   "Sorry, say that again for me.",
 ];
 
+type BookingSlot =
+  | "check_in_date"
+  | "check_out_or_nights"
+  | "guests"
+  | "bed_type"
+  | "customer_name"
+  | "name_spelling";
+
+interface ConversationMemory {
+  flow: "general" | "booking";
+  slots: Partial<Record<BookingSlot, string>>;
+  recentAskedSlots: BookingSlot[];
+  recentOpeners: string[];
+}
+
+const SLOT_QUESTION_ORDER: BookingSlot[] = [
+  "check_in_date",
+  "check_out_or_nights",
+  "guests",
+  "bed_type",
+  "customer_name",
+  "name_spelling",
+];
+
+const NUMBER_WORDS: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+};
+
 export interface TurnManagerCallbacks {
   onResponse: (text: string) => void;
   onTransferRequested: (phoneNumber: string) => void;
@@ -330,6 +367,14 @@ export class TurnManager {
   private pendingTTSChunks = 0;
   private responseStreamComplete = false;
   private ttsFinalizeRequested = false;
+
+  // Lightweight dialog memory for anti-repetition and slot progression
+  private conversationMemory: ConversationMemory = {
+    flow: "general",
+    slots: {},
+    recentAskedSlots: [],
+    recentOpeners: [],
+  };
 
   constructor(
     callSid: string,
@@ -1176,10 +1221,14 @@ export class TurnManager {
       console.error("[TRAINING] Failed to log user turn:", err),
     );
 
+    // Update lightweight memory before we call the model
+    this.updateMemoryFromUserTranscript(transcript);
+
     try {
       const conversationHistory = sessionManager.getConversationHistory(
         this.callSid,
       );
+      const effectiveSystemPrompt = this.buildDynamicSystemPrompt(transcript);
       const toolContext = {
         tenantId: this.tenant.id,
         callSid: this.callSid,
@@ -1191,18 +1240,27 @@ export class TurnManager {
       const stream = streamChatWithFallback({
         userMessage: transcript,
         conversationHistory,
-        systemPrompt: this.systemPrompt,
+        systemPrompt: effectiveSystemPrompt,
         tools: voiceAgentFunctions,
         abortSignal: this.abortController.signal,
       });
 
       const sentenceBuffer = createSentenceBuffer();
-      let fullResponse = "";
+      let rawResponse = "";
+      let spokenResponse = "";
       let isFirstChunk = true;
       let sentenceCount = 0;
       let currentProvider = "unknown";
       let shouldEscalate = false;
       const providerErrors: string[] = [];
+
+      const appendSpokenResponse = (text: string): void => {
+        const normalized = text.trim();
+        if (!normalized) return;
+        spokenResponse = spokenResponse
+          ? `${spokenResponse} ${normalized}`
+          : normalized;
+      };
 
       // Start filler timer - will speak natural filler if LLM is slow
       this.startFillerTimer(transcript);
@@ -1284,7 +1342,7 @@ export class TurnManager {
           const toolResultStream = streamChatWithFallback({
             userMessage: "", // Continue from tool results in history
             conversationHistory: updatedHistory,
-            systemPrompt: this.systemPrompt,
+            systemPrompt: effectiveSystemPrompt,
             tools: voiceAgentFunctions,
             abortSignal: this.abortController.signal,
           });
@@ -1301,22 +1359,37 @@ export class TurnManager {
             }
 
             if (resultChunk.type === "text" && resultChunk.content) {
-              fullResponse += resultChunk.content;
+              rawResponse += resultChunk.content;
 
               // Buffer and speak sentences as they complete
               const sentences = sentenceBuffer.add(resultChunk.content);
               for (const sentence of sentences) {
+                const shaped = this.shapeAssistantSentence(
+                  sentence,
+                  transcript,
+                );
+                if (!shaped) continue;
+                appendSpokenResponse(shaped);
                 // First chunk starts fresh (filler is separate), subsequent chunks continue
-                this.speakChunk(sentence, !isFirstToolResultChunk);
+                this.speakChunk(shaped, !isFirstToolResultChunk);
                 isFirstToolResultChunk = false;
                 isFirstChunk = false;
+                sentenceCount++;
               }
             } else if (resultChunk.type === "done") {
               // Flush any remaining buffered text from tool result
               const remaining = sentenceBuffer.flush();
               if (remaining) {
-                // Continue from previous chunks if any were spoken
-                this.speakChunk(remaining, !isFirstToolResultChunk);
+                const shaped = this.shapeAssistantSentence(
+                  remaining,
+                  transcript,
+                );
+                if (shaped) {
+                  appendSpokenResponse(shaped);
+                  sentenceCount++;
+                  // Continue from previous chunks if any were spoken
+                  this.speakChunk(shaped, !isFirstToolResultChunk);
+                }
               }
               this.responseStreamComplete = true;
               this.requestTtsFinalize("tool-result stream done");
@@ -1335,7 +1408,7 @@ export class TurnManager {
 
         // Handle text chunks
         if (chunk.type === "text" && chunk.content) {
-          fullResponse += chunk.content;
+          rawResponse += chunk.content;
 
           // Log first token latency and cancel filler timer ONCE per response
           // (before sentence loop to avoid duplicate TTFT logs per yielded sentence)
@@ -1351,13 +1424,16 @@ export class TurnManager {
           // Buffer and speak sentences as they complete
           const sentences = sentenceBuffer.add(chunk.content);
           for (const sentence of sentences) {
+            const shaped = this.shapeAssistantSentence(sentence, transcript);
+            if (!shaped) continue;
+            appendSpokenResponse(shaped);
             const ttfs = Date.now() - startTime;
             // If filler was spoken, continue from it; otherwise start fresh on first sentence
             const shouldContinue = this.fillerSpoken || sentenceCount > 0;
             console.log(
-              `[TURN] Speaking sentence (${ttfs}ms): "${sentence.substring(0, 40)}..." (continue: ${shouldContinue})`,
+              `[TURN] Speaking sentence (${ttfs}ms): "${shaped.substring(0, 40)}..." (continue: ${shouldContinue})`,
             );
-            this.speakChunk(sentence, shouldContinue);
+            this.speakChunk(shaped, shouldContinue);
             sentenceCount++;
           }
         }
@@ -1367,13 +1443,18 @@ export class TurnManager {
           // Flush any remaining buffered text
           const remaining = sentenceBuffer.flush();
           if (remaining) {
-            const ttfs = Date.now() - startTime;
-            // Continue from previous chunks if any were spoken; start fresh only if this is the sole chunk
-            const shouldContinue = sentenceCount > 0;
-            console.log(
-              `[TURN] Flushing final (${ttfs}ms): "${remaining.substring(0, 40)}..." (continue: ${shouldContinue})`,
-            );
-            this.speakChunk(remaining, shouldContinue);
+            const shaped = this.shapeAssistantSentence(remaining, transcript);
+            if (shaped) {
+              appendSpokenResponse(shaped);
+              sentenceCount++;
+              const ttfs = Date.now() - startTime;
+              // Continue from previous chunks if any were spoken; start fresh only if this is the sole chunk
+              const shouldContinue = sentenceCount > 1;
+              console.log(
+                `[TURN] Flushing final (${ttfs}ms): "${shaped.substring(0, 40)}..." (continue: ${shouldContinue})`,
+              );
+              this.speakChunk(shaped, shouldContinue);
+            }
           }
 
           // Mark that LLM stream is complete - TTS can transition state once all chunks finish
@@ -1386,12 +1467,13 @@ export class TurnManager {
       }
 
       const totalLatency = Date.now() - startTime;
+      const finalResponse = spokenResponse.trim() || rawResponse.trim();
       console.log(
-        `[TURN] Response complete: "${fullResponse.substring(0, 100)}..." ` +
+        `[TURN] Response complete: "${finalResponse.substring(0, 100)}..." ` +
           `(provider: ${currentProvider}, total: ${totalLatency}ms)`,
       );
 
-      if (!fullResponse.trim() && providerErrors.length > 0) {
+      if (!finalResponse && providerErrors.length > 0) {
         const recovery = this.selectRecoveryResponse();
         console.warn(
           `[TURN] Empty response after provider errors (${providerErrors.length}), using recovery prompt`,
@@ -1400,15 +1482,16 @@ export class TurnManager {
       }
 
       // Add assistant response to history (check session exists first)
-      if (fullResponse && this.shouldContinueProcessing()) {
-        sessionManager.addMessage(this.callSid, "assistant", fullResponse);
+      if (finalResponse && this.shouldContinueProcessing()) {
+        this.updateMemoryFromAssistantResponse(finalResponse);
+        sessionManager.addMessage(this.callSid, "assistant", finalResponse);
 
         // Log assistant turn for training data
-        addAssistantTurn(this.callSid, fullResponse).catch((err) =>
+        addAssistantTurn(this.callSid, finalResponse).catch((err) =>
           console.error("[TRAINING] Failed to log assistant turn:", err),
         );
 
-        this.callbacks.onResponse(fullResponse);
+        this.callbacks.onResponse(finalResponse);
       }
 
       // Handle escalation/transfer
@@ -1457,6 +1540,394 @@ export class TurnManager {
       return false;
     }
     return true;
+  }
+
+  private buildDynamicSystemPrompt(userTranscript: string): string {
+    if (
+      this.conversationMemory.flow !== "booking" &&
+      !this.looksLikeBookingFlow(userTranscript.toLowerCase())
+    ) {
+      return this.systemPrompt;
+    }
+
+    const knownLines = SLOT_QUESTION_ORDER.filter(
+      (slot) => !!this.conversationMemory.slots[slot],
+    ).map(
+      (slot) =>
+        `- ${this.slotLabel(slot)}: ${this.conversationMemory.slots[slot]}`,
+    );
+
+    const missing = this.getMissingBookingSlots();
+    const missingLines = missing.map((slot) => `- ${this.slotLabel(slot)}`);
+    const lastAsked = this.conversationMemory.recentAskedSlots.at(-1);
+
+    return `${this.systemPrompt}
+
+## Live Call Memory
+Flow: booking
+Known caller details:
+${knownLines.length > 0 ? knownLines.join("\n") : "- none yet"}
+
+Missing details (ask in this order, one per turn):
+${missingLines.length > 0 ? missingLines.join("\n") : "- none"}
+
+## Runtime Rules
+- Do not ask for a detail already in Known caller details unless the caller explicitly corrected it.
+- Ask exactly one question and prefer the first item in Missing details.
+- If your last question was "${lastAsked ? this.slotLabel(lastAsked) : "none"}", avoid repeating it unless the caller did not answer.
+- Vary your opening phrase naturally; do not repeat the same opener in back-to-back turns.
+`;
+  }
+
+  private updateMemoryFromUserTranscript(transcript: string): void {
+    const lower = transcript.toLowerCase();
+    if (this.looksLikeBookingFlow(lower)) {
+      this.conversationMemory.flow = "booking";
+    }
+
+    const guests = this.extractGuestCount(lower);
+    if (guests !== null) {
+      this.conversationMemory.slots.guests = String(guests);
+    }
+
+    const nights = this.extractNightCount(lower);
+    if (nights !== null) {
+      this.conversationMemory.slots.check_out_or_nights = `${nights} night${nights === 1 ? "" : "s"}`;
+    }
+
+    const bedType = this.extractBedType(lower);
+    if (bedType) {
+      this.conversationMemory.slots.bed_type = bedType;
+    }
+
+    const checkInDate = this.extractDateValue(lower);
+    if (checkInDate) {
+      this.conversationMemory.slots.check_in_date = checkInDate;
+    }
+
+    const customerName = this.extractCustomerName(transcript);
+    if (customerName) {
+      this.conversationMemory.slots.customer_name = customerName;
+    }
+
+    const spelledName = this.extractSpelledName(transcript);
+    if (spelledName) {
+      this.conversationMemory.slots.name_spelling = spelledName;
+    }
+  }
+
+  private updateMemoryFromAssistantResponse(response: string): void {
+    const askedSlot = this.detectAskedSlot(response);
+    if (askedSlot) {
+      this.conversationMemory.recentAskedSlots.push(askedSlot);
+      if (this.conversationMemory.recentAskedSlots.length > 6) {
+        this.conversationMemory.recentAskedSlots.shift();
+      }
+    }
+
+    const opener = this.extractOpener(response);
+    if (opener) {
+      this.conversationMemory.recentOpeners.push(opener.toLowerCase());
+      if (this.conversationMemory.recentOpeners.length > 6) {
+        this.conversationMemory.recentOpeners.shift();
+      }
+    }
+  }
+
+  private shapeAssistantSentence(
+    sentence: string,
+    userTranscript: string,
+  ): string {
+    let shaped = sentence.trim();
+    if (!shaped) return "";
+
+    shaped = this.rewriteRepeatedSlotQuestion(shaped, userTranscript);
+    shaped = this.varyOpening(shaped);
+    shaped = this.applyProsodyHints(shaped);
+
+    return shaped.replace(/\s+/g, " ").trim();
+  }
+
+  private rewriteRepeatedSlotQuestion(
+    sentence: string,
+    userTranscript: string,
+  ): string {
+    const askedSlot = this.detectAskedSlot(sentence);
+    if (!askedSlot) return sentence;
+
+    const knownValue = this.conversationMemory.slots[askedSlot];
+    if (!knownValue) return sentence;
+
+    // If caller explicitly corrected themselves, allow follow-up on same slot.
+    const userLower = userTranscript.toLowerCase();
+    const userCorrected = /\b(no|actually|sorry|not|instead)\b/.test(userLower);
+    if (userCorrected) return sentence;
+
+    const nextMissing = this.getNextMissingBookingSlot();
+    if (!nextMissing || nextMissing === askedSlot) return sentence;
+
+    console.log(
+      `[TURN] Rewriting repeated slot question ${askedSlot} -> ${nextMissing}`,
+    );
+
+    const prefixMatch = sentence.match(
+      /^(got it|okay|ok|sure|right|alright|no worries|thanks for letting me know)[,.!?]?\s*/i,
+    );
+    const replacementQuestion = this.questionForSlot(nextMissing);
+    if (prefixMatch) {
+      const prefix = prefixMatch[1];
+      return `${prefix}. ${replacementQuestion}`;
+    }
+
+    return replacementQuestion;
+  }
+
+  private varyOpening(sentence: string): string {
+    const opener = this.extractOpener(sentence);
+    if (!opener) return sentence;
+
+    const lastOpener = this.conversationMemory.recentOpeners.at(-1);
+    if (!lastOpener || lastOpener !== opener.toLowerCase()) {
+      return sentence;
+    }
+
+    const alternatives = ["Got it", "Okay", "Sure", "Right", "Sounds good"];
+    const replacement =
+      alternatives.find((alt) => alt.toLowerCase() !== opener.toLowerCase()) ||
+      opener;
+
+    const tail = sentence.substring(opener.length).replace(/^[,.\s]+/, "");
+    if (!tail) {
+      return `${replacement}.`;
+    }
+    return `${replacement}, ${tail}`;
+  }
+
+  private applyProsodyHints(sentence: string): string {
+    let shaped = sentence.trim();
+    if (!shaped) return shaped;
+
+    if (
+      /(?:confirmation code|let me confirm|is that correct|spell that|spell your name)/i.test(
+        shaped,
+      ) &&
+      !/<speed ratio=/.test(shaped)
+    ) {
+      shaped = `<speed ratio="0.9"/> ${shaped}`;
+    } else if (
+      /(?:let me check|one sec|give me a moment|checking now|looking that up)/i.test(
+        shaped,
+      ) &&
+      !/<break time=/.test(shaped)
+    ) {
+      shaped = `<break time="250ms"/> ${shaped}`;
+    }
+
+    return shaped;
+  }
+
+  private detectAskedSlot(text: string): BookingSlot | null {
+    const lower = text.toLowerCase();
+    if (/(what date|which date|check.?in date|for what date)/i.test(lower)) {
+      return "check_in_date";
+    }
+    if (
+      /(how many nights|check.?out|checking out|check-out date)/i.test(lower)
+    ) {
+      return "check_out_or_nights";
+    }
+    if (
+      /(how many guests|how many people|just one guest|guest count)/i.test(
+        lower,
+      )
+    ) {
+      return "guests";
+    }
+    if (/(king bed|two queens|queen bed|bed type)/i.test(lower)) {
+      return "bed_type";
+    }
+    if (
+      /(what name should i put|name for the reservation|name should i use)/i.test(
+        lower,
+      )
+    ) {
+      return "customer_name";
+    }
+    if (/(can you spell|spell that|spell your name)/i.test(lower)) {
+      return "name_spelling";
+    }
+    return null;
+  }
+
+  private getMissingBookingSlots(): BookingSlot[] {
+    return SLOT_QUESTION_ORDER.filter(
+      (slot) => !this.conversationMemory.slots[slot],
+    );
+  }
+
+  private getNextMissingBookingSlot(): BookingSlot | null {
+    const missing = this.getMissingBookingSlots();
+    return missing.length > 0 ? missing[0] : null;
+  }
+
+  private questionForSlot(slot: BookingSlot): string {
+    switch (slot) {
+      case "check_in_date":
+        return "What date should I book for?";
+      case "check_out_or_nights":
+        return "How many nights will you be staying?";
+      case "guests":
+        return "How many guests will be staying?";
+      case "bed_type":
+        return "Would you like a king bed or two queens?";
+      case "customer_name":
+        return "What name should I put the reservation under?";
+      case "name_spelling":
+        return "Can you spell your name for me?";
+      default:
+        return "What detail should I add next?";
+    }
+  }
+
+  private slotLabel(slot: BookingSlot): string {
+    switch (slot) {
+      case "check_in_date":
+        return "Check-in date";
+      case "check_out_or_nights":
+        return "Nights or check-out";
+      case "guests":
+        return "Guest count";
+      case "bed_type":
+        return "Bed type";
+      case "customer_name":
+        return "Customer name";
+      case "name_spelling":
+        return "Name spelling";
+      default:
+        return slot;
+    }
+  }
+
+  private extractOpener(text: string): string | null {
+    const match = text.match(
+      /^(got it|okay|ok|sure|right|alright|no worries|thanks for letting me know|sounds good)\b/i,
+    );
+    return match ? match[1] : null;
+  }
+
+  private looksLikeBookingFlow(lower: string): boolean {
+    return /\b(book|booking|reservation|room|stay|check.?in|check.?out|king bed|queen bed)\b/i.test(
+      lower,
+    );
+  }
+
+  private extractGuestCount(lower: string): number | null {
+    if (
+      /\b(just me|it's just me|it is just me|for one|only me)\b/.test(lower)
+    ) {
+      return 1;
+    }
+
+    const match = lower.match(
+      /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(guest|guests|person|people)\b/,
+    );
+    if (!match) return null;
+
+    return this.parseNumberToken(match[1]);
+  }
+
+  private extractNightCount(lower: string): number | null {
+    const match = lower.match(
+      /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+night(s)?\b/,
+    );
+    if (!match) return null;
+
+    return this.parseNumberToken(match[1]);
+  }
+
+  private extractBedType(lower: string): string | null {
+    if (/\b(king|king-size|king size)\b/.test(lower)) {
+      return "king";
+    }
+    if (/\b(two queens|2 queens|two queen|2 queen)\b/.test(lower)) {
+      return "two queens";
+    }
+    if (/\bqueen|queens\b/.test(lower)) {
+      return "queen";
+    }
+    return null;
+  }
+
+  private extractDateValue(lower: string): string | null {
+    const explicitDate = lower.match(/\b20\d{2}-\d{2}-\d{2}\b/);
+    if (explicitDate) return explicitDate[0];
+
+    const now = new Date();
+    if (/\btomorrow\b/.test(lower)) {
+      const d = new Date(now);
+      d.setDate(d.getDate() + 1);
+      return this.toIsoDate(d);
+    }
+    if (/\b(today|tonight)\b/.test(lower)) {
+      return this.toIsoDate(now);
+    }
+
+    const weekdayMatch = lower.match(
+      /\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/,
+    );
+    if (!weekdayMatch) return null;
+
+    const dayMap: Record<string, number> = {
+      sunday: 0,
+      monday: 1,
+      tuesday: 2,
+      wednesday: 3,
+      thursday: 4,
+      friday: 5,
+      saturday: 6,
+    };
+    const target = dayMap[weekdayMatch[1]];
+    const d = new Date(now);
+    const diff = (target - d.getDay() + 7) % 7 || 7;
+    d.setDate(d.getDate() + diff);
+    return this.toIsoDate(d);
+  }
+
+  private toIsoDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  private parseNumberToken(token: string): number | null {
+    if (/^\d+$/.test(token)) {
+      return Number.parseInt(token, 10);
+    }
+    return NUMBER_WORDS[token] ?? null;
+  }
+
+  private extractCustomerName(transcript: string): string | null {
+    const match = transcript.match(
+      /\b(?:my name is|this is|name is)\s+([A-Za-z][A-Za-z' -]{1,40})/i,
+    );
+    if (!match) return null;
+
+    const cleaned = match[1]
+      .split(/[,.!?]/)[0]
+      ?.replace(/\s+/g, " ")
+      .trim();
+    if (!cleaned || cleaned.length < 2) return null;
+    if (/^(just|okay|yes|no)$/i.test(cleaned)) return null;
+    return cleaned;
+  }
+
+  private extractSpelledName(transcript: string): string | null {
+    const letters = transcript.toUpperCase().match(/\b[A-Z]\b/g);
+    if (!letters || letters.length < 4) return null;
+    const uniqueCount = new Set(letters).size;
+    if (uniqueCount < 2) return null;
+    return letters.join("-");
   }
 
   /**
