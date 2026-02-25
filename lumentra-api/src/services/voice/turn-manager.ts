@@ -61,8 +61,11 @@ const ON_NUMBER_MS = 450; // Text ends with a number - might be part of longer s
 const ON_NO_PUNCTUATION_MS = 520; // No punctuation - user may still be talking
 
 // General
-const INCOMPLETE_WAIT_MS = 450; // Structurally incomplete (ends with "the", "for", etc.)
-const MAX_ACCUMULATION_MS = 2500; // Max time per speech burst before forcing process
+const INCOMPLETE_WAIT_MS = 550; // Structurally incomplete (ends with "the", "for", etc.)
+const MAX_ACCUMULATION_MS = 3000; // Max time per speech burst before forcing process
+const MAX_INCOMPLETE_ACCUMULATION_MS = 5500; // Extra time for obviously unfinished speech
+const ACTIVE_SPEECH_RECHECK_MS = 220; // Recheck timer while STT still reports active speaking
+const MAX_ACTIVE_SPEECH_WAIT_MS = 7000; // Safety cap if STT speaking flag gets stuck true
 const MIN_TRANSCRIPT_LENGTH = 3; // Minimum characters before processing
 const INTERIM_FINALIZATION_WAIT_MS = 120; // Briefly wait for Deepgram final to replace interim text
 const BARGE_IN_TRANSCRIPT_WAIT_MS = 220; // Wait for transcript before deciding barge-in
@@ -107,9 +110,10 @@ function checkUtteranceCompleteness(
 ): "complete" | "incomplete" | "filler" | "maybe" {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
+  const lowerSansTrailingPunct = lower.replace(/[.!?]+$/g, "").trim();
 
-  // Very short - wait for more
-  if (trimmed.length < 4) return "incomplete";
+  // Empty
+  if (!trimmed) return "incomplete";
 
   // Check for filler words FIRST - caller is thinking, give them time
   // Matches: um, umm, ummm, uh, uhh, hmm, hmmm, mm, mmm, ah, ahh, er, err
@@ -137,7 +141,16 @@ function checkUtteranceCompleteness(
     /^(tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i,
     /^(just me|just one|for one|for two)$/i,
   ];
-  if (definitelyComplete.some((p) => p.test(lower))) return "complete";
+  if (
+    definitelyComplete.some(
+      (p) => p.test(lower) || p.test(lowerSansTrailingPunct),
+    )
+  ) {
+    return "complete";
+  }
+
+  // Very short and no explicit completion signal - wait for more
+  if (trimmed.length < 4) return "incomplete";
 
   // Definitely incomplete - user is mid-thought
   const definitelyIncomplete = [
@@ -632,8 +645,16 @@ export class TurnManager {
         }
       }
 
-      // Schedule processing - consolidated timer management
-      this.scheduleProcessing();
+      // Schedule processing only when user is no longer actively speaking.
+      // Final transcript chunks can arrive mid-utterance.
+      const session = sessionManager.getSession(this.callSid);
+      if (session?.isSpeaking) {
+        console.log(
+          `[TURN] Final transcript received while user still speaking - deferring schedule`,
+        );
+      } else {
+        this.scheduleProcessing();
+      }
     }
   }
 
@@ -647,6 +668,9 @@ export class TurnManager {
 
     const existingSession = sessionManager.getSession(this.callSid);
     if (existingSession?.isSpeaking) {
+      // Duplicate SpeechStarted still means caller is actively talking.
+      // Cancel any pending process timer to avoid mid-utterance triggering.
+      this.cancelScheduledProcessing();
       return; // Duplicate SpeechStarted while already in a speaking segment
     }
 
@@ -1024,13 +1048,31 @@ export class TurnManager {
       this.accumulationStartTime = Date.now();
     }
 
-    // Check if we've been accumulating too long (force process)
     const accumulationTime = Date.now() - this.accumulationStartTime;
-    const forceProcess = accumulationTime >= MAX_ACCUMULATION_MS;
+
+    // Never process while caller is still actively speaking unless STT state appears stale.
+    const session = sessionManager.getSession(this.callSid);
+    if (session?.isSpeaking && accumulationTime < MAX_ACTIVE_SPEECH_WAIT_MS) {
+      console.log(
+        `[TURN] User still speaking, delaying processing (${accumulationTime}ms accumulated)`,
+      );
+      this.processingLock = false;
+      this.silenceTimer = setTimeout(() => {
+        this.silenceTimer = null;
+        this.processUserTurn();
+      }, ACTIVE_SPEECH_RECHECK_MS);
+      return;
+    }
+
+    if (session?.isSpeaking) {
+      console.warn(
+        `[TURN] STT speaking flag appears stale after ${accumulationTime}ms; continuing processing`,
+      );
+    }
 
     // Prefer finalized transcript before deciding completeness.
     // Processing interim text can split one utterance into multiple turns.
-    if (!finalizedTranscript && interimTranscript.length > 0 && !forceProcess) {
+    if (!finalizedTranscript && interimTranscript.length > 0) {
       console.log(
         `[TURN] Interim transcript active, waiting ${INTERIM_FINALIZATION_WAIT_MS}ms for final`,
       );
@@ -1044,6 +1086,11 @@ export class TurnManager {
 
     // Completeness check
     const completeness = checkUtteranceCompleteness(transcript);
+    const maxAccumulationMs =
+      completeness === "incomplete" || completeness === "filler"
+        ? MAX_INCOMPLETE_ACCUMULATION_MS
+        : MAX_ACCUMULATION_MS;
+    const forceProcess = accumulationTime >= maxAccumulationMs;
     console.log(
       `[TURN] Completeness: "${transcript.substring(0, 40)}..." -> ${completeness} (accumulated: ${accumulationTime}ms)`,
     );
@@ -1083,7 +1130,9 @@ export class TurnManager {
         return;
       }
     } else {
-      console.log(`[TURN] Max accumulation time reached, forcing process`);
+      console.log(
+        `[TURN] Max accumulation time reached (${maxAccumulationMs}ms), forcing process`,
+      );
     }
 
     // COMPLETE - proceed with LLM call
