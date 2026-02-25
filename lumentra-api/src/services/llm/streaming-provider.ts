@@ -443,6 +443,7 @@ async function* _streamWithGroq(
 }
 
 const DEFAULT_PROVIDER_ORDER = ["groq", "openai", "gemini"] as const;
+let providerOrderLogged = false;
 
 function getProviderOrder(): string[] {
   const raw = process.env.VOICE_LLM_PROVIDER_ORDER?.trim();
@@ -483,6 +484,13 @@ export async function* streamChatWithFallback(
   const providers = providerOrder
     .map((name) => providerMap[name])
     .filter(Boolean);
+
+  if (!providerOrderLogged) {
+    providerOrderLogged = true;
+    console.log(
+      `[STREAM] Provider order resolved: ${providerOrder.join(" -> ")} (VOICE_LLM_PROVIDER_ORDER=${process.env.VOICE_LLM_PROVIDER_ORDER || "unset"})`,
+    );
+  }
 
   // Log provider status on first call (helps debug why certain providers are used)
   logProviderStatus();
