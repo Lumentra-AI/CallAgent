@@ -1146,6 +1146,7 @@ export class TurnManager {
     const finalizedTranscript = this.state.transcriptBuffer.trim();
     const interimTranscript = this.state.interimTranscript.trim();
     const transcript = finalizedTranscript || interimTranscript;
+    const hasFinalizedTranscript = finalizedTranscript.length > 0;
     if (transcript.length < MIN_TRANSCRIPT_LENGTH) {
       console.log(`[TURN] Transcript too short, ignoring: "${transcript}"`);
       this.processingLock = false;
@@ -1220,24 +1221,36 @@ export class TurnManager {
       }
 
       if (completeness === "incomplete") {
-        console.log(`[TURN] Waiting for user to finish`);
-        this.processingLock = false;
-        this.silenceTimer = setTimeout(() => {
-          this.silenceTimer = null;
-          this.processUserTurn();
-        }, INCOMPLETE_WAIT_MS);
-        return;
+        if (hasFinalizedTranscript && accumulationTime >= 1200) {
+          console.log(
+            `[TURN] Incomplete but finalized transcript aged ${accumulationTime}ms, processing now`,
+          );
+        } else {
+          console.log(`[TURN] Waiting for user to finish`);
+          this.processingLock = false;
+          this.silenceTimer = setTimeout(() => {
+            this.silenceTimer = null;
+            this.processUserTurn();
+          }, INCOMPLETE_WAIT_MS);
+          return;
+        }
       }
 
       if (completeness === "maybe") {
-        const waitMs = this.getEndpointingTimeout(transcript);
-        console.log(`[TURN] Maybe complete, waiting ${waitMs}ms`);
-        this.processingLock = false;
-        this.silenceTimer = setTimeout(() => {
-          this.silenceTimer = null;
-          this.processUserTurn();
-        }, waitMs);
-        return;
+        if (hasFinalizedTranscript) {
+          console.log(
+            `[TURN] Maybe complete with finalized transcript, processing now`,
+          );
+        } else {
+          const waitMs = this.getEndpointingTimeout(transcript);
+          console.log(`[TURN] Maybe complete, waiting ${waitMs}ms`);
+          this.processingLock = false;
+          this.silenceTimer = setTimeout(() => {
+            this.silenceTimer = null;
+            this.processUserTurn();
+          }, waitMs);
+          return;
+        }
       }
     } else {
       console.log(
@@ -1616,6 +1629,10 @@ export class TurnManager {
   }
 
   private buildDynamicSystemPrompt(userTranscript: string): string {
+    if (!this.usesHotelBookingMemory()) {
+      return this.systemPrompt;
+    }
+
     if (
       this.conversationMemory.flow !== "booking" &&
       !this.looksLikeBookingFlow(userTranscript.toLowerCase())
@@ -1653,6 +1670,10 @@ ${missingLines.length > 0 ? missingLines.join("\n") : "- none"}
   }
 
   private updateMemoryFromUserTranscript(transcript: string): void {
+    if (!this.usesHotelBookingMemory()) {
+      return;
+    }
+
     const lower = transcript.toLowerCase();
     if (this.looksLikeBookingFlow(lower)) {
       this.conversationMemory.flow = "booking";
@@ -1690,6 +1711,10 @@ ${missingLines.length > 0 ? missingLines.join("\n") : "- none"}
   }
 
   private updateMemoryFromAssistantResponse(response: string): void {
+    if (!this.usesHotelBookingMemory()) {
+      return;
+    }
+
     const askedSlot = this.detectAskedSlot(response);
     if (askedSlot) {
       this.conversationMemory.recentAskedSlots.push(askedSlot);
@@ -1725,6 +1750,10 @@ ${missingLines.length > 0 ? missingLines.join("\n") : "- none"}
     sentence: string,
     userTranscript: string,
   ): string {
+    if (!this.usesHotelBookingMemory()) {
+      return sentence;
+    }
+
     const askedSlot = this.detectAskedSlot(sentence);
     if (!askedSlot) return sentence;
 
@@ -1892,6 +1921,11 @@ ${missingLines.length > 0 ? missingLines.join("\n") : "- none"}
     return /\b(book|booking|reservation|room|stay|check.?in|check.?out|king bed|queen bed)\b/i.test(
       lower,
     );
+  }
+
+  private usesHotelBookingMemory(): boolean {
+    const industry = (this.tenant.industry || "").toLowerCase();
+    return industry === "hotel" || industry === "motel";
   }
 
   private extractGuestCount(lower: string): number | null {

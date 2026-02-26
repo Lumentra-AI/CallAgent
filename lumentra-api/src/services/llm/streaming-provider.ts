@@ -492,6 +492,20 @@ function getProviderOrder(): string[] {
   return deduped.length > 0 ? deduped : [...DEFAULT_PROVIDER_ORDER];
 }
 
+function getEffectiveProviderOrder(
+  configuredOrder: string[],
+  preferOpenAIForTools: boolean,
+): string[] {
+  if (!preferOpenAIForTools || !configuredOrder.includes("openai")) {
+    return [...configuredOrder];
+  }
+
+  return [
+    "openai",
+    ...configuredOrder.filter((provider) => provider !== "openai"),
+  ];
+}
+
 function createScopedAbortController(parent?: AbortSignal): {
   controller: AbortController;
   cleanup: () => void;
@@ -532,7 +546,14 @@ export async function* streamChatWithFallback(
     tools: options.tools || voiceAgentFunctions,
   };
 
-  const providerOrder = getProviderOrder();
+  const configuredOrder = getProviderOrder();
+  const preferOpenAIForTools =
+    process.env.VOICE_PREFER_OPENAI_FOR_TOOLS !== "false" &&
+    Boolean(optionsWithTools.tools?.length);
+  const providerOrder = getEffectiveProviderOrder(
+    configuredOrder,
+    preferOpenAIForTools,
+  );
   const providerMap: Record<
     string,
     {
@@ -553,7 +574,7 @@ export async function* streamChatWithFallback(
   if (!providerOrderLogged) {
     providerOrderLogged = true;
     console.log(
-      `[STREAM] Provider order resolved: ${providerOrder.join(" -> ")} (VOICE_LLM_PROVIDER_ORDER=${process.env.VOICE_LLM_PROVIDER_ORDER || "unset"})`,
+      `[STREAM] Provider order resolved: ${providerOrder.join(" -> ")} (configured=${configuredOrder.join(" -> ")}, VOICE_LLM_PROVIDER_ORDER=${process.env.VOICE_LLM_PROVIDER_ORDER || "unset"}, preferOpenAIForTools=${preferOpenAIForTools})`,
     );
   }
 
