@@ -73,7 +73,7 @@ const GREEDY_CANCEL_CONFIRM_MS = 250; // Wait for transcript before aborting LLM
 const SPEECH_STARTED_DEBOUNCE_MS = 200; // Ignore rapid-fire duplicate SpeechStarted events
 const MIN_BARGE_IN_INTERIM_CHARS = 8; // Require meaningful interim speech before interrupting TTS
 const FINAL_TRANSCRIPT_DEDUPE_MS = 1500; // Ignore duplicate final transcripts emitted in quick succession
-const FINAL_TRANSCRIPT_FALLBACK_MS = 900; // If no more transcript arrives, treat final transcript as utterance end
+const FINAL_TRANSCRIPT_FALLBACK_MS = 700; // If no more transcript arrives, treat final transcript as utterance end
 
 // Acknowledgement phrases - these should NOT trigger barge-in during TTS
 // Vapi pattern: user says "yeah" or "uh-huh" while listening, not interrupting
@@ -739,7 +739,10 @@ export class TurnManager {
         `[TURN] No new transcript after final chunk, forcing utterance end`,
       );
       sessionManager.setSpeaking(this.callSid, false);
-      this.scheduleProcessing();
+      // Prioritize processing finalized text immediately so short follow-up
+      // utterances don't get merged into a long multi-intent transcript.
+      this.cancelScheduledProcessing();
+      void this.processUserTurn();
     }, FINAL_TRANSCRIPT_FALLBACK_MS);
   }
 
@@ -758,9 +761,11 @@ export class TurnManager {
 
     const existingSession = sessionManager.getSession(this.callSid);
     if (existingSession?.isSpeaking) {
-      // Duplicate SpeechStarted still means caller is actively talking.
-      // Cancel any pending process timer to avoid mid-utterance triggering.
-      this.cancelScheduledProcessing();
+      // Duplicate SpeechStarted events are noisy. Only cancel pending processing
+      // when we still don't have finalized text for this turn.
+      if (!this.state.transcriptBuffer.trim()) {
+        this.cancelScheduledProcessing();
+      }
       return; // Duplicate SpeechStarted while already in a speaking segment
     }
 
