@@ -24,8 +24,8 @@ export class MediaStreamHandler {
   private silenceInjectionInterval: NodeJS.Timeout | null = null;
   private lastIgnoredTrackLogTime = 0;
 
-  // Generate silence frames (20ms of mulaw silence = 160 bytes of 0xFF)
-  private static readonly SILENCE_FRAME = Buffer.alloc(160, 0xff);
+  // Silence frame adapts to negotiated media format (set on "start" event).
+  private silenceFrame: Buffer = Buffer.alloc(960, 0x00); // 20ms @ 24kHz linear16 mono
   private static readonly SILENCE_INJECTION_INTERVAL_MS = 20;
   private static readonly MAX_SILENCE_GAP_MS = 100;
 
@@ -74,6 +74,7 @@ export class MediaStreamHandler {
           console.log(
             `[MEDIA-STREAM] Format: ${JSON.stringify(event.start.mediaFormat)}`,
           );
+          this.configureSilenceFrame(event.start.mediaFormat);
 
           // Start silence injection to prevent buffer underruns
           this.startSilenceInjection();
@@ -175,7 +176,7 @@ export class MediaStreamHandler {
       event: "media",
       streamSid: this.streamSid,
       media: {
-        payload: MediaStreamHandler.SILENCE_FRAME.toString("base64"),
+        payload: this.silenceFrame.toString("base64"),
       },
     };
 
@@ -225,6 +226,33 @@ export class MediaStreamHandler {
     this.isActive = false;
     this.stopSilenceInjection();
     this.ws.close();
+  }
+
+  private configureSilenceFrame(mediaFormat: {
+    encoding: string;
+    sampleRate: number;
+    channels: number;
+  }): void {
+    const sampleRate = Math.max(mediaFormat.sampleRate || 8000, 8000);
+    const channels = Math.max(mediaFormat.channels || 1, 1);
+    const encoding = (mediaFormat.encoding || "").toLowerCase();
+    const samplesPer20ms = Math.max(Math.round(sampleRate / 50), 1);
+
+    if (encoding.includes("mulaw")) {
+      // Mu-law silence byte is 0xFF
+      this.silenceFrame = Buffer.alloc(samplesPer20ms * channels, 0xff);
+    } else {
+      // Linear PCM silence is all zero bytes
+      const bytesPerSample = 2;
+      this.silenceFrame = Buffer.alloc(
+        samplesPer20ms * channels * bytesPerSample,
+        0x00,
+      );
+    }
+
+    console.log(
+      `[MEDIA-STREAM] Silence frame configured: ${this.silenceFrame.length} bytes (${mediaFormat.encoding})`,
+    );
   }
 }
 

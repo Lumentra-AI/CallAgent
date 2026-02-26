@@ -73,6 +73,7 @@ const GREEDY_CANCEL_CONFIRM_MS = 250; // Wait for transcript before aborting LLM
 const SPEECH_STARTED_DEBOUNCE_MS = 200; // Ignore rapid-fire duplicate SpeechStarted events
 const MIN_BARGE_IN_INTERIM_CHARS = 8; // Require meaningful interim speech before interrupting TTS
 const FINAL_TRANSCRIPT_DEDUPE_MS = 1500; // Ignore duplicate final transcripts emitted in quick succession
+const FINAL_TRANSCRIPT_FALLBACK_MS = 900; // If no more transcript arrives, treat final transcript as utterance end
 
 // Acknowledgement phrases - these should NOT trigger barge-in during TTS
 // Vapi pattern: user says "yeah" or "uh-huh" while listening, not interrupting
@@ -327,6 +328,8 @@ export class TurnManager {
   // Deferred barge-in - wait for transcript to check acknowledgement phrases
   private pendingBargeIn = false;
   private bargeInTimer: NodeJS.Timeout | null = null;
+  private finalTranscriptFallbackTimer: NodeJS.Timeout | null = null;
+  private lastTranscriptEventAt = 0;
 
   // Greedy cancel - save transcript for restore on abort
   private lastProcessedTranscript: string | null = null;
@@ -598,6 +601,8 @@ export class TurnManager {
   }
 
   private handleTranscript(text: string, isFinal: boolean): void {
+    this.lastTranscriptEventAt = Date.now();
+
     if (isFinal) {
       const trimmed = text.trim();
       if (!trimmed) {
@@ -697,13 +702,53 @@ export class TurnManager {
         console.log(
           `[TURN] Final transcript received while user still speaking - deferring schedule`,
         );
+        this.scheduleFinalTranscriptFallback();
       } else {
         this.scheduleProcessing();
       }
     }
   }
 
+  private scheduleFinalTranscriptFallback(): void {
+    if (this.finalTranscriptFallbackTimer) {
+      clearTimeout(this.finalTranscriptFallbackTimer);
+      this.finalTranscriptFallbackTimer = null;
+    }
+
+    const transcriptEventAt = this.lastTranscriptEventAt;
+
+    this.finalTranscriptFallbackTimer = setTimeout(() => {
+      this.finalTranscriptFallbackTimer = null;
+
+      const session = sessionManager.getSession(this.callSid);
+      if (!session?.isSpeaking) {
+        return;
+      }
+
+      // If transcript activity resumed, keep waiting for the next final/utterance-end.
+      if (this.lastTranscriptEventAt > transcriptEventAt) {
+        return;
+      }
+
+      const buffered = this.state.transcriptBuffer.trim();
+      if (buffered.length < MIN_TRANSCRIPT_LENGTH) {
+        return;
+      }
+
+      console.log(
+        `[TURN] No new transcript after final chunk, forcing utterance end`,
+      );
+      sessionManager.setSpeaking(this.callSid, false);
+      this.scheduleProcessing();
+    }, FINAL_TRANSCRIPT_FALLBACK_MS);
+  }
+
   private handleSpeechStarted(): void {
+    if (this.finalTranscriptFallbackTimer) {
+      clearTimeout(this.finalTranscriptFallbackTimer);
+      this.finalTranscriptFallbackTimer = null;
+    }
+
     // === DEBOUNCE: Filter rapid-fire duplicate SpeechStarted events from Deepgram ===
     const now = Date.now();
     if (now - this.lastSpeechStartedTime < SPEECH_STARTED_DEBOUNCE_MS) {
@@ -1017,6 +1062,11 @@ export class TurnManager {
     console.log(`[TURN] User stopped speaking`);
     sessionManager.setSpeaking(this.callSid, false);
     this.state = startSilence(this.state);
+
+    if (this.finalTranscriptFallbackTimer) {
+      clearTimeout(this.finalTranscriptFallbackTimer);
+      this.finalTranscriptFallbackTimer = null;
+    }
 
     // Schedule processing if not already scheduled
     this.scheduleProcessing();
@@ -2120,6 +2170,10 @@ ${missingLines.length > 0 ? missingLines.join("\n") : "- none"}
     if (this.fillerTimer) {
       clearTimeout(this.fillerTimer);
       this.fillerTimer = null;
+    }
+    if (this.finalTranscriptFallbackTimer) {
+      clearTimeout(this.finalTranscriptFallbackTimer);
+      this.finalTranscriptFallbackTimer = null;
     }
   }
 
