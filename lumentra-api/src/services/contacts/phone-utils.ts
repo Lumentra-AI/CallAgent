@@ -35,38 +35,37 @@ export function normalizePhoneNumber(
   // Try to parse the phone number
   const parsed = parsePhoneNumberFromString(cleaned, defaultCountry);
 
-  if (!parsed) {
-    // Try harder - strip all non-digits first
-    const digitsOnly = cleaned.replace(/\D/g, "");
-
-    // If it's 10 digits, assume US number
-    if (digitsOnly.length === 10) {
-      const usNumber = parsePhoneNumberFromString(`+1${digitsOnly}`, "US");
-      if (usNumber && usNumber.isValid()) {
-        return usNumber.format("E.164");
-      }
-    }
-
-    // If it's 11 digits starting with 1, assume US number
-    if (digitsOnly.length === 11 && digitsOnly.startsWith("1")) {
-      const usNumber = parsePhoneNumberFromString(`+${digitsOnly}`, "US");
-      if (usNumber && usNumber.isValid()) {
-        return usNumber.format("E.164");
-      }
-    }
-
-    throw new PhoneValidationError(
-      `Invalid phone number format: ${phone}. Expected E.164 or national format.`,
-    );
+  // Accept valid numbers, and also "possible" numbers for lead capture.
+  // Some demo/test numbers can fail strict validity but should still persist.
+  if (parsed && (parsed.isValid() || parsed.isPossible())) {
+    return parsed.format("E.164");
   }
 
-  if (!parsed.isValid()) {
-    throw new PhoneValidationError(
-      `Invalid phone number: ${phone}. The number is not valid for ${parsed.country || defaultCountry}.`,
-    );
+  // Fallback normalization for partially-valid input.
+  const digitsOnly = cleaned.replace(/\D/g, "");
+
+  // If it's 10 digits, assume US number.
+  if (digitsOnly.length === 10) {
+    return `+1${digitsOnly}`;
   }
 
-  return parsed.format("E.164");
+  // If it's 11 digits starting with 1, assume US number.
+  if (digitsOnly.length === 11 && digitsOnly.startsWith("1")) {
+    return `+${digitsOnly}`;
+  }
+
+  // Generic E.164-ish fallback for international numbers.
+  if (
+    cleaned.startsWith("+") &&
+    digitsOnly.length >= 8 &&
+    digitsOnly.length <= 15
+  ) {
+    return `+${digitsOnly}`;
+  }
+
+  throw new PhoneValidationError(
+    `Invalid phone number format: ${phone}. Expected E.164 or national format.`,
+  );
 }
 
 /**
