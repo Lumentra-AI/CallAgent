@@ -8,13 +8,11 @@ from livekit.agents import (
     AgentSession,
     JobContext,
     JobProcess,
-    RunContext,
     cli,
     metrics,
-    room_io,
 )
 from livekit.agents.llm import function_tool
-from livekit.plugins import deepgram, cartesia, openai, silero, noise_cancellation
+from livekit.plugins import deepgram, cartesia, openai, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from tools import (
@@ -76,7 +74,8 @@ async def entrypoint(ctx: JobContext):
     4. Start the agent session with STT/LLM/TTS
     5. Agent greets the caller via on_enter()
     """
-    # Wait for the SIP participant and extract phone info
+    # Connect to the room first, then wait for the SIP participant
+    await ctx.connect()
     participant = await ctx.wait_for_participant()
     dialed_number = participant.attributes.get("sip.trunkPhoneNumber", "")
     caller_phone = participant.attributes.get("sip.phoneNumber", "")
@@ -108,7 +107,6 @@ async def entrypoint(ctx: JobContext):
         preemptive_generation=True,
         resume_false_interruption=True,
         false_interruption_timeout=1.0,
-        aec_warmup_duration=3.0,
         min_endpointing_delay=0.5,
         max_endpointing_delay=3.0,
     )
@@ -139,11 +137,6 @@ async def entrypoint(ctx: JobContext):
     await session.start(
         agent=LumentraAgent(tenant_config, caller_phone),
         room=ctx.room,
-        room_options=room_io.RoomOptions(
-            audio_input=room_io.AudioInputOptions(
-                noise_cancellation=noise_cancellation.BVCTelephony(),
-            ),
-        ),
     )
     # Greeting is handled by LumentraAgent.on_enter()
 
