@@ -1,6 +1,7 @@
 // Vapi Webhook Routes
 // Handles all Vapi server events: assistant-request, tool-calls, end-of-call-report, etc.
 
+import { createHmac, timingSafeEqual } from "crypto";
 import { Hono } from "hono";
 import {
   getTenantByPhoneWithFallback,
@@ -17,29 +18,43 @@ import type { ToolExecutionContext } from "../types/voice.js";
 
 const vapiRoutes = new Hono();
 
-// Verify Vapi webhook signature (optional but recommended)
+// Verify Vapi webhook signature using HMAC-SHA256
 function verifySignature(
   secret: string | undefined,
+  payload: string,
   signature: string | undefined,
 ): boolean {
   if (!secret) return true; // Skip verification if no secret configured
   if (!signature) return false;
-  // In production, implement proper HMAC verification
-  return true;
+
+  try {
+    const expectedSignature = createHmac("sha256", secret)
+      .update(payload)
+      .digest("hex");
+
+    const sigBuffer = Buffer.from(signature, "hex");
+    const expectedBuffer = Buffer.from(expectedSignature, "hex");
+
+    if (sigBuffer.length !== expectedBuffer.length) return false;
+    return timingSafeEqual(sigBuffer, expectedBuffer);
+  } catch {
+    return false;
+  }
 }
 
 // Main webhook endpoint - handles all Vapi server messages
 vapiRoutes.post("/webhook", async (c) => {
+  const rawBody = await c.req.text();
   const signature = c.req.header("x-vapi-signature");
   const secret = process.env.VAPI_WEBHOOK_SECRET;
 
-  if (!verifySignature(secret, signature)) {
+  if (!verifySignature(secret, rawBody, signature)) {
     console.error("[VAPI] Invalid webhook signature");
     return c.json({ error: "Invalid signature" }, 401);
   }
 
   try {
-    const body = await c.req.json();
+    const body = JSON.parse(rawBody);
     const messageType = body.message?.type;
 
     console.log(`[VAPI] Received webhook: ${messageType}`);

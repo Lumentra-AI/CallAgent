@@ -28,7 +28,6 @@ export default function SetupPage() {
           const progress = await get<ProgressResponse>("/api/setup/progress");
 
           if (progress.completed) {
-            document.cookie = "setup_completed=1; path=/; max-age=31536000";
             await refreshTenants();
             router.replace("/dashboard");
           } else {

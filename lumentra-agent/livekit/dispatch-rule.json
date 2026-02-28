@@ -1,0 +1,19 @@
+{
+  "dispatch_rule": {
+    "name": "Lumentra Voice Agent",
+    "rule": {
+      "dispatchRuleIndividual": {
+        "roomPrefix": "call-"
+      }
+    },
+    "trunkIds": [],
+    "hidePhoneNumber": false,
+    "roomConfig": {
+      "agents": [
+        {
+          "agentName": "lumentra-voice-agent"
+        }
+      ]
+    }
+  }
+}

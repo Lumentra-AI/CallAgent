@@ -4,6 +4,7 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { z } from "zod";
 import { buildSystemPrompt } from "../services/gemini/chat.js";
 import {
   chatAgentFunctions,
@@ -16,7 +17,6 @@ import {
   updateVisitorInfo,
   getVisitorInfo,
   getSessionCount,
-  type VisitorInfo,
 } from "../services/chat/conversation-store.js";
 import { getTenantById } from "../services/database/tenant-cache.js";
 import { findOrCreateByPhone } from "../services/contacts/contact-service.js";
@@ -30,11 +30,18 @@ import {
 
 export const chatRoutes = new Hono();
 
-// CORS for widget - allow all origins for embedding
+// CORS for embeddable widget - wildcard is intentional since the chat widget
+// is embedded on customer websites across different domains.
+// Configure CHAT_ALLOWED_ORIGINS to restrict if needed.
 chatRoutes.use(
   "/*",
   cors({
-    origin: "*",
+    origin: (origin) => {
+      const allowedOrigins = process.env.CHAT_ALLOWED_ORIGINS;
+      if (!allowedOrigins) return origin; // Allow all for embeddable widget
+      const allowed = allowedOrigins.split(",").map((o) => o.trim());
+      return allowed.includes(origin || "") ? origin : allowed[0];
+    },
     allowMethods: ["GET", "POST", "OPTIONS"],
     allowHeaders: ["Content-Type", "X-Tenant-ID"],
   }),
@@ -43,14 +50,6 @@ chatRoutes.use(
 // ============================================================================
 // POST /api/chat - Send a message
 // ============================================================================
-
-interface ChatRequest {
-  tenant_id: string;
-  session_id: string;
-  message: string;
-  visitor_info?: VisitorInfo;
-  marketing_mode?: boolean; // When true, use Lumentra marketing context
-}
 
 // Lumentra marketing site system prompt
 const LUMENTRA_MARKETING_PROMPT = `You are the Lumentra AI assistant on the Lumentra website. Your job is to help potential customers understand Lumentra's AI voice and chat agent platform.
@@ -96,21 +95,36 @@ interface ChatResponse {
   }>;
 }
 
+// Zod schema for chat request validation
+const chatRequestSchema = z.object({
+  tenant_id: z.string().uuid("Invalid tenant_id format"),
+  session_id: z.string().min(1).max(256),
+  message: z
+    .string()
+    .min(1, "message is required")
+    .max(10000, "Message too long"),
+  visitor_info: z
+    .object({
+      name: z.string().max(256).optional(),
+      email: z.string().email().max(256).optional(),
+      phone: z.string().max(50).optional(),
+    })
+    .optional(),
+  marketing_mode: z.boolean().optional(),
+});
+
 chatRoutes.post("/", async (c) => {
   try {
-    const body = await c.req.json<ChatRequest>();
-    const { tenant_id, session_id, message, visitor_info, marketing_mode } =
-      body;
+    const rawBody = await c.req.json();
+    const parsed = chatRequestSchema.safeParse(rawBody);
 
-    if (!tenant_id) {
-      return c.json({ error: "tenant_id is required" }, 400);
+    if (!parsed.success) {
+      const firstError = parsed.error.issues[0]?.message || "Invalid request";
+      return c.json({ error: firstError }, 400);
     }
-    if (!session_id) {
-      return c.json({ error: "session_id is required" }, 400);
-    }
-    if (!message || !message.trim()) {
-      return c.json({ error: "message is required" }, 400);
-    }
+
+    const { tenant_id, session_id, message, visitor_info, marketing_mode } =
+      parsed.data;
 
     // Get tenant configuration
     const tenant = await getTenantById(tenant_id);
@@ -196,7 +210,10 @@ chatRoutes.post("/", async (c) => {
     return c.json(
       {
         error: "Chat error",
-        message: err instanceof Error ? err.message : "Unknown error",
+        message:
+          process.env.NODE_ENV === "development" && err instanceof Error
+            ? err.message
+            : "An unexpected error occurred",
       },
       500,
     );

@@ -62,13 +62,14 @@ export async function updateSession(request: NextRequest) {
   // a client-controllable cookie.
   const isSetupRoute = request.nextUrl.pathname.startsWith("/setup");
   if (isProtectedRoute && user && !isSetupRoute) {
-    const { data: membership } = await supabase
+    const { data: memberships } = await supabase
       .from("tenant_members")
       .select("tenant_id")
       .eq("user_id", user.id)
       .eq("is_active", true)
-      .limit(1)
-      .single();
+      .limit(1);
+
+    const membership = memberships?.[0];
 
     if (!membership) {
       // No tenant membership - redirect to setup
@@ -102,13 +103,14 @@ export async function updateSession(request: NextRequest) {
   if (isAuthRoute && user) {
     const url = request.nextUrl.clone();
     // Check tenant setup state from DB
-    const { data: membership } = await supabase
+    const { data: memberships } = await supabase
       .from("tenant_members")
       .select("tenant_id")
       .eq("user_id", user.id)
       .eq("is_active", true)
-      .limit(1)
-      .single();
+      .limit(1);
+
+    const membership = memberships?.[0];
 
     if (membership) {
       const { data: tenant } = await supabase

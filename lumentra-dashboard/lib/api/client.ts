@@ -5,7 +5,9 @@
 
 import { createClient } from "@/lib/supabase/client";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001");
 
 // Current tenant ID - can be set dynamically
 let currentTenantId: string | null = null;
@@ -67,6 +69,13 @@ export async function apiClient<T>(
   endpoint: string,
   options?: RequestInit,
 ): Promise<T> {
+  if (!API_BASE) {
+    throw new ApiClientError(
+      "NEXT_PUBLIC_API_URL is required in production",
+      500,
+    );
+  }
+
   const url = `${API_BASE}${endpoint}`;
 
   // Get auth token

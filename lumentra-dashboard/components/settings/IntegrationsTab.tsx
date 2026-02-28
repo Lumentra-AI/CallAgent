@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import {
   Calendar,
   Database,
-  CreditCard,
   MessageSquare,
   Cloud,
   Check,
@@ -24,7 +23,7 @@ interface Integration {
   name: string;
   description: string;
   icon: React.ElementType;
-  category: "calendar" | "pms" | "payment" | "messaging" | "crm";
+  category: "calendar" | "pms" | "messaging" | "crm";
   connected: boolean;
 }
 
@@ -81,24 +80,6 @@ const INTEGRATIONS: Integration[] = [
     connected: false,
   },
 
-  // Payment
-  {
-    id: "stripe",
-    name: "Stripe",
-    description: "Payment processing",
-    icon: CreditCard,
-    category: "payment",
-    connected: true,
-  },
-  {
-    id: "square",
-    name: "Square",
-    description: "POS integration",
-    icon: CreditCard,
-    category: "payment",
-    connected: false,
-  },
-
   // Messaging
   {
     id: "twilio",
@@ -139,7 +120,6 @@ const INTEGRATIONS: Integration[] = [
 const CATEGORIES = [
   { id: "calendar", label: "Calendar & Scheduling" },
   { id: "pms", label: "Property Management" },
-  { id: "payment", label: "Payment Processing" },
   { id: "messaging", label: "Messaging" },
   { id: "crm", label: "CRM" },
 ];

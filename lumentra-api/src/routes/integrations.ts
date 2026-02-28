@@ -94,6 +94,7 @@ function renderOAuthCallbackResultHtml(params: {
 
   const payloadJson = JSON.stringify(payload);
   const redirectHref = redirectUrl.toString();
+  const openerOrigin = redirectUrl.origin;
 
   return `<!doctype html>
 <html lang="en">
@@ -106,9 +107,10 @@ function renderOAuthCallbackResultHtml(params: {
       (function () {
         const payload = ${payloadJson};
         const redirectHref = ${JSON.stringify(redirectHref)};
+        const openerOrigin = ${JSON.stringify(openerOrigin)};
         try {
           if (window.opener && !window.opener.closed) {
-            window.opener.postMessage(payload, "*");
+            window.opener.postMessage(payload, openerOrigin);
             window.close();
             return;
           }

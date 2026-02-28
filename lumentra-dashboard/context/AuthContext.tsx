@@ -73,10 +73,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!supabase) {
         return { error: new Error("Auth not configured") };
       }
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
+      if (!error && data.session) {
+        setSession(data.session);
+        setUser(data.session.user);
+      }
       return { error: error as Error | null };
     },
     [supabase],
@@ -91,13 +95,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!supabase) {
         return { error: new Error("Auth not configured") };
       }
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: metadata,
         },
       });
+      if (!error && data.session) {
+        setSession(data.session);
+        setUser(data.session.user);
+      }
       return { error: error as Error | null };
     },
     [supabase],
@@ -106,15 +114,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
+    setSession(null);
+    setUser(null);
   }, [supabase]);
 
   const signInWithOAuth = useCallback(
     async (provider: "google" | "github") => {
       if (!supabase) return;
+      const configuredRedirect = process.env.NEXT_PUBLIC_AUTH_REDIRECT_URL;
+      const redirectTo =
+        configuredRedirect || `${window.location.origin}/auth/callback`;
       await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo,
         },
       });
     },

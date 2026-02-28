@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,6 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { signIn } = useAuth();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/setup";
 
@@ -37,7 +36,7 @@ export default function LoginPage() {
       setError(error.message);
       setIsLoading(false);
     } else {
-      router.push(redirect);
+      window.location.assign(redirect);
     }
   };
 

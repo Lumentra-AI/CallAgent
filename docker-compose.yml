@@ -34,6 +34,8 @@ services:
       # Optional: Together AI for fine-tuned models
       - TOGETHER_API_KEY=${TOGETHER_API_KEY:-}
       - LLM_PROVIDER=${LLM_PROVIDER:-groq}
+      # Internal API for LiveKit agent communication
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
     restart: unless-stopped
     deploy:
       resources:
@@ -73,6 +75,88 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Redis - coordination for LiveKit server and SIP
+  # Exposed to host for services using network_mode: host (LiveKit, SIP)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # LiveKit Server - WebRTC SFU
+  livekit:
+    image: livekit/livekit-server:v1.8
+    network_mode: host
+    volumes:
+      - ./lumentra-agent/livekit/livekit.yaml:/etc/livekit.yaml:ro
+    command: --config /etc/livekit.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # LiveKit SIP - SIP to WebRTC bridge
+  sip:
+    image: livekit/sip:v1.8
+    network_mode: host
+    environment:
+      - SIP_CONFIG_FILE=/etc/sip.yaml
+    volumes:
+      - ./lumentra-agent/livekit/sip.yaml:/etc/sip.yaml:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # LiveKit Python Agent - Voice AI agent
+  agent:
+    build:
+      context: ./lumentra-agent
+      dockerfile: Dockerfile
+    environment:
+      - LIVEKIT_URL=ws://172.17.0.1:7880
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-APIc4ecf671a4b0eab56ceb2cd4}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-7b284f366c10a9f0319a29352402a300a01362e960a84c492baaaeedfc970386}
+      - INTERNAL_API_URL=http://api:3100
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CARTESIA_API_KEY=${CARTESIA_API_KEY}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
   # Optional: Nginx reverse proxy for production
   nginx:
     image: nginx:alpine
@@ -88,6 +172,9 @@ services:
     restart: unless-stopped
     profiles:
       - production
+
+volumes:
+  redis-data:
 
 networks:
   default:

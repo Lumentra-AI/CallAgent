@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
-import { get } from "@/lib/api/client";
+import { get, API_BASE } from "@/lib/api/client";
 import type { IntegrationProvider, TenantIntegration } from "@/types";
 
 // Aceternity & MagicUI components
@@ -125,6 +125,17 @@ const MODE_OPTIONS: {
   },
 ];
 
+function getOAuthCallbackOrigin(): string {
+  try {
+    if (API_BASE) {
+      return new URL(API_BASE).origin;
+    }
+  } catch {
+    // Fallback to app origin if API_BASE is invalid.
+  }
+  return window.location.origin;
+}
+
 export function IntegrationsStep() {
   const router = useRouter();
   const { state, dispatch, saveStep, goToNextStep, goToPreviousStep } =
@@ -167,7 +178,7 @@ export function IntegrationsStep() {
       const { authUrl } = await get<AuthorizeResponse>(
         `/api/integrations/${provider}/authorize`,
       );
-      const expectedOrigin = new URL(authUrl).origin;
+      const expectedOrigin = getOAuthCallbackOrigin();
 
       // Open OAuth in new window
       const width = 600;

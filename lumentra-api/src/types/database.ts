@@ -33,6 +33,9 @@ export interface Tenant {
   // Feature flags
   features: FeatureFlags;
 
+  // Voice pipeline routing
+  voice_pipeline: "custom" | "livekit";
+
   // Status
   is_active: boolean;
   subscription_tier: "starter" | "professional" | "enterprise";

@@ -148,7 +148,6 @@ export function ReviewStep() {
     try {
       const success = await completeSetup();
       if (success) {
-        document.cookie = "setup_completed=1; path=/; max-age=31536000";
         router.push("/dashboard?setup=complete");
       } else {
         setLaunchError("Failed to launch. Please try again.");

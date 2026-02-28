@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTenant } from "@/context/TenantContext";
-import { get, del } from "@/lib/api/client";
+import { get, del, API_BASE } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -118,6 +118,17 @@ const STATUS_CONFIG: Record<
 
 type IntegrationMode = "external" | "builtin" | "assisted";
 
+function getOAuthCallbackOrigin(): string {
+  try {
+    if (API_BASE) {
+      return new URL(API_BASE).origin;
+    }
+  } catch {
+    // Fallback to the current app origin when API_BASE is not a valid URL.
+  }
+  return window.location.origin;
+}
+
 const MODE_OPTIONS: {
   id: IntegrationMode;
   title: string;
@@ -210,7 +221,7 @@ export default function IntegrationsSettingsPage() {
       const { authUrl } = await get<AuthorizeResponse>(
         `/api/integrations/${provider}/authorize`,
       );
-      const expectedOrigin = new URL(authUrl).origin;
+      const expectedOrigin = getOAuthCallbackOrigin();
 
       // Open OAuth provider URL in a popup window
       const width = 600;

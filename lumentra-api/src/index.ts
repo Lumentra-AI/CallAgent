@@ -30,6 +30,7 @@ import { phoneConfigRoutes } from "./routes/phone-config.js";
 import { escalationRoutes } from "./routes/escalation.js";
 import { promotionsRoutes } from "./routes/promotions.js";
 import { pendingBookingsRoutes } from "./routes/pending-bookings.js";
+import { internalRoutes } from "./routes/internal.js";
 import {
   handleSignalWireStream,
   isSignalWireStreamRequest,
@@ -100,6 +101,7 @@ app.route("/health", healthRoutes);
 app.route("/signalwire", signalwireVoice);
 app.route("/vapi", vapiRoutes); // Vapi webhooks (no auth - verified by signature)
 app.route("/api/chat", chatRoutes); // Chat widget is public
+app.route("/internal", internalRoutes); // LiveKit agent API (own auth via INTERNAL_API_KEY)
 
 // User-only auth (no tenant required) for setup and tenant listing
 app.use("/api/setup/*", userAuthMiddleware());
@@ -160,6 +162,43 @@ const port = parseInt(process.env.PORT || "3001", 10);
 
 async function start() {
   console.log("[STARTUP] Initializing Lumentra API...");
+
+  const isProduction = process.env.NODE_ENV === "production";
+
+  // Validate critical environment variables at startup
+  const requiredEnv = ["DATABASE_URL"];
+  if (isProduction) {
+    requiredEnv.push(
+      "FRONTEND_URL",
+      "BACKEND_URL",
+      "ENCRYPTION_KEY",
+      "VAPI_WEBHOOK_SECRET",
+      "SIGNALWIRE_WEBHOOK_SECRET",
+      "STREAM_SIGNING_SECRET",
+    );
+  }
+  const recommendedEnv = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
+
+  const missingRequired = requiredEnv.filter((key) => !process.env[key]);
+  if (missingRequired.length > 0) {
+    console.error(
+      `[STARTUP] FATAL: Missing required env vars: ${missingRequired.join(", ")}`,
+    );
+    process.exit(1);
+  }
+
+  const missingRecommended = recommendedEnv.filter((key) => !process.env[key]);
+  if (missingRecommended.length > 0) {
+    console.warn(
+      `[STARTUP] WARNING: Missing recommended env vars: ${missingRecommended.join(", ")}`,
+    );
+  }
+
+  if (!isProduction) {
+    console.warn(
+      `[STARTUP] WARNING: NODE_ENV is "${process.env.NODE_ENV || "undefined"}" - set to "production" for production deploys`,
+    );
+  }
 
   // Initialize database connection pool
   initDatabase();
