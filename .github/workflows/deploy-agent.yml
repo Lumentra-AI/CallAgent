@@ -1,0 +1,44 @@
+name: Deploy Agent
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "lumentra-agent/**"
+
+env:
+  SERVER_HOST: 178.156.205.145
+  SERVER_USER: root
+  AGENT_DIR: /opt/livekit/agent
+
+jobs:
+  deploy:
+    name: Deploy LiveKit Agent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ env.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Copy agent files to server
+        run: |
+          scp -i ~/.ssh/deploy_key \
+            lumentra-agent/*.py \
+            lumentra-agent/Dockerfile \
+            ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }}:${{ env.AGENT_DIR }}/
+
+      - name: Rebuild and restart agent
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} \
+            "cd /opt/livekit && docker compose up -d --build agent"
+
+      - name: Verify agent is running
+        run: |
+          sleep 5
+          ssh -i ~/.ssh/deploy_key ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} \
+            "cd /opt/livekit && docker compose ps agent --format '{{.Status}}'" | grep -i "up"
