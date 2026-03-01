@@ -14,6 +14,15 @@ export function buildSystemPrompt(
     verbosity: string;
     empathy: string;
   },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  options?: {
+    operatingHours?: any;
+    locationAddress?: string;
+    locationCity?: string;
+    customInstructions?: string;
+    escalationPhone?: string;
+    timezone?: string;
+  },
 ): string {
   // Get industry-specific configuration
   const industryConfig = getIndustryConfig(industry);
@@ -90,13 +99,68 @@ ${industryConfig.roleDescription} You ARE the front desk - speak as a real perso
 Industry: ${industry}
 Business: ${businessName}
 Today's Date: ${new Date().toISOString().split("T")[0]}
+`;
 
+  // Add location if available
+  if (options?.locationAddress || options?.locationCity) {
+    const parts = [options.locationAddress, options.locationCity].filter(
+      Boolean,
+    );
+    prompt += `Location: ${parts.join(", ")}\n`;
+  }
+
+  // Add timezone
+  if (options?.timezone) {
+    prompt += `Timezone: ${options.timezone}\n`;
+  }
+
+  // Add operating hours if defined
+  if (
+    options?.operatingHours?.schedule &&
+    options.operatingHours.schedule.length > 0
+  ) {
+    prompt += `\n## Operating Hours\n`;
+    for (const slot of options.operatingHours.schedule) {
+      const day = slot.day || `Day ${slot.day}`;
+      const open = slot.open || slot.open_time || "";
+      const close = slot.close || slot.close_time || "";
+      if (open && close) {
+        prompt += `- ${day}: ${open} - ${close}\n`;
+      }
+    }
+    if (
+      options.operatingHours.holidays &&
+      options.operatingHours.holidays.length > 0
+    ) {
+      prompt += `- Closed on: ${options.operatingHours.holidays.join(", ")}\n`;
+    }
+    prompt += `Use these hours to answer "when are you open?" questions. If caller asks about a day/time outside these hours, let them know.\n`;
+  }
+
+  // Add escalation info
+  if (options?.escalationPhone) {
+    prompt += `\nTransfer phone: ${options.escalationPhone} (use when caller asks for a human/manager)\n`;
+  } else {
+    prompt += `\nNo transfer phone configured. If caller asks for a human, take a message and say someone will call back.\n`;
+  }
+
+  prompt += `
 ${industryConfig.criticalRules}
 
 ${industryConfig.bookingFlow}
 
 ${industryConfig.faqSection || ""}
+`;
 
+  // Add custom instructions from tenant (business-specific knowledge)
+  if (options?.customInstructions && options.customInstructions.trim()) {
+    prompt += `
+## Business-Specific Instructions
+${options.customInstructions.trim()}
+`;
+  }
+
+  prompt += `
 ## CRITICAL RULES
 - NEVER say you are an AI, assistant, or automated system - you are the front desk/receptionist
 - If asked "are you a robot?" just say "I'm here to help with your reservation" and move on

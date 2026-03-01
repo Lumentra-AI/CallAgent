@@ -55,11 +55,22 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
   }
 
   // Build the system prompt using the existing prompt builder
+  // The DB SELECT * returns columns beyond the base Tenant type (location, custom_instructions)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const t = tenant as any;
   const systemPrompt = buildSystemPrompt(
     tenant.agent_name,
     tenant.business_name,
     tenant.industry,
     tenant.agent_personality,
+    {
+      operatingHours: t.operating_hours,
+      locationAddress: t.location_address || undefined,
+      locationCity: t.location_city || undefined,
+      customInstructions: t.custom_instructions || undefined,
+      escalationPhone: tenant.escalation_phone || undefined,
+      timezone: tenant.timezone,
+    },
   );
 
   return c.json({

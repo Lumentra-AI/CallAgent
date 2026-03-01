@@ -126,8 +126,8 @@ async def entrypoint(ctx: JobContext):
         preemptive_generation=True,
         resume_false_interruption=True,
         false_interruption_timeout=1.5,
-        min_endpointing_delay=0.7,
-        max_endpointing_delay=3.0,
+        min_endpointing_delay=1.0,
+        max_endpointing_delay=5.0,
     )
 
     # Track call start time for accurate duration
