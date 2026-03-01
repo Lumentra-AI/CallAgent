@@ -5,7 +5,14 @@
  * Replaces Supabase query builder patterns with raw SQL.
  */
 
-import { queryOne, queryAll, queryCount } from "./pool.js";
+import {
+  queryOne,
+  queryAll,
+  queryCount,
+  tenantQueryOne,
+  tenantQueryAll,
+  tenantQueryCount,
+} from "./pool.js";
 import { QueryResultRow } from "pg";
 
 /**
@@ -90,6 +97,7 @@ export async function paginatedQuery<T extends QueryResultRow>(
     orderDir?: "asc" | "desc";
     limit?: number;
     offset?: number;
+    tenantId?: string;
   },
 ): Promise<PaginatedResult<T>> {
   const select = options.select || "*";
@@ -97,6 +105,14 @@ export async function paginatedQuery<T extends QueryResultRow>(
   const offset = options.offset || 0;
   const orderBy = options.orderBy || "created_at";
   const orderDir = options.orderDir || "desc";
+  const qOne = options.tenantId
+    ? <R extends QueryResultRow>(sql: string, params: unknown[]) =>
+        tenantQueryOne<R>(options.tenantId!, sql, params)
+    : queryOne;
+  const qAll = options.tenantId
+    ? <R extends QueryResultRow>(sql: string, params: unknown[]) =>
+        tenantQueryAll<R>(options.tenantId!, sql, params)
+    : queryAll;
 
   let paramIndex = 1;
   const allParams: unknown[] = [];
@@ -116,7 +132,7 @@ export async function paginatedQuery<T extends QueryResultRow>(
 
   // Count query
   const countSql = `SELECT COUNT(*) as total FROM ${table} ${whereClause}`;
-  const countResult = await queryOne<{ total: string }>(countSql, allParams);
+  const countResult = await qOne<{ total: string }>(countSql, allParams);
   const total = parseInt(countResult?.total || "0", 10);
 
   // Data query
@@ -124,7 +140,7 @@ export async function paginatedQuery<T extends QueryResultRow>(
   const pagination = buildPaginationClause(limit, offset, paramIndex);
 
   const dataSql = `SELECT ${select} FROM ${table} ${whereClause} ${orderClause} ${pagination.clause}`;
-  const data = await queryAll<T>(dataSql, [...allParams, ...pagination.params]);
+  const data = await qAll<T>(dataSql, [...allParams, ...pagination.params]);
 
   return {
     data,
@@ -142,13 +158,18 @@ export async function insertOne<T extends QueryResultRow>(
   table: string,
   data: Record<string, unknown>,
   returning = "*",
+  tenantId?: string,
 ): Promise<T> {
   const columns = Object.keys(data);
   const values = Object.values(data);
   const placeholders = columns.map((_, i) => `$${i + 1}`);
+  const qOne = tenantId
+    ? (sql: string, params: unknown[]) =>
+        tenantQueryOne<T>(tenantId, sql, params)
+    : (sql: string, params: unknown[]) => queryOne<T>(sql, params);
 
   const sql = `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${placeholders.join(", ")}) RETURNING ${returning}`;
-  const result = await queryOne<T>(sql, values);
+  const result = await qOne(sql, values);
 
   if (!result) {
     throw new Error(`Failed to insert into ${table}`);
@@ -165,6 +186,7 @@ export async function updateOne<T extends QueryResultRow>(
   data: Record<string, unknown>,
   where: Record<string, unknown>,
   returning = "*",
+  tenantId?: string,
 ): Promise<T | null> {
   const setClauses: string[] = [];
   const params: unknown[] = [];
@@ -184,7 +206,9 @@ export async function updateOne<T extends QueryResultRow>(
   }
 
   const sql = `UPDATE ${table} SET ${setClauses.join(", ")} WHERE ${whereClauses.join(" AND ")} RETURNING ${returning}`;
-  return queryOne<T>(sql, params);
+  return tenantId
+    ? tenantQueryOne<T>(tenantId, sql, params)
+    : queryOne<T>(sql, params);
 }
 
 /**
@@ -194,6 +218,7 @@ export async function updateMany(
   table: string,
   data: Record<string, unknown>,
   where: Record<string, unknown>,
+  tenantId?: string,
 ): Promise<number> {
   const setClauses: string[] = [];
   const params: unknown[] = [];
@@ -213,7 +238,9 @@ export async function updateMany(
   }
 
   const sql = `UPDATE ${table} SET ${setClauses.join(", ")} WHERE ${whereClauses.join(" AND ")}`;
-  return queryCount(sql, params);
+  return tenantId
+    ? tenantQueryCount(tenantId, sql, params)
+    : queryCount(sql, params);
 }
 
 /**
@@ -222,6 +249,7 @@ export async function updateMany(
 export async function deleteRows(
   table: string,
   where: Record<string, unknown>,
+  tenantId?: string,
 ): Promise<number> {
   const whereClauses: string[] = [];
   const params: unknown[] = [];
@@ -234,7 +262,9 @@ export async function deleteRows(
   }
 
   const sql = `DELETE FROM ${table} WHERE ${whereClauses.join(" AND ")}`;
-  return queryCount(sql, params);
+  return tenantId
+    ? tenantQueryCount(tenantId, sql, params)
+    : queryCount(sql, params);
 }
 
 /**

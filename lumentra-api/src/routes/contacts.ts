@@ -3,7 +3,7 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
-import { queryOne, queryAll } from "../services/database/client.js";
+import { tenantQueryOne, tenantQueryAll } from "../services/database/client.js";
 import {
   createContact,
   getContact,
@@ -626,8 +626,9 @@ contactsRoutes.get("/:id/bookings", async (c) => {
     const limit = parseInt(query.limit || "20");
     const offset = parseInt(query.offset || "0");
 
-    // Get total count
-    const countResult = await queryOne<{ count: string }>(
+    // Get total count (RLS + app-level WHERE as defense-in-depth)
+    const countResult = await tenantQueryOne<{ count: string }>(
+      tenantId,
       `SELECT COUNT(*) as count FROM bookings
        WHERE tenant_id = $1 AND contact_id = $2`,
       [tenantId, id],
@@ -635,7 +636,8 @@ contactsRoutes.get("/:id/bookings", async (c) => {
     const total = parseInt(countResult?.count || "0", 10);
 
     // Get bookings with pagination
-    const data = await queryAll<BookingRow>(
+    const data = await tenantQueryAll<BookingRow>(
+      tenantId,
       `SELECT * FROM bookings
        WHERE tenant_id = $1 AND contact_id = $2
        ORDER BY booking_date DESC
@@ -669,8 +671,9 @@ contactsRoutes.get("/:id/calls", async (c) => {
     const limit = parseInt(query.limit || "20");
     const offset = parseInt(query.offset || "0");
 
-    // Get total count
-    const countResult = await queryOne<{ count: string }>(
+    // Get total count (RLS + app-level WHERE as defense-in-depth)
+    const countResult = await tenantQueryOne<{ count: string }>(
+      tenantId,
       `SELECT COUNT(*) as count FROM calls
        WHERE tenant_id = $1 AND contact_id = $2`,
       [tenantId, id],
@@ -678,7 +681,8 @@ contactsRoutes.get("/:id/calls", async (c) => {
     const total = parseInt(countResult?.count || "0", 10);
 
     // Get calls with pagination
-    const data = await queryAll<CallRow>(
+    const data = await tenantQueryAll<CallRow>(
+      tenantId,
       `SELECT * FROM calls
        WHERE tenant_id = $1 AND contact_id = $2
        ORDER BY started_at DESC

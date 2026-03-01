@@ -31,9 +31,9 @@ export function initPool(): Pool {
     ...POOL_CONFIG,
   });
 
-  // Log pool events
+  // Log pool events (suppress per-connection noise)
   pool.on("connect", () => {
-    console.log("[DB] New client connected to pool");
+    // Logged at debug level only - too noisy for production
   });
 
   pool.on("error", (err) => {
@@ -130,6 +130,115 @@ export async function transaction<T>(
     return result;
   } catch (err) {
     await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Execute a query scoped to a specific tenant via RLS
+ * Uses SET LOCAL ROLE app_api + set_config within a transaction
+ * Fail-closed: if tenantId is invalid, zero rows returned
+ */
+export async function tenantQuery<T extends QueryResultRow = QueryResultRow>(
+  tenantId: string,
+  text: string,
+  params?: unknown[],
+): Promise<QueryResult<T>> {
+  const start = Date.now();
+  const p = getPool();
+  const client = await p.connect();
+
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL ROLE app_api");
+    await client.query("SELECT set_config('app.tenant_id', $1, true)", [
+      tenantId,
+    ]);
+    const result = await client.query<T>(text, params);
+    await client.query("COMMIT");
+
+    const duration = Date.now() - start;
+    if (duration > SLOW_QUERY_THRESHOLD_MS) {
+      console.warn(
+        `[DB] Slow tenant query (${duration}ms):`,
+        text.substring(0, 100),
+      );
+    }
+
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    const duration = Date.now() - start;
+    console.error(
+      `[DB] Tenant query failed (${duration}ms):`,
+      text.substring(0, 100),
+    );
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Execute a tenant-scoped query and return the first row (or null)
+ */
+export async function tenantQueryOne<T extends QueryResultRow = QueryResultRow>(
+  tenantId: string,
+  text: string,
+  params?: unknown[],
+): Promise<T | null> {
+  const result = await tenantQuery<T>(tenantId, text, params);
+  return result.rows[0] || null;
+}
+
+/**
+ * Execute a tenant-scoped query and return all rows
+ */
+export async function tenantQueryAll<T extends QueryResultRow = QueryResultRow>(
+  tenantId: string,
+  text: string,
+  params?: unknown[],
+): Promise<T[]> {
+  const result = await tenantQuery<T>(tenantId, text, params);
+  return result.rows;
+}
+
+/**
+ * Execute a tenant-scoped query and return row count
+ */
+export async function tenantQueryCount(
+  tenantId: string,
+  text: string,
+  params?: unknown[],
+): Promise<number> {
+  const result = await tenantQuery(tenantId, text, params);
+  return result.rowCount ?? 0;
+}
+
+/**
+ * Tenant-scoped transaction helper
+ * Sets role and tenant context, then runs callback within the same transaction
+ */
+export async function tenantTransaction<T>(
+  tenantId: string,
+  callback: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  const p = getPool();
+  const client = await p.connect();
+
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL ROLE app_api");
+    await client.query("SELECT set_config('app.tenant_id', $1, true)", [
+      tenantId,
+    ]);
+    const result = await callback(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
     throw err;
   } finally {
     client.release();

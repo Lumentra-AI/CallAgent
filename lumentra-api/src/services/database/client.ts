@@ -13,6 +13,11 @@ import {
   queryAll,
   queryCount,
   transaction,
+  tenantQuery,
+  tenantQueryOne,
+  tenantQueryAll,
+  tenantQueryCount,
+  tenantTransaction,
   checkHealth,
   closePool,
 } from "./pool.js";
@@ -26,6 +31,11 @@ export {
   queryAll,
   queryCount,
   transaction,
+  tenantQuery,
+  tenantQueryOne,
+  tenantQueryAll,
+  tenantQueryCount,
+  tenantTransaction,
   closePool,
 };
 

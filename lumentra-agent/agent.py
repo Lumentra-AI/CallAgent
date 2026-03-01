@@ -98,19 +98,29 @@ async def entrypoint(ctx: JobContext):
 
     # Configure the voice pipeline with explicit plugin instances (self-hosted, BYOK)
     session = AgentSession(
-        stt=deepgram.STT(model="nova-3", language="multi"),
-        llm=openai.LLM(model="gpt-4.1-mini"),
+        stt=deepgram.STT(
+            model="nova-3",
+            language="multi",
+            smart_format=True,
+            keyterm=[tenant_config["business_name"]],
+        ),
+        llm=openai.LLM(
+            model="gpt-4.1-mini",
+            temperature=0.8,
+        ),
         tts=cartesia.TTS(
             model="sonic-3",
             voice=tenant_config["voice_config"]["voice_id"],
+            speed=0.95,
+            emotion=["Content"],
         ),
         vad=ctx.proc.userdata["vad"],
         turn_detection=MultilingualModel(),
-        # Production tuning
+        # Production tuning -- slightly more patient for natural conversation
         preemptive_generation=True,
         resume_false_interruption=True,
-        false_interruption_timeout=1.0,
-        min_endpointing_delay=0.5,
+        false_interruption_timeout=1.2,
+        min_endpointing_delay=0.6,
         max_endpointing_delay=3.0,
     )
 

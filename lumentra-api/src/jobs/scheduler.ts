@@ -26,8 +26,8 @@ import { sendReviewRequests } from "./review-requests.js";
 export function startScheduler(): void {
   console.log("[SCHEDULER] Starting background jobs");
 
-  // Process booking reminders every minute
-  cron.schedule("* * * * *", async () => {
+  // Process booking reminders every 10 minutes (30-min window makes 1-min unnecessary)
+  cron.schedule("*/10 * * * *", async () => {
     try {
       await processReminders();
     } catch (error) {
@@ -90,7 +90,7 @@ export function startScheduler(): void {
   });
 
   console.log("[SCHEDULER] Jobs scheduled:");
-  console.log("  - Reminders: every minute");
+  console.log("  - Reminders: every 10 minutes");
   console.log("  - Callbacks: every 5 minutes");
   console.log("  - Notification queue: every 15 minutes");
   console.log("  - Engagement scores: every hour");

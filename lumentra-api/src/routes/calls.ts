@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { queryOne, queryAll } from "../services/database/client.js";
+import { tenantQueryOne, tenantQueryAll } from "../services/database/client.js";
 import { getAuthTenantId } from "../middleware/index.js";
 
 export const callsRoutes = new Hono();
@@ -96,15 +96,17 @@ callsRoutes.get("/", async (c) => {
 
     const whereClause = `WHERE ${conditions.join(" AND ")}`;
 
-    // Get total count
-    const countResult = await queryOne<{ count: string }>(
+    // Get total count (RLS + app-level WHERE as defense-in-depth)
+    const countResult = await tenantQueryOne<{ count: string }>(
+      tenantId,
       `SELECT COUNT(*) as count FROM calls ${whereClause}`,
       params,
     );
     const total = parseInt(countResult?.count || "0", 10);
 
     // Get data with pagination
-    const data = await queryAll<CallRow>(
+    const data = await tenantQueryAll<CallRow>(
+      tenantId,
       `SELECT
         id,
         vapi_call_id,
@@ -171,32 +173,37 @@ callsRoutes.get("/stats", async (c) => {
       outcomeData,
     ] = await Promise.all([
       // Today's calls
-      queryOne<{ count: string }>(
+      tenantQueryOne<{ count: string }>(
+        tenantId,
         `SELECT COUNT(*) as count FROM calls
          WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
         [tenantId, today.toISOString(), tomorrow.toISOString()],
       ),
       // This week's calls
-      queryOne<{ count: string }>(
+      tenantQueryOne<{ count: string }>(
+        tenantId,
         `SELECT COUNT(*) as count FROM calls
          WHERE tenant_id = $1 AND created_at >= $2`,
         [tenantId, weekStart.toISOString()],
       ),
       // This month's calls
-      queryOne<{ count: string }>(
+      tenantQueryOne<{ count: string }>(
+        tenantId,
         `SELECT COUNT(*) as count FROM calls
          WHERE tenant_id = $1 AND created_at >= $2`,
         [tenantId, monthStart.toISOString()],
       ),
       // Average duration (last 100 completed calls)
-      queryAll<{ duration_seconds: number }>(
+      tenantQueryAll<{ duration_seconds: number }>(
+        tenantId,
         `SELECT duration_seconds FROM calls
          WHERE tenant_id = $1 AND status = 'completed' AND duration_seconds IS NOT NULL
          ORDER BY created_at DESC LIMIT 100`,
         [tenantId],
       ),
       // Outcome breakdown (last 30 days)
-      queryAll<{ outcome_type: string | null }>(
+      tenantQueryAll<{ outcome_type: string | null }>(
+        tenantId,
         `SELECT outcome_type FROM calls
          WHERE tenant_id = $1 AND created_at >= $2 AND outcome_type IS NOT NULL`,
         [tenantId, thirtyDaysAgo.toISOString()],
@@ -246,12 +253,13 @@ callsRoutes.get("/analytics", async (c) => {
     startDate.setHours(0, 0, 0, 0);
 
     // Get all calls in date range
-    const calls = await queryAll<{
+    const calls = await tenantQueryAll<{
       created_at: string;
       outcome_type: string | null;
       duration_seconds: number | null;
       status: string;
     }>(
+      tenantId,
       `SELECT created_at, outcome_type, duration_seconds, status FROM calls
        WHERE tenant_id = $1 AND created_at >= $2
        ORDER BY created_at ASC`,
@@ -374,7 +382,8 @@ callsRoutes.get("/recent", async (c) => {
     const tenantId = getAuthTenantId(c);
     const limit = Math.min(parseInt(c.req.query("limit") || "10", 10), 50);
 
-    const data = await queryAll<CallRow>(
+    const data = await tenantQueryAll<CallRow>(
+      tenantId,
       `SELECT
         id,
         caller_phone,
@@ -406,7 +415,8 @@ callsRoutes.get("/:id", async (c) => {
     const id = c.req.param("id");
     const tenantId = getAuthTenantId(c);
 
-    const data = await queryOne<CallRow>(
+    const data = await tenantQueryOne<CallRow>(
+      tenantId,
       `SELECT * FROM calls WHERE id = $1 AND tenant_id = $2`,
       [id, tenantId],
     );
@@ -418,7 +428,8 @@ callsRoutes.get("/:id", async (c) => {
     // Get linked contact if exists
     let contact: ContactRow | null = null;
     if (data.contact_id) {
-      contact = await queryOne<ContactRow>(
+      contact = await tenantQueryOne<ContactRow>(
+        tenantId,
         `SELECT id, first_name, last_name, phone, email FROM contacts WHERE id = $1`,
         [data.contact_id],
       );
@@ -427,7 +438,8 @@ callsRoutes.get("/:id", async (c) => {
     // Get linked booking if exists
     let booking: BookingRow | null = null;
     if (data.booking_id) {
-      booking = await queryOne<BookingRow>(
+      booking = await tenantQueryOne<BookingRow>(
+        tenantId,
         `SELECT id, booking_date, booking_time, booking_type, status, confirmation_code
          FROM bookings WHERE id = $1`,
         [data.booking_id],
@@ -454,11 +466,12 @@ callsRoutes.get("/:id/transcript", async (c) => {
     const id = c.req.param("id");
     const tenantId = getAuthTenantId(c);
 
-    const data = await queryOne<{
+    const data = await tenantQueryOne<{
       id: string;
       transcript: unknown;
       summary: string | null;
     }>(
+      tenantId,
       `SELECT id, transcript, summary FROM calls WHERE id = $1 AND tenant_id = $2`,
       [id, tenantId],
     );
