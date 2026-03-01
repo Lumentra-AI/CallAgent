@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
@@ -35,7 +36,7 @@ logger = logging.getLogger("lumentra-agent")
 class LumentraAgent(Agent):
     """Voice agent that handles inbound calls for Lumentra tenants."""
 
-    def __init__(self, tenant_config: dict, caller_phone: str) -> None:
+    def __init__(self, tenant_config: dict, caller_phone: str, job_ctx: JobContext) -> None:
         super().__init__(
             instructions=tenant_config["system_prompt"],
             tools=[
@@ -48,6 +49,7 @@ class LumentraAgent(Agent):
         )
         self.tenant_config = tenant_config
         self.caller_phone = caller_phone
+        self.job_ctx = job_ctx
 
     async def on_enter(self):
         self.session.generate_reply(
@@ -96,6 +98,13 @@ async def entrypoint(ctx: JobContext):
         logger.error("No tenant found for number: %s", dialed_number)
         return
 
+    # Configure LLM: gpt-4.1-mini (best balance of quality, speed, tool calling)
+    llm = openai.LLM(
+        model="gpt-4.1-mini",
+        temperature=0.8,
+    )
+    logger.info("Using OpenAI gpt-4.1-mini")
+
     # Configure the voice pipeline with explicit plugin instances (self-hosted, BYOK)
     session = AgentSession(
         stt=deepgram.STT(
@@ -104,10 +113,7 @@ async def entrypoint(ctx: JobContext):
             smart_format=True,
             keyterm=[tenant_config["business_name"]],
         ),
-        llm=openai.LLM(
-            model="gpt-4.1-mini",
-            temperature=0.8,
-        ),
+        llm=llm,
         tts=cartesia.TTS(
             model="sonic-3",
             voice=tenant_config["voice_config"]["voice_id"],
@@ -116,11 +122,11 @@ async def entrypoint(ctx: JobContext):
         ),
         vad=ctx.proc.userdata["vad"],
         turn_detection=MultilingualModel(),
-        # Production tuning -- slightly more patient for natural conversation
+        # Production tuning -- patient turn-taking for natural conversation
         preemptive_generation=True,
         resume_false_interruption=True,
-        false_interruption_timeout=1.2,
-        min_endpointing_delay=0.6,
+        false_interruption_timeout=1.5,
+        min_endpointing_delay=0.7,
         max_endpointing_delay=3.0,
     )
 
@@ -160,7 +166,7 @@ async def entrypoint(ctx: JobContext):
 
     # Start the agent session
     await session.start(
-        agent=LumentraAgent(tenant_config, caller_phone),
+        agent=LumentraAgent(tenant_config, caller_phone, ctx),
         room=ctx.room,
     )
     # Greeting is handled by LumentraAgent.on_enter()

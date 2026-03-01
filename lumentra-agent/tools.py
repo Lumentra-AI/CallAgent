@@ -1,9 +1,9 @@
 import asyncio
 import logging
 
+from livekit import rtc
 from livekit.agents import RunContext
 from livekit.agents.llm import function_tool
-from livekit import rtc
 
 from api_client import get_client
 
@@ -14,6 +14,8 @@ async def _call_tool(context: RunContext, action: str, args: dict) -> str:
     """Call a tool via the lumentra-api internal endpoint."""
     agent = context.session.current_agent
     client = get_client()
+
+    logger.info("Tool called: %s with args: %s", action, args)
 
     try:
         resp = await client.post(
@@ -29,7 +31,9 @@ async def _call_tool(context: RunContext, action: str, args: dict) -> str:
         resp.raise_for_status()
         data = resp.json()
         result = data.get("result", {})
-        return result.get("message", str(result))
+        message = result.get("message", str(result))
+        logger.info("Tool %s result: %s", action, message[:200])
+        return message
     except Exception as e:
         logger.error("Tool %s error: %s", action, e)
         return "I encountered an error. Let me try again."
@@ -178,8 +182,17 @@ async def end_call(
         pass
 
     # Grace period: let final TTS audio finish playing before disconnecting
-    await asyncio.sleep(2.0)
+    await asyncio.sleep(1.0)
 
-    # Disconnect the session so the SIP call hangs up
-    context.session.shutdown()
+    # Terminate the call by deleting the LiveKit room.
+    # session.shutdown() is non-blocking and lets the LLM generate one more
+    # response (causing a "Hello!" restart). delete_room is immediate.
+    agent = context.session.current_agent
+    try:
+        await agent.job_ctx.delete_room()
+        logger.info("Room deleted, call ended: %s", reason)
+    except Exception as e:
+        logger.error("Failed to delete room: %s, falling back to shutdown", e)
+        context.session.shutdown()
+
     return "Call ended."
