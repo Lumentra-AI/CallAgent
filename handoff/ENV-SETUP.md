@@ -49,6 +49,15 @@ Accounts needed:
 - Cartesia: https://cartesia.ai (requires approval/waitlist)
 - SignalWire: https://signalwire.com (paid, provides phone numbers)
 
+### Internal API (connects Python agent to lumentra-api)
+
+| Variable           | Description                                          | How to Generate                  |
+| ------------------ | ---------------------------------------------------- | -------------------------------- |
+| `INTERNAL_API_KEY` | Bearer token for agent-to-API internal communication | `openssl rand -hex 32`           |
+| `INTERNAL_API_URL` | URL where agent can reach lumentra-api               | Currently `http://10.0.1.5:3100` |
+
+Both the API `.env` and the agent `/opt/livekit/.env` must have the same `INTERNAL_API_KEY` value.
+
 ### Security Secrets
 
 | Variable                    | Description                                | How to Generate                                  |
@@ -86,6 +95,23 @@ Accounts needed:
 | `NEXT_PUBLIC_SUPABASE_URL`      | Same Supabase URL as API                                                         |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Same Supabase anon key as API                                                    |
 | `NEXT_PUBLIC_TENANT_ID`         | Default tenant ID (used in some client-side contexts)                            |
+
+---
+
+## Voice Agent Environment Variables (/opt/livekit/.env on server)
+
+These are separate from the API/Dashboard env vars. The agent runs in its own docker-compose.
+
+| Variable             | Description                        | Where to Get                        |
+| -------------------- | ---------------------------------- | ----------------------------------- |
+| `LIVEKIT_URL`        | LiveKit server URL                 | `ws://localhost:7880` (same server) |
+| `LIVEKIT_API_KEY`    | LiveKit API key                    | From `config/livekit.yaml`          |
+| `LIVEKIT_API_SECRET` | LiveKit API secret                 | From `config/livekit.yaml`          |
+| `OPENAI_API_KEY`     | OpenAI API key (for gpt-4.1-mini)  | Same as API env                     |
+| `DEEPGRAM_API_KEY`   | Deepgram STT key                   | Same as API env                     |
+| `CARTESIA_API_KEY`   | Cartesia TTS key                   | Same as API env                     |
+| `INTERNAL_API_URL`   | URL to reach lumentra-api          | `http://10.0.1.5:3100`              |
+| `INTERNAL_API_KEY`   | Bearer token for internal API auth | Must match API's `INTERNAL_API_KEY` |
 
 ---
 

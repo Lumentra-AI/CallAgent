@@ -50,6 +50,73 @@ ngrok http 3100
 
 ## Production Deployment
 
+### Voice Agent (LiveKit stack -- deployed separately from API/Dashboard)
+
+The voice agent runs on the same Hetzner server but is NOT managed by Coolify. It has its own docker-compose at `/opt/livekit/`.
+
+**Server:** `ssh -i ~/.ssh/id_ed25519 root@178.156.205.145`
+
+**File layout on server:**
+
+```text
+/opt/livekit/
+  docker-compose.yml          # redis, livekit, sip, agent services
+  .env                        # All API keys (Deepgram, OpenAI, Cartesia, etc.)
+  config/
+    livekit.yaml              # LiveKit server config + API key/secret
+    sip.yaml                  # SIP bridge config
+  agent/
+    agent.py                  # Copied from lumentra-agent/
+    tools.py
+    call_logger.py
+    tenant_config.py
+    api_client.py
+    Dockerfile
+```
+
+**Deploying agent changes:**
+
+```bash
+# 1. Edit files locally in lumentra-agent/
+# 2. Copy to server
+scp -i ~/.ssh/id_ed25519 lumentra-agent/*.py lumentra-agent/Dockerfile root@178.156.205.145:/opt/livekit/agent/
+
+# 3. Rebuild and restart agent only
+ssh -i ~/.ssh/id_ed25519 root@178.156.205.145 "cd /opt/livekit && docker compose up -d --build agent"
+
+# 4. Check logs
+ssh -i ~/.ssh/id_ed25519 root@178.156.205.145 "cd /opt/livekit && docker compose logs agent --tail=50"
+
+# 5. Watch logs in real-time during a test call
+ssh -i ~/.ssh/id_ed25519 root@178.156.205.145 "cd /opt/livekit && docker compose logs agent -f"
+```
+
+**Restarting the full LiveKit stack:**
+
+```bash
+ssh -i ~/.ssh/id_ed25519 root@178.156.205.145 "cd /opt/livekit && docker compose down && docker compose up -d"
+```
+
+**Key details:**
+
+- All services use `network_mode: host` (required for SIP/RTP)
+- Agent env vars loaded via `env_file: .env` (NOT `${VAR}` interpolation -- breaks over SSH)
+- Agent reaches lumentra-api at `http://10.0.1.5:3100` (Coolify docker network IP)
+- If Coolify redeploys API on a different network, update `INTERNAL_API_URL` in `.env`
+- GitHub Actions workflow (`.github/workflows/deploy-agent.yml`) auto-deploys on push to `lumentra-agent/`
+
+**LiveKit IDs (needed if recreating SIP config):**
+
+- API key: `APIc4ecf671a4b0eab56ceb2cd4`
+- SIP trunk ID: `ST_SUJtKjT9TEgv` (+19458001233)
+- Dispatch rule ID: `SDR_2bZEobprwRXq` (routes to `lumentra-voice-agent`, room prefix `call-`)
+
+---
+
+### API + Dashboard (Coolify)
+
+API and Dashboard are deployed via Coolify on the same server (port 8000). Coolify auto-deploys on push to `main`.
+
 ### Option 1: Docker Compose (recommended for simple deploys)
 
 ```bash
@@ -169,14 +236,24 @@ dev.sh                                # Local dev helper script
 
 ---
 
-## SignalWire Configuration
+## SignalWire Configuration (SIP Trunk)
 
-After deploying the API, configure SignalWire:
+SignalWire connects to LiveKit via SIP (not webhooks). The current setup uses a SignalWire SIP Gateway:
 
 1. Buy a phone number in SignalWire dashboard
-2. Set the phone number's webhook URL to: `https://your-api-domain/signalwire/voice`
-3. Set webhook method to POST
-4. Ensure WebSocket connections are allowed on your server (no proxy buffering)
+2. Create a SIP Gateway pointing to your server IP on port 5060
+3. Assign the phone number to the SIP Gateway
+4. Register the SIP trunk in LiveKit (`lk sip create-inbound-trunk`)
+5. Create a dispatch rule to route `call-*` rooms to `lumentra-voice-agent`
+
+The phone number (+19458001233) is already configured and working. Only redo these steps if changing phone numbers or servers.
+
+**If calls stop connecting:** SignalWire IPs are dynamic. Re-resolve and update firewall:
+
+```bash
+dig sip.signalwire.com  # get current IPs
+# Update both Hetzner cloud firewall and UFW on server
+```
 
 ---
 

@@ -1,8 +1,8 @@
 # Lumentra - Project Handoff
 
-**Date:** 2026-03-01 (updated)
+**Date:** 2026-03-01 (final update)
 **Project:** Lumentra Voice Agent Platform
-**Status:** Fully migrated to LiveKit Agents, old custom pipeline removed
+**Status:** Live and taking calls. Voice agent on gpt-4.1-mini, all tools working, transcripts saving.
 
 ---
 
@@ -10,11 +10,11 @@
 
 Lumentra is a multi-tenant voice AI platform that answers phone calls for businesses 24/7. It handles bookings, FAQs, escalations, and CRM - all through natural voice conversation.
 
-The system consists of two main applications:
+The system consists of three services:
 
-1. **lumentra-api** - Node.js/Hono backend with REST API, tool execution, phone provisioning, and internal API for the voice agent
-2. **lumentra-agent** - Python LiveKit Agents service handling voice calls (Deepgram STT, OpenAI LLM, Cartesia TTS)
-3. **lumentra-dashboard** - Next.js 16 frontend with setup wizard, CRM, call management, analytics, and settings
+1. **lumentra-api** - Node.js/Hono backend (port 3100). REST API, tool execution, internal API for agent, tenant config. Deployed via Coolify.
+2. **lumentra-agent** - Python LiveKit Agents service (5 files). Voice calls: Deepgram STT -> OpenAI gpt-4.1-mini -> Cartesia TTS. Deployed manually via SCP + docker compose.
+3. **lumentra-dashboard** - Next.js 16 frontend (port 3000). Setup wizard, CRM, call management, analytics. Deployed via Coolify.
 
 ---
 
@@ -78,20 +78,36 @@ For voice calls to work, the API must be publicly accessible (ngrok or deployed 
 
 ---
 
-## What Works
+## Current State (as of 2026-03-01)
 
-- Full setup wizard that configures a tenant from scratch
-- Multi-tenant architecture with tenant isolation
-- Inbound call handling via LiveKit Agents (SignalWire SIP -> LiveKit -> Python agent)
-- Voice pipeline: Deepgram STT (nova-3) -> OpenAI LLM (gpt-4.1-mini) -> Cartesia TTS (Sonic-3)
-- Tool calling for bookings, availability checks, orders, escalation
-- SIP REFER transfer to human agents
-- Call logging with transcripts and duration tracking
-- CRM with contacts, call history, analytics
-- Dashboard with settings, call logs, notifications
+### What Works (verified with live calls)
+
+- Inbound call handling via LiveKit Agents (SignalWire SIP -> LiveKit SIP Bridge -> Python agent)
+- Voice pipeline: Deepgram STT (nova-3, multi-language) -> OpenAI gpt-4.1-mini (temp 0.8) -> Cartesia TTS (Sonic-3, speed 0.95)
+- Tool calling: check_availability, create_booking, create_order, transfer_to_human, end_call -- all verified working
+- Call logging with transcripts, duration, auto-detected outcome/summary -- verified saving to DB
+- SIP REFER transfer to human agents (untested with real escalation number)
+- Turn detection: LiveKit multilingual model + Silero VAD (prewarmed)
+- Full setup wizard, CRM, dashboard, settings, analytics
 - Chat widget with multi-provider LLM (Gemini -> GPT -> Groq)
-- CI/CD pipeline via GitHub Actions
-- Docker Compose for deployment
+- CI/CD for API + Dashboard via GitHub Actions
+- Security hardened (SIP restricted to SignalWire IPs, admin ports locked)
+
+### What Does Not Work Well
+
+- "Umhmm" / backchannel acknowledgments don't trigger agent response (silence handling gap)
+- If caller goes silent for a long time, agent doesn't proactively check in
+- GPT-4.1-nano was tested and is NOT suitable -- too dumb for the 5.6k token system prompt, hallucinated policies, ignored greeting config
+- Groq Llama 3.3 70B was tested -- great speed (0.12s TTFT) but free tier only allows 12k TPM, kills calls after 2 responses. Needs paid Dev tier ($0/mo but requires credit card) to be viable
+- First response TTFT on cold OpenAI cache: ~1.1s. Subsequent: ~0.4-0.7s (acceptable)
+
+### LLM Selection History
+
+| Model               | Result                                    | Cost/Call |
+| ------------------- | ----------------------------------------- | --------- |
+| OpenAI gpt-4.1-mini | CURRENT -- reliable, good quality         | ~$0.015   |
+| OpenAI gpt-4.1-nano | Too dumb, ignores system prompt           | ~$0.002   |
+| Groq Llama 3.3 70B  | Fast but free tier rate limits kill calls | ~$0.043   |
 
 ## Voice Architecture (LiveKit Agents)
 

@@ -284,3 +284,17 @@ The 370-hour estimate reflects total time invested in the project, including on-
 - Fixed Dockerfile: added `RUN python agent.py download-files` to bake turn detector model into image
 - Changed all services to `restart: always`
 - Rebuilt and deployed agent
+
+### March 1 (Saturday, afternoon) - LLM Testing + Handoff Prep
+
+- Tested Groq Llama 3.3 70B as primary LLM -- went mute after 2 turns due to free tier rate limit (12,000 TPM, system prompt is 5,600 tokens)
+- Researched 9+ LLM providers for voice agent use case (Groq, Cerebras, Together AI, Fireworks, SambaNova, OpenAI, Gemini, DeepSeek, Anthropic)
+- Researched GPT-5 family -- too slow for voice (reasoning overhead adds latency)
+- Switched to OpenAI gpt-4.1-mini (stable, $0.015/call)
+- Tested GPT-4.1-nano -- too dumb for 5.6k token system prompt (hallucinated policies, ignored greeting config, terse responses)
+- Switched back to gpt-4.1-mini as final production LLM
+- Added RLS defense-in-depth migration (`app_api` role with tenant isolation policies)
+- Added `tenantQuery()` functions to API for database-level tenant isolation
+- Tuned voice agent for more human-like responses (TTS speed 0.95, emotion Content, endpointing delays)
+- Updated all handoff documentation to reflect current system state
+- Commit: `ba680d6`

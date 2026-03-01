@@ -9,16 +9,21 @@
                               |
                       [ SignalWire SIP ]
                               |
-                    [ lumentra-api:3100 ]
-                     /        |        \
-           [ Deepgram ]  [ LLM Chain ]  [ Cartesia ]
-            (STT)      OpenAI/Groq/     (TTS)
-                        Gemini
+                     [ LiveKit SIP Bridge ]
                               |
-                     [ Supabase PostgreSQL ]
+                       [ LiveKit Room ]
                               |
-                  [ lumentra-dashboard:3000 ]
-                        (Next.js)
+                [ lumentra-agent (Python) ]
+                 /        |        \
+      [ Deepgram ]  [ OpenAI LLM ]  [ Cartesia ]
+       (STT)       gpt-4.1-mini      (TTS)
+                        |
+              [ lumentra-api:3100 ]  <-- tool calls + call logging
+                        |
+              [ Supabase PostgreSQL ]
+                        |
+           [ lumentra-dashboard:3000 ]
+                   (Next.js)
 ```
 
 ---
@@ -51,16 +56,17 @@
 | Recharts      | 3.6     | Analytics charts             |
 | Supabase SSR  | 0.8     | Auth integration             |
 
-### Voice Pipeline
+### Voice Agent (lumentra-agent -- Python)
 
-| Service    | Role                                                                            |
-| ---------- | ------------------------------------------------------------------------------- |
-| SignalWire | Telephony - receives inbound calls, provides phone numbers, SIP trunking        |
-| Deepgram   | Speech-to-Text - real-time transcription via WebSocket (nova-2-phonecall model) |
-| Cartesia   | Text-to-Speech - streaming voice synthesis (Sonic model)                        |
-| OpenAI     | Primary LLM for voice conversations (GPT-4.1 mini)                              |
-| Groq       | Fallback LLM with low latency                                                   |
-| Gemini     | Fallback LLM + powers chat widget                                               |
+| Service    | Role                                                                       |
+| ---------- | -------------------------------------------------------------------------- |
+| LiveKit    | Real-time media server (rooms, SIP bridge, turn detection)                 |
+| SignalWire | Telephony - SIP trunk for inbound calls (+19458001233)                     |
+| Deepgram   | Speech-to-Text - nova-3, multi-language, smart_format                      |
+| Cartesia   | Text-to-Speech - Sonic-3, speed 0.95, emotion Content                      |
+| OpenAI     | LLM for voice conversations (gpt-4.1-mini, temp 0.8)                       |
+| Groq       | Tested but unusable on free tier (12k TPM limit kills calls after 2 turns) |
+| Gemini     | Powers chat widget only (not used in voice)                                |
 
 ### Database
 
@@ -71,16 +77,39 @@
 
 ---
 
-## Backend Service Structure
+## Voice Agent Structure (lumentra-agent -- Python)
 
+```text
+lumentra-agent/
+  agent.py           # Entrypoint: LumentraAgent class, session setup, voice pipeline config
+  tools.py           # LLM tools: check_availability, create_booking, create_order, transfer_to_human, end_call
+  call_logger.py     # Extracts transcript from session history, posts call record to lumentra-api
+  tenant_config.py   # Fetches tenant config + system prompt from internal API by phone number
+  api_client.py      # Shared httpx client with INTERNAL_API_KEY auth
+  Dockerfile         # Builds agent image, bakes in turn detector model via download-files
 ```
+
+Key design decisions:
+
+- Agent is a thin orchestration layer -- all business logic (booking, availability, CRM) lives in lumentra-api
+- Tools call lumentra-api internal endpoints, not the database directly
+- Transcript extraction uses `session.history.messages()` (method, not property -- LiveKit Agents v1.4+)
+- Call logging is fire-and-forget with 5s timeout to avoid blocking session teardown
+- SIP REFER transfer uses LiveKit's `transfer_sip_call()` for human escalation
+
+---
+
+## Backend Service Structure (lumentra-api -- TypeScript)
+
+```text
 lumentra-api/src/
   index.ts                    # App entry, route registration, WebSocket upgrade
   routes/
     health.ts                 # Health check endpoint
-    signalwire-voice.ts       # Inbound call webhook handler
-    signalwire-stream.ts      # WebSocket audio stream handler
-    vapi.ts                   # Vapi webhook integration (alternative to custom voice)
+    internal.ts               # Internal API for Python agent (tenant config, tool calls, call logging)
+    signalwire-voice.ts       # Legacy inbound call webhook (not used with LiveKit)
+    signalwire-stream.ts      # Legacy WebSocket audio stream (not used with LiveKit)
+    vapi.ts                   # Vapi webhook integration (not used with LiveKit)
     chat.ts                   # Embeddable chat widget API
     setup.ts                  # Tenant setup wizard API
     tenants.ts                # Tenant CRUD
@@ -224,19 +253,25 @@ lumentra-dashboard/
 
 ## Voice Call Flow (How a Call Works)
 
-1. Caller dials a SignalWire phone number
-2. SignalWire sends webhook to `POST /signalwire/voice` with caller info
-3. API looks up tenant by phone number, returns TwiML to connect a media stream
-4. SignalWire opens WebSocket to `/signalwire/stream?tenantId=xxx`
-5. API creates a Deepgram STT WebSocket connection
-6. Audio flows: Caller -> SignalWire -> API WebSocket -> Deepgram
-7. Deepgram returns real-time transcripts
-8. Turn manager accumulates transcript, detects when caller stops speaking
-9. Full turn sent to LLM (OpenAI/Groq/Gemini) with conversation history + tools
-10. LLM responds (may call tools like check_availability, create_booking)
-11. LLM text streamed sentence-by-sentence to Cartesia TTS
-12. TTS audio streamed back through WebSocket -> SignalWire -> Caller
-13. Call data (transcript, duration, outcome) saved to database
+### Current Architecture (LiveKit Agents)
+
+1. Caller dials +19458001233 (SignalWire phone number)
+2. SignalWire routes call via SIP to LiveKit SIP Bridge (port 5060)
+3. SIP Bridge creates a LiveKit Room (prefixed `call-`)
+4. LiveKit dispatch rule matches room prefix, launches `lumentra-voice-agent`
+5. Python agent joins the room, extracts dialed number + caller phone from SIP attributes
+6. Agent fetches tenant config + system prompt from lumentra-api (`GET /internal/tenants/by-phone/:phone`)
+7. Agent starts voice pipeline: Deepgram STT -> OpenAI gpt-4.1-mini -> Cartesia TTS
+8. Turn detection: LiveKit multilingual model + Silero VAD (prewarmed)
+9. Agent greets caller using tenant's configured greeting
+10. LLM handles conversation with tool calling (check_availability, create_booking, etc.)
+11. Tools execute via lumentra-api (`POST /internal/voice-tools/:action`)
+12. On call end: transcript extracted from session history, call logged via `POST /internal/calls/log`
+13. Call record saved to database with duration, outcome, summary
+
+### Legacy Architecture (removed)
+
+The old pipeline (SignalWire WebSocket -> API -> Deepgram/Cartesia) was removed in favor of LiveKit Agents. The old `signalwire-voice.ts`, `signalwire-stream.ts`, `turn-manager.ts` routes still exist in the API codebase but are not used for voice calls. The voice pipeline now runs entirely in the Python agent.
 
 ---
 
