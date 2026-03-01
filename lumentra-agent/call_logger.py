@@ -1,26 +1,9 @@
-import os
 import logging
 from datetime import datetime, timezone
 
-import httpx
+from api_client import get_client
 
 logger = logging.getLogger("lumentra-agent.call_logger")
-
-API_URL = os.environ.get("INTERNAL_API_URL", "http://localhost:3100")
-API_KEY = os.environ.get("INTERNAL_API_KEY", "")
-
-_client: httpx.AsyncClient | None = None
-
-
-def _get_client() -> httpx.AsyncClient:
-    global _client
-    if _client is None:
-        _client = httpx.AsyncClient(
-            base_url=API_URL,
-            headers={"Authorization": f"Bearer {API_KEY}"},
-            timeout=10.0,
-        )
-    return _client
 
 
 async def log_call(
@@ -35,17 +18,17 @@ async def log_call(
     Extracts transcript from the agent session's chat context
     and posts it to the internal calls/log endpoint.
     """
-    client = _get_client()
+    client = get_client()
     now = datetime.now(timezone.utc)
 
-    # Build transcript from chat context if available
+    # Build transcript from session history (livekit-agents v1.4+)
     transcript = ""
     try:
-        if session and hasattr(session, "chat_ctx") and session.chat_ctx:
+        if session and hasattr(session, "history") and session.history:
             lines = []
-            for msg in session.chat_ctx.items:
+            for msg in session.history.messages:
                 if hasattr(msg, "role") and hasattr(msg, "text_content"):
-                    role = msg.role
+                    role = str(msg.role)
                     text = msg.text_content
                     if text and role in ("user", "assistant"):
                         speaker = "Customer" if role == "user" else "Agent"

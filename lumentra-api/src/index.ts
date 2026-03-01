@@ -1,13 +1,9 @@
-// Build: 2026-01-27-v3 - Force fresh build
 import "dotenv/config";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { timing } from "hono/timing";
-import { WebSocketServer, WebSocket } from "ws";
-import type { IncomingMessage } from "http";
-import type { Server } from "http";
 
 import { healthRoutes } from "./routes/health.js";
 import { callsRoutes } from "./routes/calls.js";
@@ -19,8 +15,6 @@ import { availabilityRoutes } from "./routes/availability.js";
 import { notificationsRoutes } from "./routes/notifications.js";
 import { resourcesRoutes } from "./routes/resources.js";
 import { voicemailRoutes } from "./routes/voicemails.js";
-import signalwireVoice from "./routes/signalwire-voice.js";
-import vapiRoutes from "./routes/vapi.js";
 import trainingDataRoutes from "./routes/training-data.js";
 import { chatRoutes } from "./routes/chat.js";
 import { setupRoutes } from "./routes/setup.js";
@@ -31,10 +25,6 @@ import { escalationRoutes } from "./routes/escalation.js";
 import { promotionsRoutes } from "./routes/promotions.js";
 import { pendingBookingsRoutes } from "./routes/pending-bookings.js";
 import { internalRoutes } from "./routes/internal.js";
-import {
-  handleSignalWireStream,
-  isSignalWireStreamRequest,
-} from "./routes/signalwire-stream.js";
 import { initTenantCache } from "./services/database/tenant-cache.js";
 import { initDatabase, closePool } from "./services/database/client.js";
 import { startScheduler } from "./jobs/scheduler.js";
@@ -43,11 +33,6 @@ import {
   userAuthMiddleware,
   rateLimit,
 } from "./middleware/index.js";
-import {
-  verifyDeepgramApiKey,
-  deepgramClient,
-} from "./services/deepgram/client.js";
-import { logProviderStatus } from "./services/llm/streaming-provider.js";
 
 const app = new Hono();
 
@@ -88,18 +73,22 @@ app.use(
 // Global rate limiting
 app.use("*", rateLimit({ windowMs: 60000, max: 100 }));
 
-// WebSocket stream route - placeholder for upgrade handling
-// The actual WebSocket logic is in the upgrade handler below
-app.get("/signalwire/stream", (c) => {
-  // This should never be reached - WebSocket upgrade happens before this
-  // If we get here, the client didn't send proper WebSocket headers
-  return c.json({ error: "WebSocket upgrade required" }, 426);
+// SIP forwarding endpoint - SignalWire calls this to route calls to LiveKit SIP bridge
+// Must be public (no auth) since SignalWire calls it directly
+app.post("/sip/forward", (c) => {
+  const livekitSipHost = process.env.LIVEKIT_SIP_HOST || "178.156.205.145";
+  const livekitSipPort = process.env.LIVEKIT_SIP_PORT || "5060";
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial>
+    <Sip>sip:${livekitSipHost}:${livekitSipPort};transport=udp</Sip>
+  </Dial>
+</Response>`;
+  return c.text(twiml, 200, { "Content-Type": "application/xml" });
 });
 
 // Public routes (no auth required)
 app.route("/health", healthRoutes);
-app.route("/signalwire", signalwireVoice);
-app.route("/vapi", vapiRoutes); // Vapi webhooks (no auth - verified by signature)
 app.route("/api/chat", chatRoutes); // Chat widget is public
 app.route("/internal", internalRoutes); // LiveKit agent API (own auth via INTERNAL_API_KEY)
 
@@ -168,14 +157,7 @@ async function start() {
   // Validate critical environment variables at startup
   const requiredEnv = ["DATABASE_URL"];
   if (isProduction) {
-    requiredEnv.push(
-      "FRONTEND_URL",
-      "BACKEND_URL",
-      "ENCRYPTION_KEY",
-      "VAPI_WEBHOOK_SECRET",
-      "SIGNALWIRE_WEBHOOK_SECRET",
-      "STREAM_SIGNING_SECRET",
-    );
+    requiredEnv.push("FRONTEND_URL", "BACKEND_URL", "ENCRYPTION_KEY");
   }
   const recommendedEnv = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 
@@ -204,29 +186,6 @@ async function start() {
   initDatabase();
   console.log("[STARTUP] Database pool initialized");
 
-  // Verify Deepgram API key at startup
-  console.log("[STARTUP] Verifying Deepgram STT connection...");
-  if (!deepgramClient) {
-    console.error(
-      "[STARTUP] WARNING: Deepgram client not initialized - STT will not work!",
-    );
-    console.error(
-      "[STARTUP] Check that DEEPGRAM_API_KEY is set correctly in .env",
-    );
-  } else {
-    const dgResult = await verifyDeepgramApiKey();
-    if (dgResult.valid) {
-      console.log("[STARTUP] Deepgram API key verified successfully");
-    } else {
-      console.error(
-        `[STARTUP] WARNING: Deepgram API key verification failed: ${dgResult.error}`,
-      );
-      console.error(
-        "[STARTUP] STT may not work during calls. Check your API key at https://console.deepgram.com",
-      );
-    }
-  }
-
   // Initialize tenant cache for low-latency webhook responses
   await initTenantCache();
   console.log("[STARTUP] Tenant cache initialized");
@@ -235,11 +194,8 @@ async function start() {
   startScheduler();
   console.log("[STARTUP] Job scheduler started");
 
-  // Log LLM provider status (helps debug latency issues)
-  logProviderStatus();
-
   // Start HTTP server
-  const server = serve(
+  serve(
     {
       fetch: app.fetch,
       port,
@@ -247,28 +203,10 @@ async function start() {
     (info) => {
       console.log(`[STARTUP] Server running on http://localhost:${info.port}`);
       console.log(
-        "[STARTUP] Voice stack: SignalWire + Deepgram + Gemini + Cartesia",
+        "[STARTUP] Voice stack: LiveKit Agents (Deepgram + OpenAI + Cartesia)",
       );
     },
-  ) as Server;
-
-  // Set up WebSocket server for SignalWire media streams
-  const wss = new WebSocketServer({ noServer: true });
-
-  server.on("upgrade", (request: IncomingMessage, socket, head) => {
-    const url = request.url || "";
-
-    if (isSignalWireStreamRequest(url)) {
-      wss.handleUpgrade(request, socket, head, (ws: WebSocket) => {
-        console.log("[WEBSOCKET] SignalWire stream connection");
-        handleSignalWireStream(ws, request);
-      });
-    } else {
-      socket.destroy();
-    }
-  });
-
-  console.log("[STARTUP] WebSocket server initialized for media streams");
+  );
 
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {

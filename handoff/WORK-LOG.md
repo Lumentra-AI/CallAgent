@@ -255,3 +255,32 @@ Hours are estimated using multiple data sources:
 7. **Commit density** - Feb 4 had 28 commits in a recorded 5.5-hour window. This level of output strongly indicates work started well before the first commit.
 
 The 370-hour estimate reflects total time invested in the project, including on-site non-coding work. At the agreed compensation of $2,000, this equates to approximately $5.40/hour.
+
+---
+
+## Late February - March 2026: LiveKit Migration + Security
+
+### February 28 (Friday) - LiveKit Deployment
+
+- Deployed full LiveKit stack to Hetzner (Redis, LiveKit Server v1.9, SIP Bridge, Python Agent)
+- Configured SignalWire SIP Gateway pointing to server
+- Fixed multiple agent crashes: missing `await ctx.connect()`, removed Cloud-only features (`aec_warmup_duration`, `noise_cancellation.BVCTelephony()`), fixed `context.agent` -> `context.session.current_agent`
+- Opened firewall ports (5060, 7880-7881, 10000-20000, 50000-60000)
+- Registered SIP trunk and dispatch rule with LiveKit
+- Successfully completed first test call (STT, LLM, TTS all working)
+- Commits: `390fcba`, `370e3e7`
+
+### March 1 (Saturday) - Security Hardening + Bug Fixes
+
+- Discovered SIP scanners bombarding port 5060 (calls every ~30 seconds from 3 different attacker IPs)
+- Restricted SIP port to 15 SignalWire IPs on both Hetzner cloud firewall and UFW
+- Also restricted RTP ports (10000-20000) to SignalWire IPs
+- Hardened SSH: disabled password auth, set root login to key-only
+- Restricted admin ports (3100, 7880, 8000) to admin IP subnet
+- Blocked unused ports (6001, 6002, 8080)
+- Locked file permissions on all secret files (chmod 600)
+- Fixed `call_logger.py`: `session.chat_ctx.items` -> `session.history.messages` (v1.4 API)
+- Fixed call duration: added `started_at` tracking in `agent.py`
+- Fixed Dockerfile: added `RUN python agent.py download-files` to bake turn detector model into image
+- Changed all services to `restart: always`
+- Rebuilt and deployed agent

@@ -1,4 +1,7 @@
+import asyncio
 import logging
+from datetime import datetime, timezone
+
 from dotenv import load_dotenv
 
 from livekit import rtc
@@ -111,6 +114,9 @@ async def entrypoint(ctx: JobContext):
         max_endpointing_delay=3.0,
     )
 
+    # Track call start time for accurate duration
+    call_started_at = datetime.now(timezone.utc)
+
     # Metrics collection for observability
     usage_collector = metrics.UsageCollector()
 
@@ -123,13 +129,22 @@ async def entrypoint(ctx: JobContext):
         summary = usage_collector.get_summary()
         logger.info("Call usage: %s", summary)
 
-        # Log the call to lumentra-api
-        await log_call(
-            tenant_id=tenant_config["id"],
-            call_sid=ctx.room.name,
-            caller_phone=caller_phone,
-            session=session,
-        )
+        # Fire-and-forget: log the call without blocking session teardown
+        try:
+            await asyncio.wait_for(
+                log_call(
+                    tenant_id=tenant_config["id"],
+                    call_sid=ctx.room.name,
+                    caller_phone=caller_phone,
+                    session=session,
+                    started_at=call_started_at,
+                ),
+                timeout=5.0,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Call logging timed out for %s", ctx.room.name)
+        except Exception as e:
+            logger.error("Call logging failed for %s: %s", ctx.room.name, e)
 
     ctx.add_shutdown_callback(on_shutdown)
 

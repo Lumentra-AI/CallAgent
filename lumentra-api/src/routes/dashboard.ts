@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { queryOne, queryAll } from "../services/database/client.js";
-import * as sessionManager from "../services/voice/session-manager.js";
 import { getAuthTenantId } from "../middleware/index.js";
 
 export const dashboardRoutes = new Hono();
@@ -55,11 +54,8 @@ dashboardRoutes.get("/metrics", async (c) => {
   try {
     const tenantId = getAuthTenantId(c);
 
-    // Get active calls from session manager
-    const activeSessions = sessionManager.getAllSessions();
-    const activeCalls = activeSessions.filter(
-      (s) => s.tenantId === tenantId,
-    ).length;
+    // Active calls are managed by LiveKit Server (not tracked API-side)
+    const activeCalls = 0;
 
     // Calculate uptime
     const uptimeMs = Date.now() - serverStartTime;
@@ -116,8 +112,8 @@ dashboardRoutes.get("/metrics", async (c) => {
       }
     }
 
-    // Get queued calls (calls in progress but not connected yet)
-    const queuedCalls = activeSessions.filter((s) => !s.streamSid).length;
+    // Active sessions are managed by LiveKit Server
+    const queuedCalls = 0;
 
     return c.json({
       system: {
@@ -267,29 +263,9 @@ dashboardRoutes.get("/stats", async (c) => {
  * Active voice sessions (for real-time monitoring)
  */
 dashboardRoutes.get("/sessions", async (c) => {
-  const tenantId = getAuthTenantId(c);
-
-  const sessions = sessionManager
-    .getAllSessions()
-    .filter((s) => s.tenantId === tenantId);
-
-  // Return sanitized session data (exclude full conversation history for privacy)
-  const sanitized = sessions.map((s) => ({
-    callSid: s.callSid,
-    tenantId: s.tenantId,
-    callerPhone: s.callerPhone
-      ? s.callerPhone.replace(/\d(?=\d{4})/g, "*")
-      : null,
-    isPlaying: s.isPlaying,
-    isSpeaking: s.isSpeaking,
-    startTime: s.startTime,
-    lastActivityTime: s.lastActivityTime,
-    turnCount: s.conversationHistory.length,
-    durationSeconds: Math.round((Date.now() - s.startTime.getTime()) / 1000),
-  }));
-
+  // Active sessions are managed by LiveKit Server (not tracked API-side)
   return c.json({
-    sessions: sanitized,
-    count: sanitized.length,
+    sessions: [],
+    count: 0,
   });
 });

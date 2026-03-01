@@ -1,40 +1,26 @@
-import os
+import asyncio
 import logging
 
-import httpx
 from livekit.agents import RunContext
 from livekit.agents.llm import function_tool
+from livekit import rtc
+
+from api_client import get_client
 
 logger = logging.getLogger("lumentra-agent.tools")
-
-API_URL = os.environ.get("INTERNAL_API_URL", "http://localhost:3100")
-API_KEY = os.environ.get("INTERNAL_API_KEY", "")
-
-_client: httpx.AsyncClient | None = None
-
-
-def _get_client() -> httpx.AsyncClient:
-    global _client
-    if _client is None:
-        _client = httpx.AsyncClient(
-            base_url=API_URL,
-            headers={"Authorization": f"Bearer {API_KEY}"},
-            timeout=10.0,
-        )
-    return _client
 
 
 async def _call_tool(context: RunContext, action: str, args: dict) -> str:
     """Call a tool via the lumentra-api internal endpoint."""
-    agent = context.agent
-    client = _get_client()
+    agent = context.session.current_agent
+    client = get_client()
 
     try:
         resp = await client.post(
             f"/internal/voice-tools/{action}",
             json={
                 "tenant_id": agent.tenant_config["id"],
-                "call_sid": context.session.room.name if context.session else "",
+                "call_sid": context.session.room_io.room.name if context.session else "",
                 "caller_phone": agent.caller_phone,
                 "escalation_phone": agent.tenant_config.get("escalation_phone", ""),
                 "args": args,
@@ -44,12 +30,17 @@ async def _call_tool(context: RunContext, action: str, args: dict) -> str:
         data = resp.json()
         result = data.get("result", {})
         return result.get("message", str(result))
-    except httpx.HTTPStatusError as e:
-        logger.error("Tool %s HTTP error: %s %s", action, e.response.status_code, e.response.text)
-        return f"I encountered an error. Let me try again."
     except Exception as e:
         logger.error("Tool %s error: %s", action, e)
         return "I encountered an error. Let me try again."
+
+
+def _get_sip_participant(room: rtc.Room) -> rtc.RemoteParticipant | None:
+    """Find the SIP participant in the room (the caller, not the agent)."""
+    for p in room.remote_participants.values():
+        if p.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP:
+            return p
+    return None
 
 
 @function_tool()
@@ -146,9 +137,27 @@ async def transfer_to_human(
     """
     result = await _call_tool(context, "transfer_to_human", {"reason": reason})
 
-    # If transfer was successful and we have SIP, do a SIP transfer
-    # The actual SIP REFER is handled by the API-side transfer logic
-    return result
+    # Attempt SIP REFER transfer to the escalation phone
+    agent = context.session.current_agent
+    escalation_phone = agent.tenant_config.get("escalation_phone", "")
+
+    if escalation_phone:
+        sip_participant = _get_sip_participant(context.session.room_io.room)
+        if sip_participant:
+            try:
+                # SIP REFER: transfer the caller to the escalation number
+                sip_uri = f"sip:{escalation_phone}@sip.signalwire.com"
+                await sip_participant.transfer_sip_call(sip_uri)
+                logger.info("SIP transfer initiated to %s", escalation_phone)
+                return "Transferring you now. Please hold."
+            except Exception as e:
+                logger.error("SIP transfer failed: %s", e)
+                return f"{result} I was unable to transfer you directly. Someone will call you back shortly."
+        else:
+            logger.warning("No SIP participant found for transfer")
+            return f"{result} Someone will call you back shortly."
+    else:
+        return f"{result} Someone will call you back shortly."
 
 
 @function_tool()
@@ -162,4 +171,15 @@ async def end_call(
     Args:
         reason: One of: conversation_complete, customer_requested_hangup, order_confirmed, booking_confirmed.
     """
-    return await _call_tool(context, "end_call", {"reason": reason})
+    # Log the end reason via the API (best-effort, don't block hangup)
+    try:
+        await _call_tool(context, "end_call", {"reason": reason})
+    except Exception:
+        pass
+
+    # Grace period: let final TTS audio finish playing before disconnecting
+    await asyncio.sleep(2.0)
+
+    # Disconnect the session so the SIP call hangs up
+    context.session.shutdown()
+    return "Call ended."

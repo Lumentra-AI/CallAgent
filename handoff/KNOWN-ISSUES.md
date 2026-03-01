@@ -2,43 +2,42 @@
 
 ---
 
-## Voice Quality
+## LiveKit Agent Issues (2026-02-28)
 
-### Audio Latency on Long Calls
+### Tools need live call verification (HIGH PRIORITY)
 
-During longer conversations (3+ minutes), occasional audio latency can occur due to the real-time streaming pipeline having multiple async stages (STT -> LLM -> TTS). This is a well-known challenge in custom voice AI pipelines and affects all platforms in this space to varying degrees.
+The `context.session.current_agent` and `context.session.room_io.room.name` fixes are deployed but need verification with a live call. Call +19458001233 and ask about availability to confirm tools work.
 
-Significant work has been done to optimize this:
+### Transcript logging needs verification
 
-- State machine architecture for audio pipeline
-- Greedy cancel and layered endpointing for turn-taking
-- Sentence buffer for smoother TTS delivery
-- Codec-safe silence padding
-- Forced final-transcript turn end
-- Speech-end fallback tuning
-- Barge-in false positive prevention
-- Dialog memory and anti-repetition shaping
-- Provider timeouts and cleanup safeguards
+`call_logger.py` uses `session.history.messages` (livekit-agents v1.4+). Deployed but needs live call verification.
 
-Further optimization paths:
+### Call duration needs verification
 
-- Tuning LLM response length for voice (shorter responses = lower latency)
-- Pre-buffering more TTS audio before starting playback
-- Testing newer low-latency LLM models as they release
-- Adjusting silence detection thresholds per industry/use case
+`agent.py` tracks `call_started_at` and passes it to `log_call()`. Deployed but needs live call verification.
 
-### Turn-Taking
+### SIP REFER transfer untested
 
-Turn-taking (deciding when the caller is done speaking vs just pausing) is inherently imperfect in all voice AI systems. The turn manager handles silence detection, barge-in, transcript accumulation, and turn completion. It works well for typical conversations but edge cases exist with fast talkers, long pauses, or noisy environments.
+`transfer_to_human` tool now uses LiveKit SIP REFER to transfer calls to the escalation phone. Needs testing with a real escalation phone number configured.
+
+### Coolify API IP may change
+
+The agent uses `INTERNAL_API_URL` env var (currently `http://api:3100` via docker-compose service name). If Coolify redeploys the API on a different network, agent-to-API calls may fail. Check with `docker inspect` if tools start failing.
+
+### SignalWire IPs are dynamic
+
+Firewall rules restrict SIP (5060) and RTP (10000-20000) to SignalWire IPs resolved from `dig sip.signalwire.com`. If SignalWire rotates IPs, calls will stop connecting. Need to re-resolve and update both Hetzner cloud firewall and UFW.
+
+### `failed to fetch server settings: http status: 404`
+
+Appears on every agent startup. This is a LiveKit Cloud endpoint that doesn't exist on self-hosted. Harmless but noisy.
 
 ---
 
 ## Security Hardening (Pre-Production)
 
-Before onboarding paying customers, these items should be addressed:
+Before onboarding paying customers:
 
-- Webhook signature verification should be fully implemented for production security
-- WebSocket stream authentication should use token-based validation
 - Sensitive fields (OAuth tokens, carrier credentials) should use the existing encryption helper consistently
 - Debug endpoints should be removed or gated behind admin auth
 - Rate limiting should be moved to a persistent store (Redis) for multi-instance deployments
@@ -56,6 +55,7 @@ Before onboarding paying customers, these items should be addressed:
 
 ## Architecture Notes
 
-- The custom voice pipeline (Deepgram + LLM + Cartesia over SignalWire) was chosen specifically for cost efficiency at scale. Managed voice AI platforms like Vapi charge $0.15/min which is not viable for a B2B SaaS margin structure where customers make hundreds of calls per month.
-- Both Vapi integration and the custom pipeline exist in the codebase. The custom pipeline is what is actively used and maintained.
+- Voice pipeline: LiveKit Agents (Python) with Deepgram STT, OpenAI LLM, Cartesia TTS
+- Telephony: SignalWire provides phone numbers and SIP trunking to LiveKit SIP bridge
+- The old custom pipeline code has been removed from the codebase
 - Database migrations have some overlapping numbers (two 007, two 011). The consolidated schema in `infrastructure/init-scripts/` is the cleanest reference.

@@ -1,16 +1,103 @@
 // Chat-specific Tool Definitions
-// Uses Gemini function declaration format (same as voice tools)
+// Uses Gemini function declaration format for the chat widget LLM
 
 import { SchemaType, type FunctionDeclaration } from "@google/generative-ai";
 import type { ToolExecutionContext } from "../../types/voice.js";
 import { executeTool as executeVoiceTool } from "../gemini/tools.js";
 import { updateVisitorInfo, type VisitorInfo } from "./conversation-store.js";
 
-// Voice-specific tools to exclude from chat
-const VOICE_ONLY_TOOLS = new Set(["end_call", "transfer_to_human"]);
-
-// Import voice functions and filter
-import { voiceAgentFunctions } from "../gemini/tools.js";
+// Shared tool declarations (used by both voice agent and chat widget)
+const sharedFunctions: FunctionDeclaration[] = [
+  {
+    name: "check_availability",
+    description:
+      "Check available appointment slots for a date. Call this when customer asks about availability, open times, or when they can book.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        date: {
+          type: SchemaType.STRING,
+          description: "Date in YYYY-MM-DD format.",
+        },
+        service_type: {
+          type: SchemaType.STRING,
+          description: "Optional service type like haircut, consultation.",
+        },
+      },
+      required: ["date"],
+    },
+  },
+  {
+    name: "create_booking",
+    description:
+      "Create an appointment booking. Only call after customer confirms a specific time slot and provides their name.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        customer_name: {
+          type: SchemaType.STRING,
+          description: "Customer's name.",
+        },
+        customer_phone: {
+          type: SchemaType.STRING,
+          description: "Phone number. Use caller ID if available.",
+        },
+        date: {
+          type: SchemaType.STRING,
+          description: "Booking date in YYYY-MM-DD format.",
+        },
+        time: {
+          type: SchemaType.STRING,
+          description: "Time in 24-hour HH:MM format.",
+        },
+        service_type: {
+          type: SchemaType.STRING,
+          description: "Type of service.",
+        },
+        notes: {
+          type: SchemaType.STRING,
+          description: "Special requests or notes.",
+        },
+      },
+      required: ["customer_name", "customer_phone", "date", "time"],
+    },
+  },
+  {
+    name: "create_order",
+    description:
+      "Place a food order. Must have customer name, items, and order type (pickup or delivery) before calling.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        customer_name: {
+          type: SchemaType.STRING,
+          description: "Customer's name for the order.",
+        },
+        customer_phone: {
+          type: SchemaType.STRING,
+          description: "Leave empty - system uses caller ID automatically.",
+        },
+        order_type: {
+          type: SchemaType.STRING,
+          description: "Must be 'pickup' or 'delivery'.",
+        },
+        items: {
+          type: SchemaType.STRING,
+          description: "Comma-separated list of items.",
+        },
+        delivery_address: {
+          type: SchemaType.STRING,
+          description: "Required for delivery orders.",
+        },
+        special_instructions: {
+          type: SchemaType.STRING,
+          description: "Optional special requests.",
+        },
+      },
+      required: ["customer_name", "order_type", "items"],
+    },
+  },
+];
 
 // Chat-specific function declarations
 const chatOnlyFunctions: FunctionDeclaration[] = [
@@ -59,9 +146,9 @@ const chatOnlyFunctions: FunctionDeclaration[] = [
   },
 ];
 
-// Combined chat tools: voice tools (minus voice-only) + chat-specific
+// Combined chat tools: shared tools + chat-specific
 export const chatAgentFunctions: FunctionDeclaration[] = [
-  ...voiceAgentFunctions.filter((tool) => !VOICE_ONLY_TOOLS.has(tool.name)),
+  ...sharedFunctions,
   ...chatOnlyFunctions,
 ];
 
@@ -127,9 +214,6 @@ async function executeRequestCallback(
   console.log(
     `[CHAT] Callback requested - Tenant: ${context.tenantId}, Session: ${context.sessionId}, Reason: ${reason}, Time: ${preferredTime || "any"}`,
   );
-
-  // TODO: Create a callback request in the database
-  // For now, just log it
 
   return {
     success: true,

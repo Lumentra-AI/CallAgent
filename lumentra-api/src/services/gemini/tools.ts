@@ -1,7 +1,6 @@
-// Gemini Tool Definitions
-// Function declarations for Gemini's native function calling
+// Voice Tool Execution
+// Handles tool calls from the LiveKit Python agent via internal API
 
-import { SchemaType, type FunctionDeclaration } from "@google/generative-ai";
 import type {
   ToolExecutionContext,
   CheckAvailabilityArgs,
@@ -17,11 +16,6 @@ import type {
 } from "../../types/voice.js";
 import { query, queryOne, queryAll } from "../database/client.js";
 import { insertOne } from "../database/query-helpers.js";
-import {
-  signalwireConfig,
-  signalwireApiUrl,
-  transferCall,
-} from "../signalwire/client.js";
 
 // Generate confirmation code
 function generateConfirmationCode(): string {
@@ -33,147 +27,7 @@ function generateConfirmationCode(): string {
   return code;
 }
 
-// Gemini function declarations
-// These use Gemini's schema format which is similar to JSON Schema
-export const voiceAgentFunctions: FunctionDeclaration[] = [
-  {
-    name: "check_availability",
-    description:
-      "Check available appointment slots for a date. Call this when customer asks about availability, open times, or when they can book. Example triggers: 'when are you available', 'what times do you have', 'is tomorrow open'.",
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: {
-        date: {
-          type: SchemaType.STRING,
-          description:
-            "Date in YYYY-MM-DD format. Examples: '2026-01-24' for tomorrow, '2026-01-27' for next Monday. Convert spoken dates like 'tomorrow' or 'next Tuesday' to this format.",
-        },
-        service_type: {
-          type: SchemaType.STRING,
-          description:
-            "Optional service type. Examples: 'haircut', 'consultation', 'cleaning'.",
-        },
-      },
-      required: ["date"],
-    },
-  },
-  {
-    name: "create_booking",
-    description:
-      "Create an appointment booking. ONLY call after customer confirms: (1) specific time slot, (2) their name. Example: Customer says 'yes, book me at 2pm' after you offered slots.",
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: {
-        customer_name: {
-          type: SchemaType.STRING,
-          description:
-            "Customer's name. Examples: 'John Smith', 'Maria Garcia'. Ask if not provided.",
-        },
-        customer_phone: {
-          type: SchemaType.STRING,
-          description:
-            "Phone number in any format. Examples: '555-123-4567', '(555) 123-4567'. Use caller ID if available.",
-        },
-        date: {
-          type: SchemaType.STRING,
-          description:
-            "Booking date in YYYY-MM-DD format. Example: '2026-01-24'.",
-        },
-        time: {
-          type: SchemaType.STRING,
-          description:
-            "Time in 24-hour HH:MM format. Examples: '09:00' for 9 AM, '14:00' for 2 PM, '17:30' for 5:30 PM.",
-        },
-        service_type: {
-          type: SchemaType.STRING,
-          description:
-            "Type of service. Examples: 'general', 'consultation', 'appointment'.",
-        },
-        notes: {
-          type: SchemaType.STRING,
-          description:
-            "Special requests or notes. Example: 'prefers morning appointments'.",
-        },
-      },
-      required: ["customer_name", "customer_phone", "date", "time"],
-    },
-  },
-  {
-    name: "transfer_to_human",
-    description:
-      "Transfer to human staff. STRICT: Only use when caller says EXACT phrases like 'human', 'real person', 'manager', 'supervisor', 'speak to someone else', or 'I want to complain'. NEVER use for: frustration, confusion, profanity, rudeness, single words you don't understand, or repeated questions. If unsure, ask a clarifying question instead of transferring.",
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: {
-        reason: {
-          type: SchemaType.STRING,
-          description:
-            "Reason for transfer. Must be one of: customer_request (said 'human'/'person'), complaint (said 'complain'), refund_request, cannot_resolve (tried 3+ times).",
-        },
-      },
-      required: ["reason"],
-    },
-  },
-  {
-    name: "end_call",
-    description:
-      "Hang up the call. STRICT CONDITIONS - ALL must be true: (1) Customer's request is fully handled (order placed, booking confirmed, question answered), (2) Customer said 'goodbye', 'bye', 'that's all', or similar farewell, (3) You already said your goodbye. Do NOT call for just 'thank you' - that's mid-conversation.",
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: {
-        reason: {
-          type: SchemaType.STRING,
-          description:
-            "Why the call is ending. Must be one of: conversation_complete, customer_requested_hangup, order_confirmed, booking_confirmed.",
-        },
-      },
-      required: ["reason"],
-    },
-  },
-  {
-    name: "create_order",
-    description:
-      "Place a food order. PRECONDITIONS - must have ALL before calling: (1) customer_name - ask 'what name for the order?', (2) items - the food they want, (3) order_type - 'pickup' or 'delivery', (4) IF delivery: complete street address. Phone comes from caller ID automatically. NEVER use placeholder values like 'unknown' - ask the customer instead.",
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: {
-        customer_name: {
-          type: SchemaType.STRING,
-          description:
-            "Customer's actual name. Examples: 'John', 'Sarah Miller'. If unknown, ask: 'What name should I put the order under?'",
-        },
-        customer_phone: {
-          type: SchemaType.STRING,
-          description:
-            "Leave empty - system uses caller ID automatically. Only fill if customer provides different number.",
-        },
-        order_type: {
-          type: SchemaType.STRING,
-          description:
-            "Must be exactly 'pickup' or 'delivery'. Ask customer: 'Is this for pickup or delivery?'",
-        },
-        items: {
-          type: SchemaType.STRING,
-          description:
-            "Comma-separated list of items with sizes. Examples: 'Large Pepperoni Pizza', 'Medium Cheese Pizza, Garlic Knots, 2-Liter Coke'.",
-        },
-        delivery_address: {
-          type: SchemaType.STRING,
-          description:
-            "REQUIRED for delivery orders. Full street address. Examples: '123 Main Street', '456 Oak Ave Apt 2B'. Ask: 'What is the delivery address?'",
-        },
-        special_instructions: {
-          type: SchemaType.STRING,
-          description:
-            "Optional requests. Examples: 'extra napkins', 'no contact delivery', 'ring doorbell'.",
-        },
-      },
-      required: ["customer_name", "order_type", "items"],
-    },
-  },
-];
-
-// Tool execution functions - reused from groq/tools.ts
+// Tool execution functions
 
 interface BookingTimeRow {
   booking_time: string;
@@ -319,8 +173,6 @@ export async function executeTransferToHuman(
     };
   }
 
-  const voiceProvider = process.env.VOICE_PROVIDER || "custom";
-
   try {
     // Update call outcome
     await query(
@@ -328,44 +180,10 @@ export async function executeTransferToHuman(
       ["escalation", new Date().toISOString(), context.callSid],
     );
 
-    // For Vapi: Just return success - Vapi will request transfer destination via webhook
-    if (voiceProvider === "vapi") {
-      console.log(
-        `[TOOLS] Vapi transfer - returning success, Vapi will handle transfer to ${context.escalationPhone}`,
-      );
-      return {
-        transferred: true,
-        message: "Transferring you now. Please hold.",
-      };
-    }
-
-    // For SignalWire custom stack: Call the SignalWire API directly
-    if (!signalwireApiUrl || !context.callSid) {
-      console.warn("[TOOLS] SignalWire not configured or no callSid");
-      return {
-        transferred: false,
-        message:
-          "I'm having trouble completing the transfer. Can I take a message instead?",
-      };
-    }
-
-    const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3100";
-    const result = await transferCall(
-      context.callSid,
-      context.escalationPhone,
-      BACKEND_URL,
+    // Return escalation phone - the LiveKit agent handles SIP REFER transfer
+    console.log(
+      `[TOOLS] Transfer requested to ${context.escalationPhone} - agent will handle SIP REFER`,
     );
-
-    if (!result.success) {
-      console.error("[TOOLS] Transfer failed:", result.error);
-      return {
-        transferred: false,
-        message:
-          "I wasn't able to complete the transfer. Would you like to leave a message?",
-      };
-    }
-
-    console.log(`[TOOLS] Transfer initiated to ${context.escalationPhone}`);
     return {
       transferred: true,
       message: "Transferring you now. Please hold.",
@@ -386,70 +204,11 @@ export async function executeEndCall(
 ): Promise<EndCallResult> {
   console.log(`[TOOLS] end_call called for tenant ${context.tenantId}:`, args);
 
-  const voiceProvider = process.env.VOICE_PROVIDER || "custom";
-
-  try {
-    // For Vapi: Just return success - Vapi has endCallFunctionEnabled and handles the hang up
-    if (voiceProvider === "vapi") {
-      console.log(
-        `[TOOLS] Vapi end_call - returning success, Vapi will handle hang up`,
-      );
-      return {
-        ended: true,
-        message: "Call ended.",
-      };
-    }
-
-    // For SignalWire custom stack: Call the SignalWire API directly
-    if (
-      !signalwireApiUrl ||
-      !signalwireConfig.projectId ||
-      !signalwireConfig.apiToken
-    ) {
-      console.error("[TOOLS] SignalWire not configured");
-      return {
-        ended: false,
-        message: "Unable to end call - configuration error.",
-      };
-    }
-
-    const credentials = Buffer.from(
-      `${signalwireConfig.projectId}:${signalwireConfig.apiToken}`,
-    ).toString("base64");
-
-    const response = await fetch(
-      `${signalwireApiUrl}/Calls/${context.callSid}.json`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${credentials}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: "Status=completed",
-      },
-    );
-
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("[TOOLS] Failed to end call:", error);
-      return {
-        ended: false,
-        message: "Unable to end call at this time.",
-      };
-    }
-
-    console.log(`[TOOLS] Call ${context.callSid} ended successfully`);
-    return {
-      ended: true,
-      message: "Call ended.",
-    };
-  } catch (error) {
-    console.error("[TOOLS] end_call error:", error);
-    return {
-      ended: false,
-      message: "Error ending call.",
-    };
-  }
+  // Just acknowledge - the LiveKit agent handles session shutdown
+  return {
+    ended: true,
+    message: "Call ended.",
+  };
 }
 
 // Helper to check for invalid placeholder values

@@ -1,25 +1,10 @@
-import os
 import logging
 
 import httpx
 
+from api_client import get_client
+
 logger = logging.getLogger("lumentra-agent.tenant")
-
-API_URL = os.environ.get("INTERNAL_API_URL", "http://localhost:3100")
-API_KEY = os.environ.get("INTERNAL_API_KEY", "")
-
-_client: httpx.AsyncClient | None = None
-
-
-def _get_client() -> httpx.AsyncClient:
-    global _client
-    if _client is None:
-        _client = httpx.AsyncClient(
-            base_url=API_URL,
-            headers={"Authorization": f"Bearer {API_KEY}"},
-            timeout=10.0,
-        )
-    return _client
 
 
 async def get_tenant_by_phone(phone: str) -> dict | None:
@@ -28,7 +13,7 @@ async def get_tenant_by_phone(phone: str) -> dict | None:
     Returns tenant config dict including system_prompt, voice_config,
     greetings, escalation settings, etc.
     """
-    client = _get_client()
+    client = get_client()
 
     try:
         resp = await client.get(f"/internal/tenants/by-phone/{phone}")

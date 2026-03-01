@@ -1,8 +1,8 @@
 # Lumentra - Project Handoff
 
-**Date:** 2026-02-27
+**Date:** 2026-03-01 (updated)
 **Project:** Lumentra Voice Agent Platform
-**Status:** Functional, demo-ready with known voice quality limitations
+**Status:** Fully migrated to LiveKit Agents, old custom pipeline removed
 
 ---
 
@@ -12,8 +12,9 @@ Lumentra is a multi-tenant voice AI platform that answers phone calls for busine
 
 The system consists of two main applications:
 
-1. **lumentra-api** - Node.js/Hono backend with real-time voice pipeline, LLM orchestration, telephony integration, and REST API
-2. **lumentra-dashboard** - Next.js 16 frontend with setup wizard, CRM, call management, analytics, and settings
+1. **lumentra-api** - Node.js/Hono backend with REST API, tool execution, phone provisioning, and internal API for the voice agent
+2. **lumentra-agent** - Python LiveKit Agents service handling voice calls (Deepgram STT, OpenAI LLM, Cartesia TTS)
+3. **lumentra-dashboard** - Next.js 16 frontend with setup wizard, CRM, call management, analytics, and settings
 
 ---
 
@@ -81,16 +82,111 @@ For voice calls to work, the API must be publicly accessible (ngrok or deployed 
 
 - Full setup wizard that configures a tenant from scratch
 - Multi-tenant architecture with tenant isolation
-- Inbound call handling via SignalWire with real-time voice streaming
-- Custom voice pipeline: Deepgram STT -> LLM -> Cartesia TTS
-- Multi-provider LLM fallback (OpenAI -> Groq -> Gemini)
-- Tool calling for bookings, availability checks, FAQ lookup
+- Inbound call handling via LiveKit Agents (SignalWire SIP -> LiveKit -> Python agent)
+- Voice pipeline: Deepgram STT (nova-3) -> OpenAI LLM (gpt-4.1-mini) -> Cartesia TTS (Sonic-3)
+- Tool calling for bookings, availability checks, orders, escalation
+- SIP REFER transfer to human agents
+- Call logging with transcripts and duration tracking
 - CRM with contacts, call history, analytics
-- Escalation system with live transfer
 - Dashboard with settings, call logs, notifications
+- Chat widget with multi-provider LLM (Gemini -> GPT -> Groq)
 - CI/CD pipeline via GitHub Actions
 - Docker Compose for deployment
 
+## Voice Architecture (LiveKit Agents)
+
+### New voice architecture
+
+```
+Caller -> SignalWire -> SIP (port 5060) -> LiveKit SIP Bridge -> LiveKit Room -> Python Agent
+                                                                                    |
+                                                                          lumentra-api (10.0.1.5:3100)
+                                                                                    |
+                                                                              Supabase DB
+```
+
+### New service: lumentra-agent/ (Python)
+
+| File               | What                                                               |
+| ------------------ | ------------------------------------------------------------------ |
+| `agent.py`         | Entrypoint, session setup, voice pipeline config                   |
+| `tools.py`         | LLM tools (check_availability, create_booking, SIP transfer, etc.) |
+| `call_logger.py`   | Posts call transcript + duration to lumentra-api                   |
+| `tenant_config.py` | Fetches tenant config from internal API by phone number            |
+| `api_client.py`    | Shared httpx client for internal API communication                 |
+| `Dockerfile`       | Builds agent image with turn detector model baked in               |
+
+### Server-side files (not in repo)
+
+| File                               | What                                              |
+| ---------------------------------- | ------------------------------------------------- |
+| `/opt/livekit/docker-compose.yml`  | All LiveKit services (redis, livekit, sip, agent) |
+| `/opt/livekit/.env`                | API keys (Deepgram, OpenAI, Cartesia, Internal)   |
+| `/opt/livekit/config/livekit.yaml` | LiveKit server config + API key/secret            |
+| `/opt/livekit/config/sip.yaml`     | SIP bridge config                                 |
+
+### LiveKit IDs
+
+- **API key:** APIc4ecf671a4b0eab56ceb2cd4
+- **SIP trunk ID:** ST_SUJtKjT9TEgv (+19458001233)
+- **Dispatch rule ID:** SDR_2bZEobprwRXq (routes to lumentra-voice-agent, room prefix `call-`)
+
+### How to deploy agent changes
+
+```bash
+# 1. Edit files locally in lumentra-agent/
+# 2. Copy to server
+scp -i ~/.ssh/id_ed25519 lumentra-agent/*.py lumentra-agent/Dockerfile root@178.156.205.145:/opt/livekit/agent/
+# 3. Rebuild & restart
+ssh -i ~/.ssh/id_ed25519 root@178.156.205.145 "cd /opt/livekit && docker compose up -d --build agent"
+# 4. Check logs
+ssh -i ~/.ssh/id_ed25519 root@178.156.205.145 "cd /opt/livekit && docker compose logs agent --tail=50"
+```
+
+---
+
+## Server Access
+
+- **SSH:** `ssh -i ~/.ssh/id_ed25519 root@178.156.205.145` (key-only, no passwords)
+- **Coolify dashboard:** `https://178.156.205.145:8000` (restricted to admin IP)
+- LiveKit stack at `/opt/livekit/` (separate from Coolify)
+- API + Dashboard managed by Coolify
+
+---
+
+## Security (hardened 2026-03-01)
+
+| Layer                   | Status                                                              |
+| ----------------------- | ------------------------------------------------------------------- |
+| SSH                     | Key-only auth, password login disabled, fail2ban active (548+ bans) |
+| SIP (5060)              | Restricted to 15 SignalWire IPs only                                |
+| RTP (10000-20000)       | Restricted to SignalWire IPs only                                   |
+| LiveKit API (7880-7881) | Restricted to admin IP subnet                                       |
+| Coolify (8000)          | Restricted to admin IP subnet                                       |
+| API (3100)              | Restricted to admin IP subnet                                       |
+| Ports 6001, 6002, 8080  | Blocked (unused Coolify internals)                                  |
+| Secret files            | chmod 600 (root-only)                                               |
+
+**SignalWire IPs are dynamic.** If calls stop connecting, re-resolve and update:
+
+```bash
+dig sip.signalwire.com  # get current IPs
+# Update both Hetzner cloud firewall (hcloud CLI) and UFW on server
+```
+
+**If your IP changes** and you lose access to Coolify/LiveKit/API:
+
+```bash
+# SSH still works (open to all, key-only)
+ssh -i ~/.ssh/id_ed25519 root@178.156.205.145
+ufw allow from YOUR_NEW_IP/24 to any port 3100 proto tcp comment "API - admin only"
+ufw allow from YOUR_NEW_IP/24 to any port 7880 proto tcp comment "LiveKit API - admin only"
+ufw allow from YOUR_NEW_IP/24 to any port 7881 proto tcp comment "LiveKit TCP - admin only"
+ufw allow from YOUR_NEW_IP/24 to any port 8000 proto tcp comment "Coolify - admin only"
+```
+
+---
+
 ## What Does Not Work Perfectly
 
-See [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for full details. The main issue is voice quality - specifically audio "chop" where the AI voice gets cut off mid-sentence during longer conversations. This is a real-time streaming latency problem, not a missing feature.
+See [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for full details.

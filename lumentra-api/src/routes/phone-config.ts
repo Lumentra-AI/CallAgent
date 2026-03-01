@@ -181,7 +181,7 @@ phoneConfigRoutes.post("/provision", async (c) => {
 
     // Configure webhooks
     const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-    const webhookUrl = `${backendUrl}/signalwire/voice`;
+    const webhookUrl = `${backendUrl}/sip/forward`;
     await configureNumberWebhooks(sid, webhookUrl);
 
     // Create or update phone configuration
@@ -286,7 +286,7 @@ phoneConfigRoutes.post("/port", async (c) => {
 
           // Configure webhooks for temp number
           const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-          const webhookUrl = `${backendUrl}/signalwire/voice`;
+          const webhookUrl = `${backendUrl}/sip/forward`;
           await configureNumberWebhooks(sid, webhookUrl);
         }
       }
@@ -438,7 +438,7 @@ phoneConfigRoutes.post("/forward", async (c) => {
 
     // Configure webhooks
     const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-    const webhookUrl = `${backendUrl}/signalwire/voice`;
+    const webhookUrl = `${backendUrl}/sip/forward`;
     await configureNumberWebhooks(sid, webhookUrl);
 
     // Create phone configuration
@@ -567,7 +567,7 @@ phoneConfigRoutes.post("/sip", async (c) => {
 
     const tenantId = membership.tenant_id;
     const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-    const webhookUrl = withWebhookSecret(`${backendUrl}/signalwire/voice`);
+    const webhookUrl = withWebhookSecret(`${backendUrl}/sip/forward`);
 
     // Create SIP endpoint on SignalWire
     const { endpoint, error: sipError } = await createSipEndpoint(tenantId);
