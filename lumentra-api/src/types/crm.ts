@@ -774,3 +774,146 @@ export interface CallWithCRM {
   // Joined data
   contact?: Contact;
 }
+
+// ============================================================================
+// DEAL TYPES
+// ============================================================================
+
+// Industry-specific stages -- validated per-industry in routes/services
+export type DealStage = string;
+export type DealSource = "call" | "web" | "manual" | "import";
+
+export interface Deal {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description?: string;
+  company?: string;
+  stage: DealStage;
+  sort_index: number;
+  amount_cents: number;
+  expected_close?: string;
+  contact_id?: string;
+  call_id?: string;
+  source: DealSource;
+  created_by?: string;
+  archived_at?: string;
+  created_at: string;
+  updated_at: string;
+  // Joined
+  contact_name?: string;
+}
+
+export interface CreateDealInput {
+  name: string;
+  description?: string;
+  company?: string;
+  stage?: DealStage;
+  amount_cents?: number;
+  expected_close?: string;
+  contact_id?: string;
+  call_id?: string;
+  source?: DealSource;
+  created_by?: string;
+}
+
+export interface UpdateDealInput {
+  name?: string;
+  description?: string;
+  company?: string;
+  stage?: DealStage;
+  amount_cents?: number;
+  expected_close?: string;
+  contact_id?: string;
+}
+
+export interface DealFilters {
+  search?: string;
+  stage?: DealStage | DealStage[];
+  contact_id?: string;
+  source?: DealSource | DealSource[];
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface PipelineStage {
+  stage: DealStage;
+  count: number;
+  total_amount_cents: number;
+  deals: Deal[];
+}
+
+// ============================================================================
+// TASK TYPES
+// ============================================================================
+
+// Industry-specific task types -- validated per-industry in routes/services
+export type TaskType = string;
+export type TaskPriority = "low" | "medium" | "high" | "urgent";
+export type TaskSource = "manual" | "auto" | "voice_agent";
+
+export interface Task {
+  id: string;
+  tenant_id: string;
+  title: string;
+  description?: string;
+  type: TaskType;
+  priority: TaskPriority;
+  due_date: string;
+  due_time?: string;
+  done_at?: string;
+  contact_id?: string;
+  deal_id?: string;
+  call_id?: string;
+  assigned_to?: string;
+  created_by?: string;
+  source: TaskSource;
+  created_at: string;
+  updated_at: string;
+  // Joined
+  contact_name?: string;
+}
+
+export interface CreateTaskInput {
+  title: string;
+  description?: string;
+  type?: TaskType;
+  priority?: TaskPriority;
+  due_date: string;
+  due_time?: string;
+  contact_id?: string;
+  deal_id?: string;
+  call_id?: string;
+  assigned_to?: string;
+  created_by?: string;
+  source?: TaskSource;
+}
+
+export interface UpdateTaskInput {
+  title?: string;
+  description?: string;
+  type?: TaskType;
+  priority?: TaskPriority;
+  due_date?: string;
+  due_time?: string;
+  contact_id?: string;
+  deal_id?: string;
+  assigned_to?: string;
+}
+
+export interface TaskFilters {
+  status?: "pending" | "done" | "overdue";
+  type?: TaskType | TaskType[];
+  priority?: TaskPriority | TaskPriority[];
+  contact_id?: string;
+  deal_id?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface TaskCounts {
+  pending: number;
+  overdue: number;
+  due_today: number;
+  completed_this_week: number;
+}

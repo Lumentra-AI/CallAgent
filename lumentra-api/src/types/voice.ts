@@ -353,3 +353,13 @@ export interface CreateOrderResult {
   total?: string;
   message: string;
 }
+
+export interface LogNoteArgs {
+  note: string;
+  note_type?: string;
+}
+
+export interface LogNoteResult {
+  success: boolean;
+  message: string;
+}

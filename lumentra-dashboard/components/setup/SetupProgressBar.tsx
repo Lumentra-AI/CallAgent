@@ -98,12 +98,11 @@ export function SetupProgressBar({
               <div className="flex flex-col items-center">
                 <div
                   className={cn(
-                    "h-10 w-10 rounded-full flex items-center justify-center text-sm font-medium transition-all",
+                    "h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium transition-all",
                     isCompleted && "bg-primary text-primary-foreground",
-                    isCurrent &&
-                      "bg-primary text-primary-foreground ring-4 ring-primary/20",
+                    isCurrent && "bg-primary text-primary-foreground",
                     isPending &&
-                      "bg-muted text-muted-foreground border-2 border-border",
+                      "bg-muted text-muted-foreground border border-border",
                   )}
                 >
                   {isCompleted ? <Check className="h-5 w-5" /> : index + 1}

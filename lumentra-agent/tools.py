@@ -196,3 +196,23 @@ async def end_call(
         context.session.shutdown()
 
     return "Call ended."
+
+
+@function_tool()
+async def log_note(
+    context: RunContext,
+    note: str,
+    note_type: str = "general",
+) -> str:
+    """Save an important note about the caller. Use this to record customer
+    preferences, complaints, special requests, or any details worth remembering
+    for future calls. Do NOT log routine conversation - only notable information.
+
+    Args:
+        note: The note content to save about this caller.
+        note_type: One of: general, preference, complaint, compliment, follow_up, internal.
+    """
+    return await _call_tool(context, "log_note", {
+        "note": note,
+        "note_type": note_type,
+    })

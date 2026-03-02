@@ -4,24 +4,18 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Link,
-  Check,
-  MessageSquare,
   Calendar,
   ArrowLeft,
   ExternalLink,
   CheckCircle2,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
+import { SelectionCard } from "../SelectionCard";
 import { get, API_BASE } from "@/lib/api/client";
 import type { IntegrationProvider, TenantIntegration } from "@/types";
-
-// Aceternity & MagicUI components
-import { WobbleCard } from "@/components/aceternity/wobble-card";
-import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
-import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShineBorder } from "@/components/magicui/shine-border";
 
 interface AuthorizeResponse {
   authUrl: string;
@@ -34,6 +28,7 @@ interface IntegrationOption {
   logo?: string;
   type: "calendar" | "booking" | "pos";
   industries?: string[];
+  comingSoon?: boolean;
 }
 
 const INTEGRATION_OPTIONS: IntegrationOption[] = [
@@ -60,12 +55,14 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     name: "Acuity Scheduling",
     description: "Sync with Acuity appointments",
     type: "booking",
+    comingSoon: true,
   },
   {
     id: "square",
     name: "Square Appointments",
     description: "Connect Square for scheduling",
     type: "booking",
+    comingSoon: true,
   },
   {
     id: "vagaro",
@@ -73,6 +70,7 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     description: "Salon & spa scheduling",
     type: "booking",
     industries: ["salon"],
+    comingSoon: true,
   },
   {
     id: "mindbody",
@@ -80,6 +78,7 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     description: "Fitness & wellness booking",
     type: "booking",
     industries: ["salon"],
+    comingSoon: true,
   },
   {
     id: "toast",
@@ -87,6 +86,7 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     description: "Restaurant management",
     type: "pos",
     industries: ["restaurant"],
+    comingSoon: true,
   },
   {
     id: "opentable",
@@ -94,6 +94,7 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     description: "Restaurant reservations",
     type: "booking",
     industries: ["restaurant"],
+    comingSoon: true,
   },
 ];
 
@@ -263,6 +264,7 @@ export function IntegrationsStep() {
         className={cn(
           "flex items-center justify-between rounded-lg border p-4",
           connected && "border-green-500/50 bg-green-50 dark:bg-green-950/20",
+          integration.comingSoon && "opacity-60",
         )}
       >
         <div className="flex items-center gap-3">
@@ -290,6 +292,10 @@ export function IntegrationsStep() {
               Disconnect
             </button>
           </div>
+        ) : integration.comingSoon ? (
+          <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+            Coming Soon
+          </span>
         ) : (
           <Button
             variant="outline"
@@ -304,27 +310,15 @@ export function IntegrationsStep() {
     );
   };
 
-  const modeColors: Record<IntegrationMode, string> = {
-    external: "bg-blue-800",
-    builtin: "bg-emerald-800",
-    assisted: "bg-purple-800",
-  };
-
   return (
-    <div className="relative space-y-8">
-      <SpotlightNew className="opacity-20" />
-
+    <div className="space-y-8">
       {/* Header */}
-      <div className="relative z-10">
-        <TextGenerateEffect
-          words={
-            showIntegrations
-              ? "Connect your systems"
-              : "Do you use a booking or calendar system?"
-          }
-          className="text-2xl md:text-3xl text-foreground"
-          duration={0.3}
-        />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {showIntegrations
+            ? "Connect your systems"
+            : "Do you use a booking or calendar system?"}
+        </h1>
         <p className="mt-2 text-muted-foreground">
           {showIntegrations
             ? "Link your existing tools so your assistant can manage real bookings"
@@ -333,48 +327,21 @@ export function IntegrationsStep() {
       </div>
 
       {!showIntegrations ? (
-        /* Mode selection with wobble cards */
-        <div className="relative z-10 grid gap-4 md:grid-cols-3">
+        /* Mode selection with SelectionCard */
+        <div className="grid gap-4 md:grid-cols-3">
           {MODE_OPTIONS.map((mode) => {
             const isSelected = state.integrationMode === mode.id;
             const Icon = mode.icon;
 
             return (
-              <div key={mode.id} className="relative">
-                {isSelected && (
-                  <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-primary via-primary/50 to-primary opacity-75 blur-sm" />
-                )}
-                <WobbleCard
-                  containerClassName={cn(
-                    "min-h-[160px] cursor-pointer relative",
-                    isSelected ? "bg-primary" : modeColors[mode.id],
-                  )}
-                  className="p-4"
-                >
-                  <button
-                    type="button"
-                    onClick={() => handleModeSelect(mode.id)}
-                    className="flex h-full w-full flex-col text-left"
-                  >
-                    {isSelected && (
-                      <div className="absolute right-3 top-3">
-                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white">
-                          <Check className="h-4 w-4 text-primary" />
-                        </div>
-                      </div>
-                    )}
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20">
-                      <Icon className="h-5 w-5 text-white" />
-                    </div>
-                    <h3 className="mt-3 text-lg font-bold text-white">
-                      {mode.title}
-                    </h3>
-                    <p className="mt-1 text-sm text-white/70">
-                      {mode.description}
-                    </p>
-                  </button>
-                </WobbleCard>
-              </div>
+              <SelectionCard
+                key={mode.id}
+                selected={isSelected}
+                onClick={() => handleModeSelect(mode.id)}
+                icon={Icon}
+                title={mode.title}
+                description={mode.description}
+              />
             );
           })}
         </div>
@@ -441,7 +408,7 @@ export function IntegrationsStep() {
       )}
 
       {/* Navigation buttons */}
-      <div className="relative z-10 flex justify-between pt-4">
+      <div className="flex justify-between pt-4">
         <Button variant="outline" onClick={handleBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
@@ -450,7 +417,6 @@ export function IntegrationsStep() {
           onClick={handleContinue}
           disabled={!canContinue || isSubmitting}
           size="lg"
-          className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-black shadow-sm transition-all hover:bg-white/90 active:scale-[0.98]"
         >
           {isSubmitting ? "Saving..." : "Continue"}
         </Button>

@@ -2,17 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Clock } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
-
-// Aceternity & MagicUI components
-import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
-import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShineBorder } from "@/components/magicui/shine-border";
 
 const DAYS = [
   { key: "monday", label: "Monday", short: "Mon" },
@@ -191,16 +186,12 @@ export function HoursStep() {
   };
 
   return (
-    <div className="relative space-y-8">
-      <SpotlightNew className="opacity-20" />
-
+    <div className="space-y-8">
       {/* Header */}
-      <div className="relative z-10">
-        <TextGenerateEffect
-          words="When are you open?"
-          className="text-2xl md:text-3xl text-foreground"
-          duration={0.3}
-        />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          When are you open?
+        </h1>
         <p className="mt-2 text-muted-foreground">
           Set your operating hours so your assistant knows when to take calls
         </p>
@@ -485,7 +476,7 @@ export function HoursStep() {
       </div>
 
       {/* Navigation buttons */}
-      <div className="relative z-10 flex justify-between pt-4">
+      <div className="flex justify-between pt-4">
         <Button variant="outline" onClick={handleBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
@@ -494,7 +485,6 @@ export function HoursStep() {
           onClick={handleContinue}
           disabled={!canContinue || isSubmitting}
           size="lg"
-          className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-black shadow-sm transition-all hover:bg-white/90 active:scale-[0.98]"
         >
           {isSubmitting ? "Saving..." : "Continue"}
         </Button>

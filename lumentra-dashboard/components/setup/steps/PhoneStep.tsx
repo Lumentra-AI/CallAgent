@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Phone,
   Plus,
   ArrowLeftRight,
   PhoneForwarded,
@@ -21,14 +20,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
+import { SelectionCard } from "../SelectionCard";
 import { get, post } from "@/lib/api/client";
 import type { PhoneSetupType } from "@/types";
-
-// Aceternity & MagicUI components
-import { WobbleCard } from "@/components/aceternity/wobble-card";
-import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
-import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShineBorder } from "@/components/magicui/shine-border";
 
 // Texas area codes first, then common US codes
 const AREA_CODES = [
@@ -599,80 +593,35 @@ export function PhoneStep() {
     </div>
   );
 
-  const optionColors: Record<PhoneSetupType, string> = {
-    new: "bg-emerald-800",
-    port: "bg-blue-800",
-    forward: "bg-purple-800",
-    sip: "bg-slate-800",
-  };
-
   return (
-    <div className="relative space-y-8">
-      <SpotlightNew className="opacity-20" />
-
+    <div className="space-y-8">
       {/* Header */}
-      <div className="relative z-10">
-        <TextGenerateEffect
-          words="How will customers reach your assistant?"
-          className="text-2xl md:text-3xl text-foreground"
-          duration={0.3}
-        />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          How will customers reach your assistant?
+        </h1>
         <p className="mt-2 text-muted-foreground">
           Choose how callers will connect to your AI assistant
         </p>
       </div>
 
-      {/* Setup type selection with wobble cards */}
-      <div className="relative z-10 grid gap-4 sm:grid-cols-2">
-        {PHONE_OPTIONS.map((option) => {
-          const isSelected = setupType === option.type;
-          const Icon = option.icon;
-
-          return (
-            <div key={option.type} className="relative">
-              {isSelected && (
-                <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-primary via-primary/50 to-primary opacity-75 blur-sm" />
-              )}
-              <WobbleCard
-                containerClassName={cn(
-                  "min-h-[160px] cursor-pointer relative",
-                  isSelected ? "bg-primary" : optionColors[option.type],
-                )}
-                className="p-4"
-              >
-                <button
-                  type="button"
-                  onClick={() => handleSetupTypeSelect(option.type)}
-                  className="flex h-full w-full flex-col text-left"
-                >
-                  {isSelected && (
-                    <div className="absolute right-3 top-3">
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white">
-                        <Check className="h-4 w-4 text-primary" />
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20">
-                    <Icon className="h-5 w-5 text-white" />
-                  </div>
-                  <h3 className="mt-3 text-lg font-bold text-white">
-                    {option.title}
-                  </h3>
-                  <p className="mt-1 text-sm text-white/70">
-                    {option.description}
-                  </p>
-                  <span className="mt-2 inline-flex rounded-full bg-white/20 px-2 py-0.5 text-xs text-white">
-                    {option.timeline}
-                  </span>
-                </button>
-              </WobbleCard>
-            </div>
-          );
-        })}
+      {/* Setup type selection */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {PHONE_OPTIONS.map((option) => (
+          <SelectionCard
+            key={option.type}
+            selected={setupType === option.type}
+            onClick={() => handleSetupTypeSelect(option.type)}
+            icon={option.icon}
+            title={option.title}
+            description={option.description}
+            badge={option.timeline}
+          />
+        ))}
       </div>
 
       {/* Setup-specific flows */}
-      <div className="relative z-10">
+      <div>
         {setupType === "new" && renderNewNumberFlow()}
         {setupType === "port" && renderPortNumberFlow()}
         {setupType === "forward" && renderForwardFlow()}
@@ -680,7 +629,7 @@ export function PhoneStep() {
       </div>
 
       {/* Navigation buttons */}
-      <div className="relative z-10 flex justify-between pt-4">
+      <div className="flex justify-between pt-4">
         <Button variant="outline" onClick={handleBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
@@ -689,7 +638,6 @@ export function PhoneStep() {
           onClick={handleContinue}
           disabled={!canContinue || isSubmitting}
           size="lg"
-          className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-black shadow-sm transition-all hover:bg-white/90 active:scale-[0.98]"
         >
           {isSubmitting ? "Saving..." : "Continue"}
         </Button>

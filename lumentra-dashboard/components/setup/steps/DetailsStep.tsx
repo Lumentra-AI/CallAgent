@@ -7,9 +7,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
 
-// Aceternity & MagicUI components
-import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
-import { SpotlightNew } from "@/components/aceternity/spotlight";
 import { ReservationDetails } from "./details/ReservationDetails";
 import { AppointmentDetails } from "./details/AppointmentDetails";
 import { PatientIntakeDetails } from "./details/PatientIntakeDetails";
@@ -99,16 +96,12 @@ export function DetailsStep() {
   };
 
   return (
-    <div className="relative space-y-8">
-      <SpotlightNew className="opacity-20" />
-
+    <div className="space-y-8">
       {/* Header */}
-      <div className="relative z-10">
-        <TextGenerateEffect
-          words="Tell us more about your services"
-          className="text-2xl md:text-3xl text-foreground"
-          duration={0.3}
-        />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Tell us more about your services
+        </h1>
         <p className="mt-2 text-muted-foreground">
           Configure settings for each capability. You can skip sections and
           configure them later.
@@ -222,17 +215,12 @@ export function DetailsStep() {
       )}
 
       {/* Navigation buttons */}
-      <div className="relative z-10 flex justify-between pt-4">
+      <div className="flex justify-between pt-4">
         <Button variant="outline" onClick={handleBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <Button
-          onClick={handleContinue}
-          disabled={isSubmitting}
-          size="lg"
-          className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-black shadow-sm transition-all hover:bg-white/90 active:scale-[0.98]"
-        >
+        <Button onClick={handleContinue} disabled={isSubmitting} size="lg">
           {isSubmitting ? "Saving..." : "Continue"}
         </Button>
       </div>

@@ -13,9 +13,12 @@ import type {
   EndCallResult,
   CreateOrderArgs,
   CreateOrderResult,
+  LogNoteArgs,
+  LogNoteResult,
 } from "../../types/voice.js";
 import { query, queryOne, queryAll } from "../database/client.js";
 import { insertOne } from "../database/query-helpers.js";
+import { findOrCreateByPhone } from "../contacts/contact-service.js";
 
 // Generate confirmation code
 function generateConfirmationCode(): string {
@@ -329,6 +332,77 @@ export async function executeCreateOrder(
   }
 }
 
+export async function executeLogNote(
+  args: LogNoteArgs,
+  context: ToolExecutionContext,
+): Promise<LogNoteResult> {
+  console.log(`[TOOLS] log_note called for tenant ${context.tenantId}:`, args);
+
+  try {
+    // Find or create the contact by phone
+    let contactId: string | null = null;
+    if (context.callerPhone) {
+      const contact = await findOrCreateByPhone(
+        context.tenantId,
+        context.callerPhone,
+      );
+      contactId = contact?.id || null;
+    }
+
+    if (!contactId) {
+      return {
+        success: false,
+        message: "Note saved.",
+      };
+    }
+
+    // Find call record for linking
+    let callId: string | null = null;
+    if (context.callSid) {
+      const callRecord = await queryOne<CallIdRow>(
+        "SELECT id FROM calls WHERE vapi_call_id = $1",
+        [context.callSid],
+      );
+      callId = callRecord?.id || null;
+    }
+
+    const validTypes = [
+      "general",
+      "preference",
+      "complaint",
+      "compliment",
+      "follow_up",
+      "internal",
+    ];
+    const noteType = validTypes.includes(args.note_type || "")
+      ? args.note_type
+      : "general";
+
+    await insertOne("contact_notes", {
+      tenant_id: context.tenantId,
+      contact_id: contactId,
+      note_type: noteType,
+      content: args.note,
+      call_id: callId,
+      is_pinned: false,
+      is_private: false,
+      created_by: "voice_agent",
+      created_by_name: "Voice Agent",
+    });
+
+    return {
+      success: true,
+      message: "Note saved.",
+    };
+  } catch (error) {
+    console.error("[TOOLS] log_note error:", error);
+    return {
+      success: false,
+      message: "Note saved.",
+    };
+  }
+}
+
 // Tool executor - routes tool calls to the right function
 export async function executeTool(
   toolName: string,
@@ -355,6 +429,8 @@ export async function executeTool(
       );
     case "end_call":
       return executeEndCall(args as unknown as EndCallArgs, context);
+    case "log_note":
+      return executeLogNote(args as unknown as LogNoteArgs, context);
     default:
       throw new Error(`Unknown tool: ${toolName}`);
   }

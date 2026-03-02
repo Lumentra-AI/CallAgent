@@ -12,7 +12,21 @@ import type {
   CustomResponses,
   AgentPersonality,
   CapabilityDefinition,
+  IndustryTaskType,
 } from "@/types";
+
+// ============================================================================
+// UNIVERSAL TASK TYPES
+// ============================================================================
+
+const UNIVERSAL_TASK_TYPES: IndustryTaskType[] = [
+  { value: "follow_up", label: "Follow Up" },
+  { value: "call_back", label: "Call Back" },
+  { value: "email", label: "Email" },
+  { value: "meeting", label: "Meeting" },
+  { value: "review", label: "Review" },
+  { value: "custom", label: "Custom" },
+];
 
 // ============================================================================
 // INDUSTRY CATEGORY METADATA
@@ -67,6 +81,8 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
       customerPlural: "Guests",
       availability: "Room Availability",
       revenue: "Revenue",
+      deal: "Booking",
+      dealPlural: "Bookings",
     },
     metrics: [
       {
@@ -189,6 +205,62 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
         category: "amenities",
       },
     ],
+    pipeline: {
+      stages: [
+        {
+          id: "inquiry",
+          label: "Inquiry",
+          color: "text-blue-400",
+          bgColor: "bg-blue-500/10",
+          borderColor: "border-blue-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "reserved",
+          label: "Reserved",
+          color: "text-cyan-400",
+          bgColor: "bg-cyan-500/10",
+          borderColor: "border-cyan-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "checked_in",
+          label: "Checked In",
+          color: "text-amber-400",
+          bgColor: "bg-amber-500/10",
+          borderColor: "border-amber-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "checked_out",
+          label: "Checked Out",
+          color: "text-emerald-400",
+          bgColor: "bg-emerald-500/10",
+          borderColor: "border-emerald-500/30",
+          isTerminal: true,
+        },
+        {
+          id: "cancelled",
+          label: "Cancelled",
+          color: "text-red-400",
+          bgColor: "bg-red-500/10",
+          borderColor: "border-red-500/30",
+          isTerminal: true,
+        },
+        {
+          id: "no_show",
+          label: "No-Show",
+          color: "text-orange-400",
+          bgColor: "bg-orange-500/10",
+          borderColor: "border-orange-500/30",
+          isTerminal: true,
+        },
+      ],
+      defaultStage: "inquiry",
+      completedStage: "checked_out",
+      cancelledStage: "cancelled",
+    },
+    taskTypes: UNIVERSAL_TASK_TYPES,
   },
 
   motel: {
@@ -206,6 +278,8 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
       customerPlural: "Guests",
       availability: "Room Availability",
       revenue: "Revenue",
+      deal: "Booking",
+      dealPlural: "Bookings",
     },
     metrics: [
       {
@@ -289,6 +363,62 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
         category: "policies",
       },
     ],
+    pipeline: {
+      stages: [
+        {
+          id: "inquiry",
+          label: "Inquiry",
+          color: "text-blue-400",
+          bgColor: "bg-blue-500/10",
+          borderColor: "border-blue-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "reserved",
+          label: "Reserved",
+          color: "text-cyan-400",
+          bgColor: "bg-cyan-500/10",
+          borderColor: "border-cyan-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "checked_in",
+          label: "Checked In",
+          color: "text-amber-400",
+          bgColor: "bg-amber-500/10",
+          borderColor: "border-amber-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "checked_out",
+          label: "Checked Out",
+          color: "text-emerald-400",
+          bgColor: "bg-emerald-500/10",
+          borderColor: "border-emerald-500/30",
+          isTerminal: true,
+        },
+        {
+          id: "cancelled",
+          label: "Cancelled",
+          color: "text-red-400",
+          bgColor: "bg-red-500/10",
+          borderColor: "border-red-500/30",
+          isTerminal: true,
+        },
+        {
+          id: "no_show",
+          label: "No-Show",
+          color: "text-orange-400",
+          bgColor: "bg-orange-500/10",
+          borderColor: "border-orange-500/30",
+          isTerminal: true,
+        },
+      ],
+      defaultStage: "inquiry",
+      completedStage: "checked_out",
+      cancelledStage: "cancelled",
+    },
+    taskTypes: UNIVERSAL_TASK_TYPES,
   },
 
   restaurant: {
@@ -306,6 +436,8 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
       customerPlural: "Guests",
       availability: "Table Availability",
       revenue: "Revenue",
+      deal: "Reservation",
+      dealPlural: "Reservations",
     },
     metrics: [
       {
@@ -396,6 +528,74 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
         category: "amenities",
       },
     ],
+    pipeline: {
+      stages: [
+        {
+          id: "inquiry",
+          label: "Inquiry",
+          color: "text-blue-400",
+          bgColor: "bg-blue-500/10",
+          borderColor: "border-blue-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "reserved",
+          label: "Reserved",
+          color: "text-cyan-400",
+          bgColor: "bg-cyan-500/10",
+          borderColor: "border-cyan-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "confirmed",
+          label: "Confirmed",
+          color: "text-amber-400",
+          bgColor: "bg-amber-500/10",
+          borderColor: "border-amber-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "seated",
+          label: "Seated",
+          color: "text-purple-400",
+          bgColor: "bg-purple-500/10",
+          borderColor: "border-purple-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "completed",
+          label: "Completed",
+          color: "text-emerald-400",
+          bgColor: "bg-emerald-500/10",
+          borderColor: "border-emerald-500/30",
+          isTerminal: true,
+        },
+        {
+          id: "no_show",
+          label: "No-Show",
+          color: "text-orange-400",
+          bgColor: "bg-orange-500/10",
+          borderColor: "border-orange-500/30",
+          isTerminal: true,
+        },
+        {
+          id: "cancelled",
+          label: "Cancelled",
+          color: "text-red-400",
+          bgColor: "bg-red-500/10",
+          borderColor: "border-red-500/30",
+          isTerminal: true,
+        },
+      ],
+      defaultStage: "inquiry",
+      completedStage: "completed",
+      cancelledStage: "cancelled",
+    },
+    taskTypes: [
+      ...UNIVERSAL_TASK_TYPES,
+      { value: "vendor_order", label: "Vendor Order" },
+      { value: "event_setup", label: "Event Setup" },
+    ],
   },
 
   // ==========================================================================
@@ -416,6 +616,8 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
       customerPlural: "Patients",
       availability: "Schedule",
       revenue: "Billing",
+      deal: "Case",
+      dealPlural: "Cases",
     },
     metrics: [
       {
@@ -526,6 +728,66 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
         category: "appointments",
       },
     ],
+    pipeline: {
+      stages: [
+        {
+          id: "inquiry",
+          label: "Inquiry",
+          color: "text-blue-400",
+          bgColor: "bg-blue-500/10",
+          borderColor: "border-blue-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "scheduled",
+          label: "Scheduled",
+          color: "text-cyan-400",
+          bgColor: "bg-cyan-500/10",
+          borderColor: "border-cyan-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "confirmed",
+          label: "Confirmed",
+          color: "text-amber-400",
+          bgColor: "bg-amber-500/10",
+          borderColor: "border-amber-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "completed",
+          label: "Completed",
+          color: "text-emerald-400",
+          bgColor: "bg-emerald-500/10",
+          borderColor: "border-emerald-500/30",
+          isTerminal: true,
+        },
+        {
+          id: "no_show",
+          label: "No-Show",
+          color: "text-orange-400",
+          bgColor: "bg-orange-500/10",
+          borderColor: "border-orange-500/30",
+          isTerminal: true,
+        },
+        {
+          id: "cancelled",
+          label: "Cancelled",
+          color: "text-red-400",
+          bgColor: "bg-red-500/10",
+          borderColor: "border-red-500/30",
+          isTerminal: true,
+        },
+      ],
+      defaultStage: "inquiry",
+      completedStage: "completed",
+      cancelledStage: "cancelled",
+    },
+    taskTypes: [
+      ...UNIVERSAL_TASK_TYPES,
+      { value: "insurance_verification", label: "Insurance Verification" },
+      { value: "prescription_refill", label: "Prescription Refill" },
+    ],
   },
 
   dental: {
@@ -543,6 +805,8 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
       customerPlural: "Patients",
       availability: "Schedule",
       revenue: "Production",
+      deal: "Case",
+      dealPlural: "Cases",
     },
     metrics: [
       {
@@ -625,6 +889,65 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
         category: "care",
       },
     ],
+    pipeline: {
+      stages: [
+        {
+          id: "inquiry",
+          label: "Inquiry",
+          color: "text-blue-400",
+          bgColor: "bg-blue-500/10",
+          borderColor: "border-blue-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "scheduled",
+          label: "Scheduled",
+          color: "text-cyan-400",
+          bgColor: "bg-cyan-500/10",
+          borderColor: "border-cyan-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "confirmed",
+          label: "Confirmed",
+          color: "text-amber-400",
+          bgColor: "bg-amber-500/10",
+          borderColor: "border-amber-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "completed",
+          label: "Completed",
+          color: "text-emerald-400",
+          bgColor: "bg-emerald-500/10",
+          borderColor: "border-emerald-500/30",
+          isTerminal: true,
+        },
+        {
+          id: "no_show",
+          label: "No-Show",
+          color: "text-orange-400",
+          bgColor: "bg-orange-500/10",
+          borderColor: "border-orange-500/30",
+          isTerminal: true,
+        },
+        {
+          id: "cancelled",
+          label: "Cancelled",
+          color: "text-red-400",
+          bgColor: "bg-red-500/10",
+          borderColor: "border-red-500/30",
+          isTerminal: true,
+        },
+      ],
+      defaultStage: "inquiry",
+      completedStage: "completed",
+      cancelledStage: "cancelled",
+    },
+    taskTypes: [
+      ...UNIVERSAL_TASK_TYPES,
+      { value: "insurance_verification", label: "Insurance Verification" },
+    ],
   },
 
   // ==========================================================================
@@ -645,6 +968,8 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
       customerPlural: "Customers",
       availability: "Bay Availability",
       revenue: "Revenue",
+      deal: "Service Order",
+      dealPlural: "Service Orders",
     },
     metrics: [
       {
@@ -731,6 +1056,66 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
         category: "services",
       },
     ],
+    pipeline: {
+      stages: [
+        {
+          id: "inquiry",
+          label: "Inquiry",
+          color: "text-blue-400",
+          bgColor: "bg-blue-500/10",
+          borderColor: "border-blue-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "quoted",
+          label: "Quoted",
+          color: "text-cyan-400",
+          bgColor: "bg-cyan-500/10",
+          borderColor: "border-cyan-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "scheduled",
+          label: "Scheduled",
+          color: "text-amber-400",
+          bgColor: "bg-amber-500/10",
+          borderColor: "border-amber-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "in_progress",
+          label: "In Progress",
+          color: "text-purple-400",
+          bgColor: "bg-purple-500/10",
+          borderColor: "border-purple-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "completed",
+          label: "Completed",
+          color: "text-emerald-400",
+          bgColor: "bg-emerald-500/10",
+          borderColor: "border-emerald-500/30",
+          isTerminal: true,
+        },
+        {
+          id: "cancelled",
+          label: "Cancelled",
+          color: "text-red-400",
+          bgColor: "bg-red-500/10",
+          borderColor: "border-red-500/30",
+          isTerminal: true,
+        },
+      ],
+      defaultStage: "inquiry",
+      completedStage: "completed",
+      cancelledStage: "cancelled",
+    },
+    taskTypes: [
+      ...UNIVERSAL_TASK_TYPES,
+      { value: "parts_order", label: "Parts Order" },
+      { value: "vehicle_pickup", label: "Vehicle Pickup" },
+    ],
   },
 
   // ==========================================================================
@@ -751,6 +1136,8 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
       customerPlural: "Clients",
       availability: "Stylist Availability",
       revenue: "Revenue",
+      deal: "Appointment",
+      dealPlural: "Appointments",
     },
     metrics: [
       {
@@ -830,6 +1217,62 @@ export const INDUSTRY_PRESETS: Record<IndustryType, IndustryPreset> = {
         category: "booking",
       },
     ],
+    pipeline: {
+      stages: [
+        {
+          id: "inquiry",
+          label: "Inquiry",
+          color: "text-blue-400",
+          bgColor: "bg-blue-500/10",
+          borderColor: "border-blue-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "booked",
+          label: "Booked",
+          color: "text-cyan-400",
+          bgColor: "bg-cyan-500/10",
+          borderColor: "border-cyan-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "confirmed",
+          label: "Confirmed",
+          color: "text-amber-400",
+          bgColor: "bg-amber-500/10",
+          borderColor: "border-amber-500/30",
+          isTerminal: false,
+        },
+        {
+          id: "completed",
+          label: "Completed",
+          color: "text-emerald-400",
+          bgColor: "bg-emerald-500/10",
+          borderColor: "border-emerald-500/30",
+          isTerminal: true,
+        },
+        {
+          id: "no_show",
+          label: "No-Show",
+          color: "text-orange-400",
+          bgColor: "bg-orange-500/10",
+          borderColor: "border-orange-500/30",
+          isTerminal: true,
+        },
+        {
+          id: "cancelled",
+          label: "Cancelled",
+          color: "text-red-400",
+          bgColor: "bg-red-500/10",
+          borderColor: "border-red-500/30",
+          isTerminal: true,
+        },
+      ],
+      defaultStage: "inquiry",
+      completedStage: "completed",
+      cancelledStage: "cancelled",
+    },
+    taskTypes: UNIVERSAL_TASK_TYPES,
   },
 };
 

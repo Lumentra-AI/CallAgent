@@ -194,6 +194,9 @@ export interface IndustryPreset {
   capabilities?: CapabilityDefinition[];
   // Short labels for mobile navigation tabs
   navLabels?: { calendarTab: string };
+  // CRM pipeline configuration
+  pipeline: PipelineConfig;
+  taskTypes: IndustryTaskType[];
 }
 
 export interface IndustryTerminology {
@@ -203,6 +206,29 @@ export interface IndustryTerminology {
   customerPlural: string;
   availability: string;
   revenue: string;
+  deal: string;
+  dealPlural: string;
+}
+
+export interface PipelineStageConfig {
+  id: string;
+  label: string;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  isTerminal: boolean;
+}
+
+export interface PipelineConfig {
+  stages: PipelineStageConfig[];
+  defaultStage: string;
+  completedStage: string;
+  cancelledStage: string;
+}
+
+export interface IndustryTaskType {
+  value: string;
+  label: string;
 }
 
 export interface FAQTemplate {
@@ -545,7 +571,9 @@ export type ViewType =
   | "contacts"
   | "calendar"
   | "notifications"
-  | "resources";
+  | "resources"
+  | "deals"
+  | "tasks";
 
 export type SettingsTab =
   | "general"

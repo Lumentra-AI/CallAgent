@@ -4,10 +4,15 @@
 
 import { Hono } from "hono";
 import type { Context, Next } from "hono";
-import { getTenantByPhoneWithFallback } from "../services/database/tenant-cache.js";
+import {
+  getTenantByPhoneWithFallback,
+  getTenantById,
+} from "../services/database/tenant-cache.js";
 import { buildSystemPrompt } from "../services/gemini/chat.js";
 import { executeTool } from "../services/gemini/tools.js";
 import { insertOne } from "../services/database/query-helpers.js";
+import { findOrCreateByPhone } from "../services/contacts/contact-service.js";
+import { runPostCallAutomation } from "../services/automation/post-call.js";
 import type { ToolExecutionContext } from "../types/voice.js";
 
 export const internalRoutes = new Hono();
@@ -177,6 +182,21 @@ internalRoutes.post("/calls/log", async (c) => {
   }
 
   try {
+    // Auto-create or find contact by caller phone
+    let contactId: string | null = null;
+    if (body.caller_phone) {
+      try {
+        const contact = await findOrCreateByPhone(
+          body.tenant_id,
+          body.caller_phone,
+          { name: body.caller_name || undefined, source: "call" },
+        );
+        contactId = contact.id;
+      } catch (err) {
+        console.warn("[INTERNAL] Failed to find/create contact:", err);
+      }
+    }
+
     const record = await insertOne("calls", {
       tenant_id: body.tenant_id,
       vapi_call_id: body.call_sid,
@@ -196,12 +216,28 @@ internalRoutes.post("/calls/log", async (c) => {
       intents_detected: body.intents_detected || null,
       recording_url: body.recording_url || null,
       cost_cents: body.cost_cents ?? null,
-      contact_id: null,
+      contact_id: contactId,
     });
 
     console.log(
       `[INTERNAL] Call logged: ${body.call_sid}, ${body.duration_seconds}s, ${body.outcome_type || "inquiry"}`,
     );
+
+    // Run post-call automation (deals, tasks, status updates) - non-blocking
+    const tenant = getTenantById(body.tenant_id);
+    runPostCallAutomation({
+      tenantId: body.tenant_id,
+      callId: record.id,
+      contactId,
+      callerPhone: body.caller_phone || null,
+      callerName: body.caller_name || null,
+      outcomeType: body.outcome_type || "inquiry",
+      durationSeconds: body.duration_seconds,
+      status: mapCallStatus(body.status),
+      industry: tenant?.industry || "restaurant",
+    }).catch((err) => {
+      console.error("[INTERNAL] Post-call automation error:", err);
+    });
 
     return c.json({ success: true, id: record.id });
   } catch (error) {

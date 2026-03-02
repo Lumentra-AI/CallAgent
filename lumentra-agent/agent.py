@@ -16,7 +16,8 @@ from livekit.agents import (
     metrics,
 )
 from livekit.agents.llm import function_tool
-from livekit.plugins import deepgram, cartesia, openai, silero
+from livekit.agents import room_io
+from livekit.plugins import deepgram, cartesia, openai, silero, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from tools import (
@@ -126,8 +127,8 @@ async def entrypoint(ctx: JobContext):
         preemptive_generation=True,
         resume_false_interruption=True,
         false_interruption_timeout=1.5,
-        min_endpointing_delay=1.0,
-        max_endpointing_delay=5.0,
+        min_endpointing_delay=0.8,
+        max_endpointing_delay=2.5,
     )
 
     # Track call start time for accurate duration
@@ -164,10 +165,15 @@ async def entrypoint(ctx: JobContext):
 
     ctx.add_shutdown_callback(on_shutdown)
 
-    # Start the agent session
+    # Start the agent session with echo cancellation for SIP calls
     await session.start(
         agent=LumentraAgent(tenant_config, caller_phone, ctx),
         room=ctx.room,
+        room_options=room_io.RoomOptions(
+            audio_input=room_io.AudioInputOptions(
+                noise_cancellation=noise_cancellation.BVCTelephony(),
+            ),
+        ),
     )
     # Greeting is handled by LumentraAgent.on_enter()
 

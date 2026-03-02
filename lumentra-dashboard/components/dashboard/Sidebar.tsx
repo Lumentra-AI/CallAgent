@@ -20,8 +20,11 @@ import {
   Headphones,
   AlertCircle,
   User,
+  Target,
+  CheckSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIndustry } from "@/context/IndustryContext";
 
 // Route mapping for navigation
 const VIEW_ROUTES: Record<
@@ -34,6 +37,8 @@ const VIEW_ROUTES: Record<
   analytics: "/analytics",
   escalations: "/escalations",
   contacts: "/contacts",
+  deals: "/deals",
+  tasks: "/tasks",
   calendar: "/calendar",
   notifications: "/notifications",
   resources: "/resources",
@@ -57,39 +62,43 @@ interface NavSection {
   items: NavItem[];
 }
 
-const NAV_SECTIONS: NavSection[] = [
-  {
-    title: "Workspace",
-    items: [
-      { id: "workstation", label: "Workstation", icon: Headphones },
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { id: "escalations", label: "Escalations", icon: AlertCircle },
-    ],
-  },
-  {
-    title: "Activity",
-    items: [
-      { id: "calls", label: "Calls", icon: Phone },
-      { id: "analytics", label: "Analytics", icon: BarChart3 },
-    ],
-  },
-  {
-    title: "CRM",
-    items: [
-      { id: "contacts", label: "Contacts", icon: Users },
-      { id: "calendar", label: "Calendar", icon: Calendar },
-      { id: "notifications", label: "Notifications", icon: Bell },
-      { id: "resources", label: "Resources", icon: Package },
-    ],
-  },
-  {
-    title: "Account",
-    items: [
-      { id: "profile", label: "Profile", icon: User },
-      { id: "settings", label: "Settings", icon: Settings },
-    ],
-  },
-];
+function buildNavSections(dealPluralLabel: string): NavSection[] {
+  return [
+    {
+      title: "Workspace",
+      items: [
+        { id: "workstation", label: "Workstation", icon: Headphones },
+        { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+        { id: "escalations", label: "Escalations", icon: AlertCircle },
+      ],
+    },
+    {
+      title: "Activity",
+      items: [
+        { id: "calls", label: "Calls", icon: Phone },
+        { id: "analytics", label: "Analytics", icon: BarChart3 },
+      ],
+    },
+    {
+      title: "CRM",
+      items: [
+        { id: "contacts", label: "Contacts", icon: Users },
+        { id: "deals", label: dealPluralLabel, icon: Target },
+        { id: "tasks", label: "Tasks", icon: CheckSquare },
+        { id: "calendar", label: "Calendar", icon: Calendar },
+        { id: "notifications", label: "Notifications", icon: Bell },
+        { id: "resources", label: "Resources", icon: Package },
+      ],
+    },
+    {
+      title: "Account",
+      items: [
+        { id: "profile", label: "Profile", icon: User },
+        { id: "settings", label: "Settings", icon: Settings },
+      ],
+    },
+  ];
+}
 
 // ============================================================================
 // SIDEBAR COMPONENT
@@ -99,7 +108,13 @@ export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { config, uiState, setView, toggleSidebar, resetConfig } = useConfig();
+  const { dealPluralLabel } = useIndustry();
   const { sidebarCollapsed } = uiState;
+
+  const NAV_SECTIONS = React.useMemo(
+    () => buildNavSections(dealPluralLabel),
+    [dealPluralLabel],
+  );
 
   // Determine active view from current pathname
   const currentPath = React.useMemo(() => {
@@ -117,6 +132,8 @@ export default function Sidebar() {
           "calls",
           "analytics",
           "contacts",
+          "deals",
+          "tasks",
           "calendar",
           "notifications",
           "resources",

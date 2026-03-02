@@ -13,19 +13,12 @@ import {
   Receipt,
   Check,
   ArrowLeft,
-  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
 import { INDUSTRY_PRESETS } from "@/lib/industryPresets";
 import type { CapabilityOption } from "@/types";
-
-// Aceternity & MagicUI components
-import { BentoGrid, BentoGridItem } from "@/components/aceternity/bento-grid";
-import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
-import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShineBorder } from "@/components/magicui/shine-border";
 
 const CAPABILITY_ICONS: Record<string, React.ElementType> = {
   appointments: CalendarCheck,
@@ -131,6 +124,25 @@ export function CapabilitiesStep() {
     (industry && INDUSTRY_CAPABILITIES[industry]) ||
     INDUSTRY_CAPABILITIES.default;
 
+  // Filter capabilities to only show those relevant to the selected industry
+  const availableCapabilityIds =
+    (industry && INDUSTRY_CAPABILITIES[industry]) ||
+    INDUSTRY_CAPABILITIES.default;
+  const availableOptions = CAPABILITY_OPTIONS.filter((c) =>
+    availableCapabilityIds.includes(c.id),
+  );
+
+  // Strip capabilities that no longer belong when industry changes
+  useEffect(() => {
+    const available =
+      (industry && INDUSTRY_CAPABILITIES[industry]) ||
+      INDUSTRY_CAPABILITIES.default;
+    const filtered = state.capabilities.filter((c) => available.includes(c));
+    if (filtered.length !== state.capabilities.length) {
+      dispatch({ type: "SET_CAPABILITIES", payload: filtered });
+    }
+  }, [industry, state.capabilities, dispatch]);
+
   useEffect(() => {
     if (state.capabilities.length === 0 && recommendedCapabilities.length > 0) {
       dispatch({
@@ -167,13 +179,13 @@ export function CapabilitiesStep() {
     dispatch({ type: "SET_CAPABILITIES", payload: updated });
   };
 
-  const coreCapabilities = CAPABILITY_OPTIONS.filter(
+  const coreCapabilities = availableOptions.filter(
     (c) => c.category === "core",
   );
-  const communicationCapabilities = CAPABILITY_OPTIONS.filter(
+  const communicationCapabilities = availableOptions.filter(
     (c) => c.category === "communication",
   );
-  const advancedCapabilities = CAPABILITY_OPTIONS.filter(
+  const advancedCapabilities = availableOptions.filter(
     (c) => c.category === "advanced",
   );
 
@@ -182,89 +194,56 @@ export function CapabilitiesStep() {
     const isRecommended = recommendedCapabilities.includes(capability.id);
     const Icon = CAPABILITY_ICONS[capability.id] || Phone;
 
-    const cardContent = (
-      <BentoGridItem
+    return (
+      <div
+        key={capability.id}
+        onClick={() => toggleCapability(capability.id)}
         className={cn(
-          "cursor-pointer min-h-[140px]",
-          isSelected && "border-primary/50 bg-primary/5",
+          "flex cursor-pointer items-center gap-4 rounded-xl border p-4 transition-colors",
+          isSelected
+            ? "border-primary bg-primary/5"
+            : "border-border hover:border-muted-foreground/40",
         )}
-        title={
+      >
+        <div
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+            isSelected
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted text-muted-foreground",
+          )}
+        >
+          <Icon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span>{capability.label}</span>
+            <span className="font-medium">{capability.label}</span>
             {isRecommended && (
-              <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                <Sparkles className="h-3 w-3" />
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                 Recommended
               </span>
             )}
           </div>
-        }
-        description={capability.description}
-        header={
-          <div className="flex h-full w-full items-center justify-between">
-            <div
-              className={cn(
-                "flex h-12 w-12 items-center justify-center rounded-xl transition-colors",
-                isSelected
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground",
-              )}
-            >
-              <Icon className="h-6 w-6" />
-            </div>
-            {isSelected && (
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary">
-                <Check className="h-5 w-5 text-primary-foreground" />
-              </div>
-            )}
-          </div>
-        }
-        icon={null}
-      />
-    );
-
-    if (isSelected) {
-      return (
-        <div
-          key={capability.id}
-          className="w-full cursor-pointer"
-          onClick={() => toggleCapability(capability.id)}
-        >
-          <ShineBorder
-            borderRadius={12}
-            borderWidth={2}
-            duration={8}
-            color={["#6366f1", "#8b5cf6", "#a855f7"]}
-            className="w-full min-w-0 p-0"
-          >
-            {cardContent}
-          </ShineBorder>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {capability.description}
+          </p>
         </div>
-      );
-    }
-
-    return (
-      <div
-        key={capability.id}
-        className="w-full cursor-pointer"
-        onClick={() => toggleCapability(capability.id)}
-      >
-        {cardContent}
+        {isSelected && (
+          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary">
+            <Check className="h-3 w-3 text-primary-foreground" />
+          </div>
+        )}
       </div>
     );
   };
 
   return (
-    <div className="relative space-y-8">
-      <SpotlightNew className="opacity-20" />
-
+    <div className="space-y-8">
       {/* Header */}
-      <div className="relative z-10">
-        <TextGenerateEffect
-          words="What should your assistant handle?"
-          className="text-2xl md:text-3xl text-foreground"
-          duration={0.3}
-        />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          What should your assistant handle?
+        </h1>
         <p className="mt-2 text-muted-foreground">
           {industryPreset
             ? `Common tasks for ${industryPreset.label.toLowerCase()} businesses`
@@ -273,69 +252,65 @@ export function CapabilitiesStep() {
       </div>
 
       {/* Core capabilities */}
-      <div className="relative z-10 space-y-4">
-        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          <div className="h-1 w-4 rounded-full bg-primary" />
-          Core Features
-        </h2>
-        <BentoGrid className="grid-cols-1 md:grid-cols-2 md:auto-rows-auto gap-4">
-          {coreCapabilities.map(renderCapabilityCard)}
-        </BentoGrid>
-      </div>
+      {coreCapabilities.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="h-1 w-4 rounded-full bg-primary" />
+            Core Features
+          </h2>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {coreCapabilities.map(renderCapabilityCard)}
+          </div>
+        </div>
+      )}
 
       {/* Communication capabilities */}
-      <div className="relative z-10 space-y-4">
-        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          <div className="h-1 w-4 rounded-full bg-blue-500" />
-          Communication
-        </h2>
-        <BentoGrid className="grid-cols-1 md:grid-cols-2 md:auto-rows-auto gap-4">
-          {communicationCapabilities.map(renderCapabilityCard)}
-        </BentoGrid>
-      </div>
+      {communicationCapabilities.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="h-1 w-4 rounded-full bg-blue-500" />
+            Communication
+          </h2>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {communicationCapabilities.map(renderCapabilityCard)}
+          </div>
+        </div>
+      )}
 
       {/* Advanced capabilities */}
-      <div className="relative z-10 space-y-4">
-        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          <div className="h-1 w-4 rounded-full bg-amber-500" />
-          Advanced
-        </h2>
-        <BentoGrid className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3 md:auto-rows-auto gap-4">
-          {advancedCapabilities.map(renderCapabilityCard)}
-        </BentoGrid>
-      </div>
+      {advancedCapabilities.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="h-1 w-4 rounded-full bg-amber-500" />
+            Advanced
+          </h2>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {advancedCapabilities.map(renderCapabilityCard)}
+          </div>
+        </div>
+      )}
 
-      {/* Selection summary with shine border */}
+      {/* Selection summary */}
       {state.capabilities.length > 0 && (
-        <div className="relative z-10">
-          <ShineBorder
-            borderRadius={12}
-            borderWidth={1}
-            duration={12}
-            color="#22c55e"
-            className="w-full min-w-full bg-muted/30"
-          >
-            <p className="text-sm">
-              <span className="font-bold text-primary">
-                {state.capabilities.length}
-              </span>{" "}
-              {state.capabilities.length === 1 ? "capability" : "capabilities"}{" "}
-              selected - your assistant is ready to help with{" "}
-              {state.capabilities
-                .map((c) =>
-                  CAPABILITY_OPTIONS.find(
-                    (o) => o.id === c,
-                  )?.label.toLowerCase(),
-                )
-                .filter(Boolean)
-                .join(", ")}
-            </p>
-          </ShineBorder>
+        <div className="rounded-xl border bg-muted/30 p-4">
+          <p className="text-sm">
+            <span className="font-bold text-primary">
+              {state.capabilities.length}
+            </span>{" "}
+            {state.capabilities.length === 1 ? "capability" : "capabilities"}{" "}
+            selected - your assistant is ready to help with{" "}
+            {state.capabilities
+              .map((c) =>
+                CAPABILITY_OPTIONS.find((o) => o.id === c)?.label.toLowerCase(),
+              )
+              .filter(Boolean)
+              .join(", ")}
+          </p>
         </div>
       )}
 
       {/* Navigation buttons */}
-      <div className="relative z-10 flex justify-between pt-4">
+      <div className="flex justify-between pt-4">
         <Button variant="outline" onClick={handleBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
@@ -344,7 +319,6 @@ export function CapabilitiesStep() {
           onClick={handleContinue}
           disabled={!canContinue || isSubmitting}
           size="lg"
-          className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-black shadow-sm transition-all hover:bg-white/90 active:scale-[0.98]"
         >
           {isSubmitting ? "Saving..." : "Continue"}
         </Button>

@@ -24,6 +24,8 @@ import { phoneConfigRoutes } from "./routes/phone-config.js";
 import { escalationRoutes } from "./routes/escalation.js";
 import { promotionsRoutes } from "./routes/promotions.js";
 import { pendingBookingsRoutes } from "./routes/pending-bookings.js";
+import { dealsRoutes } from "./routes/deals.js";
+import { tasksRoutes } from "./routes/tasks.js";
 import { internalRoutes } from "./routes/internal.js";
 import { initTenantCache } from "./services/database/tenant-cache.js";
 import { initDatabase, closePool } from "./services/database/client.js";
@@ -119,6 +121,8 @@ app.route("/api/phone", phoneConfigRoutes);
 app.route("/api/escalation", escalationRoutes);
 app.route("/api/promotions", promotionsRoutes);
 app.route("/api/pending-bookings", pendingBookingsRoutes);
+app.route("/api/deals", dealsRoutes);
+app.route("/api/tasks", tasksRoutes);
 
 // Root
 app.get("/", (c) => {

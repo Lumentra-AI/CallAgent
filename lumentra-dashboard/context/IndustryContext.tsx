@@ -3,7 +3,12 @@
 import { createContext, useContext, type ReactNode } from "react";
 import { useTenant } from "./TenantContext";
 import { INDUSTRY_PRESETS } from "@/lib/industryPresets";
-import type { IndustryPreset, IndustryType } from "@/types";
+import type {
+  IndustryPreset,
+  IndustryType,
+  PipelineStageConfig,
+  IndustryTaskType,
+} from "@/types";
 
 // Fallback preset for unknown industries
 const DEFAULT_INDUSTRY: IndustryType = "restaurant";
@@ -28,7 +33,13 @@ interface IndustryContextValue {
   customerPluralLabel: string;
   availabilityLabel: string;
   revenueLabel: string;
+  dealLabel: string;
+  dealPluralLabel: string;
   industryLabel: string;
+
+  // Pipeline & task config
+  pipelineStages: PipelineStageConfig[];
+  taskTypes: IndustryTaskType[];
 
   // Loading state
   isLoading: boolean;
@@ -86,7 +97,11 @@ export function IndustryProvider({ children }: IndustryProviderProps) {
     customerPluralLabel: terminology.customerPlural,
     availabilityLabel: terminology.availability,
     revenueLabel: terminology.revenue,
+    dealLabel: terminology.deal || "Deal",
+    dealPluralLabel: terminology.dealPlural || "Deals",
     industryLabel: preset.label,
+    pipelineStages: preset.pipeline?.stages || [],
+    taskTypes: preset.taskTypes || [],
     isLoading: tenantLoading,
     isSupported: SUPPORTED_INDUSTRIES.has(industry),
   };

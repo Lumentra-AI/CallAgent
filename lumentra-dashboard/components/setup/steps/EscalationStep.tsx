@@ -6,7 +6,6 @@ import { ArrowLeft, Plus, X, GripVertical, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
 import type {
@@ -14,11 +13,6 @@ import type {
   TransferType,
   NoAnswerBehavior,
 } from "@/types";
-
-// Aceternity & MagicUI components
-import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
-import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShineBorder } from "@/components/magicui/shine-border";
 
 const DEFAULT_TRIGGERS = [
   { id: "caller_asks_for_person", label: "Caller asks for a person" },
@@ -193,16 +187,12 @@ export function EscalationStep() {
   };
 
   return (
-    <div className="relative space-y-8">
-      <SpotlightNew className="opacity-20" />
-
+    <div className="space-y-8">
       {/* Header */}
-      <div className="relative z-10">
-        <TextGenerateEffect
-          words="Sometimes callers need to speak with a person"
-          className="text-2xl md:text-3xl text-foreground"
-          duration={0.3}
-        />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Sometimes callers need to speak with a person
+        </h1>
         <p className="mt-2 text-muted-foreground">
           Set up who to contact when your assistant needs human help
         </p>
@@ -234,7 +224,7 @@ export function EscalationStep() {
           </button>
         ) : (
           <div className="space-y-4">
-            {contacts.map((contact, index) => (
+            {contacts.map((contact) => (
               <div
                 key={contact.id}
                 className={cn(
@@ -497,7 +487,7 @@ export function EscalationStep() {
       </div>
 
       {/* Navigation buttons */}
-      <div className="relative z-10 flex justify-between pt-4">
+      <div className="flex justify-between pt-4">
         <Button variant="outline" onClick={handleBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
@@ -506,7 +496,6 @@ export function EscalationStep() {
           onClick={handleContinue}
           disabled={!canContinue || isSubmitting}
           size="lg"
-          className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-black shadow-sm transition-all hover:bg-white/90 active:scale-[0.98]"
         >
           {isSubmitting ? "Saving..." : "Continue"}
         </Button>

@@ -113,6 +113,41 @@ export {
   getChannelIcon,
 } from "./notifications";
 
+// Deals API
+export {
+  getPipeline,
+  searchDeals,
+  getDeal,
+  createDeal,
+  updateDeal,
+  updateDealStage,
+  archiveDeal,
+  type Deal,
+  type DealStage,
+  type PipelineStage,
+  type CreateDealInput,
+  type UpdateDealInput,
+} from "./deals";
+
+// Tasks API
+export {
+  searchTasks,
+  getTaskCounts,
+  getUpcomingTasks,
+  getOverdueTasks,
+  getTask,
+  createTask,
+  updateTask,
+  completeTask,
+  deleteTask,
+  type Task,
+  type TaskType,
+  type TaskPriority,
+  type TaskCounts,
+  type CreateTaskInput,
+  type UpdateTaskInput,
+} from "./tasks";
+
 // Resources API
 export {
   listResources,

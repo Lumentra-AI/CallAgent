@@ -8,17 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
-
-// Aceternity & MagicUI components
-import {
-  CardContainer,
-  CardBody,
-  CardItem,
-} from "@/components/aceternity/3d-card";
-import { WobbleCard } from "@/components/aceternity/wobble-card";
-import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
-import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShineBorder } from "@/components/magicui/shine-border";
+import { SelectionCard } from "../SelectionCard";
 
 type Personality = "professional" | "friendly" | "efficient";
 
@@ -174,16 +164,12 @@ export function AssistantStep() {
   };
 
   return (
-    <div className="relative space-y-8">
-      <SpotlightNew className="opacity-20" />
-
+    <div className="space-y-8">
       {/* Header */}
-      <div className="relative z-10">
-        <TextGenerateEffect
-          words="Give your assistant an identity"
-          className="text-2xl md:text-3xl text-foreground"
-          duration={0.3}
-        />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Give your assistant an identity
+        </h1>
         <p className="mt-2 text-muted-foreground">
           This is how callers will experience your business
         </p>
@@ -192,29 +178,20 @@ export function AssistantStep() {
       {/* Audio element for voice preview */}
       <audio ref={audioRef} onEnded={handleAudioEnded} className="hidden" />
 
-      {/* Assistant name with shine border */}
-      <div className="relative z-10 space-y-3">
+      {/* Assistant name */}
+      <div className="space-y-3">
         <Label htmlFor="assistant-name">Assistant name</Label>
-        <ShineBorder
-          borderRadius={8}
-          borderWidth={1}
-          duration={10}
-          color={name ? "#6366f1" : "#64748b"}
-          className="w-full min-w-full bg-background p-0"
-        >
-          <Input
-            id="assistant-name"
-            placeholder="Sarah"
-            value={name}
-            onChange={(e) =>
-              dispatch({
-                type: "SET_ASSISTANT_DATA",
-                payload: { name: e.target.value },
-              })
-            }
-            className="border-0 bg-transparent focus-visible:ring-0"
-          />
-        </ShineBorder>
+        <Input
+          id="assistant-name"
+          placeholder="Sarah"
+          value={name}
+          onChange={(e) =>
+            dispatch({
+              type: "SET_ASSISTANT_DATA",
+              payload: { name: e.target.value },
+            })
+          }
+        />
         {personality && (
           <div className="flex flex-wrap gap-2">
             <span className="text-xs text-muted-foreground">Suggestions:</span>
@@ -237,8 +214,8 @@ export function AssistantStep() {
         )}
       </div>
 
-      {/* Voice selection with 3D cards */}
-      <div className="relative z-10 space-y-4">
+      {/* Voice selection */}
+      <div className="space-y-4">
         <Label className="flex items-center gap-2">
           <Volume2 className="h-4 w-4" />
           Voice
@@ -249,140 +226,103 @@ export function AssistantStep() {
             const isPlaying = playingVoice === voiceOption.id;
 
             return (
-              <CardContainer
+              <button
                 key={voiceOption.id}
-                containerClassName="py-4"
-                className="inter-var"
+                type="button"
+                onClick={() =>
+                  dispatch({
+                    type: "SET_ASSISTANT_DATA",
+                    payload: { voice: voiceOption.id },
+                  })
+                }
+                className={cn(
+                  "rounded-xl border p-4 text-left transition-colors",
+                  isSelected
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-muted-foreground/40",
+                )}
               >
-                <CardBody
-                  className={cn(
-                    "relative h-auto w-full rounded-xl border p-4 transition-colors",
-                    isSelected
-                      ? "border-primary bg-primary/5 shadow-lg shadow-primary/20"
-                      : "border-border bg-card hover:border-primary/50",
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      dispatch({
-                        type: "SET_ASSISTANT_DATA",
-                        payload: { voice: voiceOption.id },
-                      })
-                    }
-                    className="flex h-full w-full flex-col items-center text-center"
+                <div className="flex items-center gap-3">
+                  <div
+                    className={cn(
+                      "flex h-12 w-12 shrink-0 items-center justify-center rounded-full",
+                      voiceOption.type === "female"
+                        ? "bg-gradient-to-br from-pink-400 to-rose-600"
+                        : "bg-gradient-to-br from-blue-400 to-indigo-600",
+                    )}
                   >
-                    <CardItem translateZ={30} className="w-full">
-                      {isSelected && (
-                        <div className="absolute right-2 top-2">
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary">
-                            <Check className="h-4 w-4 text-primary-foreground" />
-                          </div>
-                        </div>
+                    <User className="h-6 w-6 text-white" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold">{voiceOption.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {voiceOption.tone}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        playPreview(voiceOption);
+                      }}
+                      className={cn(
+                        "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                        isPlaying
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted hover:bg-primary/20",
                       )}
-                      <div
-                        className={cn(
-                          "mx-auto flex h-16 w-16 items-center justify-center rounded-full",
-                          voiceOption.type === "female"
-                            ? "bg-gradient-to-br from-pink-400 to-rose-600"
-                            : "bg-gradient-to-br from-blue-400 to-indigo-600",
-                        )}
-                      >
-                        <User className="h-8 w-8 text-white" />
+                    >
+                      {isPlaying ? (
+                        <Pause className="h-4 w-4" />
+                      ) : (
+                        <Play className="h-4 w-4" />
+                      )}
+                    </button>
+                    {isSelected && (
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
+                        <Check className="h-3 w-3 text-primary-foreground" />
                       </div>
-                    </CardItem>
-                    <CardItem translateZ={20} className="mt-4">
-                      <p className="text-lg font-semibold">
-                        {voiceOption.name}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {voiceOption.tone}
-                      </p>
-                    </CardItem>
-                    <CardItem translateZ={40} className="mt-4">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          playPreview(voiceOption);
-                        }}
-                        className={cn(
-                          "flex h-10 w-10 items-center justify-center rounded-full transition-all",
-                          isPlaying
-                            ? "bg-primary text-primary-foreground scale-110"
-                            : "bg-muted hover:bg-primary/20 hover:scale-105",
-                        )}
-                      >
-                        {isPlaying ? (
-                          <Pause className="h-5 w-5" />
-                        ) : (
-                          <Play className="h-5 w-5" />
-                        )}
-                      </button>
-                    </CardItem>
-                  </button>
-                </CardBody>
-              </CardContainer>
+                    )}
+                  </div>
+                </div>
+              </button>
             );
           })}
         </div>
       </div>
 
-      {/* Personality selection with wobble cards */}
-      <div className="relative z-10 space-y-4">
+      {/* Personality selection */}
+      <div className="space-y-4">
         <Label>Personality</Label>
         <div className="grid gap-4 md:grid-cols-3">
           {PERSONALITIES.map((p) => {
             const isSelected = personality === p.id;
 
             return (
-              <div key={p.id} className="relative">
-                {isSelected && (
-                  <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-primary via-primary/50 to-primary opacity-75 blur-sm" />
-                )}
-                <WobbleCard
-                  containerClassName={cn(
-                    "min-h-[180px] cursor-pointer relative",
-                    isSelected ? "bg-primary" : p.color,
-                  )}
-                  className="p-4"
-                >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      dispatch({
-                        type: "SET_ASSISTANT_DATA",
-                        payload: { personality: p.id },
-                      })
-                    }
-                    className="flex h-full w-full flex-col text-left"
-                  >
-                    {isSelected && (
-                      <div className="absolute right-3 top-3">
-                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white">
-                          <Check className="h-4 w-4 text-primary" />
-                        </div>
-                      </div>
-                    )}
-                    <h3 className="text-xl font-bold text-white">{p.label}</h3>
-                    <p className="mt-1 text-sm text-white/70">
-                      {p.description}
-                    </p>
-                    <div className="mt-4 rounded-lg bg-white/10 p-3">
-                      <p className="text-sm italic text-white/90">
-                        {getGreetingExample(p)}
-                      </p>
-                    </div>
-                  </button>
-                </WobbleCard>
-              </div>
+              <SelectionCard
+                key={p.id}
+                selected={isSelected}
+                onClick={() =>
+                  dispatch({
+                    type: "SET_ASSISTANT_DATA",
+                    payload: { personality: p.id },
+                  })
+                }
+                title={p.label}
+                description={p.description}
+              >
+                <div className="mt-3 rounded-lg bg-muted/50 p-3 text-sm italic text-muted-foreground">
+                  {getGreetingExample(p)}
+                </div>
+              </SelectionCard>
             );
           })}
         </div>
       </div>
 
       {/* Navigation buttons */}
-      <div className="relative z-10 flex justify-between pt-4">
+      <div className="flex justify-between pt-4">
         <Button variant="outline" onClick={handleBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
@@ -391,7 +331,6 @@ export function AssistantStep() {
           onClick={handleContinue}
           disabled={!canContinue || isSubmitting}
           size="lg"
-          className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-black shadow-sm transition-all hover:bg-white/90 active:scale-[0.98]"
         >
           {isSubmitting ? "Saving..." : "Continue"}
         </Button>
