@@ -26,16 +26,16 @@ import type { PhoneSetupType } from "@/types";
 
 // Texas area codes first, then common US codes
 const AREA_CODES = [
-  { code: "512", region: "Austin" },
-  { code: "214", region: "Dallas" },
-  { code: "713", region: "Houston" },
-  { code: "210", region: "San Antonio" },
   { code: "817", region: "Fort Worth" },
-  { code: "469", region: "Dallas" },
   { code: "972", region: "Dallas" },
   { code: "281", region: "Houston" },
   { code: "832", region: "Houston" },
   { code: "737", region: "Austin" },
+  { code: "945", region: "Dallas/Denton" },
+  { code: "346", region: "Houston" },
+  { code: "430", region: "East Texas" },
+  { code: "903", region: "East Texas" },
+  { code: "936", region: "SE Texas" },
 ];
 
 const CARRIERS = [
@@ -229,7 +229,13 @@ export function PhoneStep() {
       const data = await get<{ numbers: string[] }>(
         `/api/phone/available?areaCode=${areaCode}`,
       );
-      setAvailableNumbers(data.numbers || []);
+      const nums = data.numbers || [];
+      setAvailableNumbers(nums);
+      if (nums.length === 0) {
+        setNumberSearchError(
+          "No numbers available for this area code. Try a different one.",
+        );
+      }
     } catch {
       setAvailableNumbers([]);
       setNumberSearchError(

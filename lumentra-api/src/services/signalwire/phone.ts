@@ -73,7 +73,6 @@ export async function searchAvailableNumbers(
     if (areaCode) {
       params.set("AreaCode", areaCode);
     }
-    params.set("SmsEnabled", "true");
     params.set("VoiceEnabled", "true");
 
     const response = await signalwireRequest(
@@ -195,9 +194,7 @@ export async function releaseNumber(
 /**
  * Get details about a phone number
  */
-export async function getNumberDetails(
-  sid: string,
-): Promise<{
+export async function getNumberDetails(sid: string): Promise<{
   number?: { phoneNumber: string; status: string };
   error?: string;
 }> {
