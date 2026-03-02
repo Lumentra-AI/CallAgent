@@ -70,13 +70,11 @@ export async function createSipEndpoint(
 
     // Create a SIP endpoint on SignalWire
     // This uses the Relay REST API for domain app management
-    const response = await relayRequest("/sip_endpoints", "POST", {
+    const response = await relayRequest("/endpoints/sip", "POST", {
       username,
       password,
       caller_id: username,
-      // Send calls to our voice webhook for processing
-      send_as: "username",
-      ciphers: ["AEAD_AES_256_GCM_8", "AES_256_CM_HMAC_SHA1_80"],
+      encryption: "optional",
       codecs: ["PCMU", "PCMA", "OPUS"],
     });
 
@@ -119,7 +117,7 @@ export async function configureSipRouting(
   webhookUrl: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const response = await relayRequest(`/sip_endpoints/${endpointId}`, "PUT", {
+    const response = await relayRequest(`/endpoints/sip/${endpointId}`, "PUT", {
       // Route incoming SIP calls to our voice webhook
       call_handler: "laml_webhooks",
       call_request_url: webhookUrl,
@@ -147,7 +145,7 @@ export async function getSipEndpointStatus(
   endpointId: string,
 ): Promise<{ registered: boolean; error?: string }> {
   try {
-    const response = await relayRequest(`/sip_endpoints/${endpointId}`);
+    const response = await relayRequest(`/endpoints/sip/${endpointId}`);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -175,7 +173,7 @@ export async function deleteSipEndpoint(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const response = await relayRequest(
-      `/sip_endpoints/${endpointId}`,
+      `/endpoints/sip/${endpointId}`,
       "DELETE",
     );
 
