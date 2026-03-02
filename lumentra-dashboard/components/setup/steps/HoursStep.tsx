@@ -91,11 +91,6 @@ const AFTER_HOURS_OPTIONS = [
     description: "Skip the conversation, just collect contact info",
   },
   {
-    value: "voicemail",
-    label: "Send to voicemail",
-    description: "Play a message and record their voicemail",
-  },
-  {
     value: "forward_emergency",
     label: "Forward to emergency contact",
     description: "Connect urgent calls to your escalation contact",

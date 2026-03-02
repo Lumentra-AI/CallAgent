@@ -70,11 +70,6 @@ const NO_ANSWER_OPTIONS: {
     label: "Offer to try again later",
     description: "Ask caller if they want a callback",
   },
-  {
-    value: "voicemail",
-    label: "Send to voicemail",
-    description: "Let caller leave a voice message",
-  },
 ];
 
 const AVAILABILITY_OPTIONS = [
