@@ -411,28 +411,41 @@ setupRoutes.put("/step/:step", async (c) => {
       }
 
       case "assistant": {
-        const updateData: Record<string, unknown> = {
-          setup_step: getNextStep(step) || step,
-          updated_at: new Date().toISOString(),
-        };
+        const personality =
+          body.agent_personality != null
+            ? JSON.stringify(
+                typeof body.agent_personality === "string"
+                  ? { tone: body.agent_personality }
+                  : body.agent_personality,
+              )
+            : null;
+        const voiceConfig =
+          body.voice_config != null ? JSON.stringify(body.voice_config) : null;
 
-        if (body.agent_name) updateData.agent_name = body.agent_name;
-        if (body.agent_personality)
-          updateData.agent_personality = JSON.stringify(
-            typeof body.agent_personality === "string"
-              ? { tone: body.agent_personality }
-              : body.agent_personality,
-          );
-        if (body.voice_config)
-          updateData.voice_config = JSON.stringify(body.voice_config);
-        if (body.greeting_standard)
-          updateData.greeting_standard = body.greeting_standard;
-        if (body.greeting_after_hours !== undefined)
-          updateData.greeting_after_hours = body.greeting_after_hours;
-        if (body.greeting_returning !== undefined)
-          updateData.greeting_returning = body.greeting_returning;
-
-        await updateOne("tenants", updateData, { id: tenantId });
+        await queryOne(
+          `UPDATE tenants SET
+            setup_step = $1,
+            updated_at = $2,
+            agent_name = COALESCE($3, agent_name),
+            agent_personality = COALESCE($4::jsonb, agent_personality),
+            voice_config = COALESCE($5::jsonb, voice_config),
+            greeting_standard = COALESCE($6, greeting_standard),
+            greeting_after_hours = COALESCE($7, greeting_after_hours),
+            greeting_returning = COALESCE($8, greeting_returning)
+          WHERE id = $9
+          RETURNING *`,
+          [
+            getNextStep(step) || step,
+            new Date().toISOString(),
+            body.agent_name || null,
+            personality,
+            voiceConfig,
+            body.greeting_standard || null,
+            body.greeting_after_hours ?? null,
+            body.greeting_returning ?? null,
+            tenantId,
+          ],
+        );
         break;
       }
 
