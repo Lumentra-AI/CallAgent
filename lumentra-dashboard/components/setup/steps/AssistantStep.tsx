@@ -195,7 +195,7 @@ export function AssistantStep() {
         {personality && (
           <div className="flex flex-wrap gap-2">
             <span className="text-xs text-muted-foreground">Suggestions:</span>
-            {NAME_SUGGESTIONS[personality].map((suggestion) => (
+            {(NAME_SUGGESTIONS[personality] ?? []).map((suggestion) => (
               <button
                 key={suggestion}
                 type="button"

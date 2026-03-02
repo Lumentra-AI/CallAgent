@@ -434,11 +434,26 @@ function mapApiToState(data: ApiProgressResponse): Partial<SetupState> {
     assistantData: {
       name: data.data.agent_name || "",
       voice: data.data.voice_config?.voiceId || "female_professional",
-      personality:
-        (data.data.agent_personality as
-          | "professional"
-          | "friendly"
-          | "efficient") || "professional",
+      personality: (() => {
+        const raw = data.data.agent_personality;
+        // DB stores JSONB {tone: "professional", ...} -- extract tone string
+        if (raw && typeof raw === "object" && "tone" in raw) {
+          const tone = (raw as Record<string, unknown>).tone;
+          if (
+            tone === "professional" ||
+            tone === "friendly" ||
+            tone === "efficient"
+          )
+            return tone;
+        }
+        if (
+          typeof raw === "string" &&
+          ["professional", "friendly", "efficient"].includes(raw)
+        ) {
+          return raw as "professional" | "friendly" | "efficient";
+        }
+        return "professional";
+      })(),
     },
     phoneData: {
       setupType: data.data.phone_config?.setup_type || null,
