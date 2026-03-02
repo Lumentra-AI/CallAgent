@@ -36,9 +36,20 @@ export interface Tenant {
   // Voice pipeline routing
   voice_pipeline: "custom" | "livekit";
 
+  // Chat widget
+  chat_widget_enabled: boolean;
+  chat_config: ChatWidgetConfig;
+
   // Status
   is_active: boolean;
   subscription_tier: "starter" | "professional" | "enterprise";
+}
+
+export interface ChatWidgetConfig {
+  theme_color?: string;
+  greeting?: string;
+  position?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
+  allowed_origins?: string[];
 }
 
 export interface AgentPersonality {

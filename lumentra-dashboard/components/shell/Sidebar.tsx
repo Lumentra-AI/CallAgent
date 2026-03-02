@@ -89,6 +89,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Contacts", href: "/contacts", icon: Users },
     { label: "Calls", href: "/calls", icon: Phone },
+    { label: "Chats", href: "/chats", icon: MessageSquare },
     { label: "Escalations", href: "/escalations", icon: PhoneForwarded },
     // Conditionally add Pending for assisted mode
     ...(isAssistedMode

@@ -100,6 +100,16 @@ const ALL_TABS: TabConfig[] = [
     href: "/settings/phone",
   },
   {
+    id: "chatbot",
+    label: "Chat Widget",
+    icon: MessageSquare,
+    description: "Website chat configuration",
+    minAccessTier: "admin",
+    requiredPermission: "manage_agent",
+    category: "business",
+    href: "/settings/chatbot",
+  },
+  {
     id: "billing",
     label: "Billing",
     icon: CreditCard,

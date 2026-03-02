@@ -77,6 +77,13 @@ export interface TenantDetails extends TenantListItem {
   assisted_mode?: boolean;
   after_hours_behavior?: string;
   transfer_behavior?: { type: string; no_answer: string };
+  chat_widget_enabled?: boolean;
+  chat_config?: {
+    theme_color?: string;
+    greeting?: string;
+    position?: string;
+    allowed_origins?: string[];
+  };
   userRole?: string;
 }
 

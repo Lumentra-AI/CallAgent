@@ -590,6 +590,7 @@ export type SettingsTab =
   | "phone"
   | "capabilities"
   | "promotions"
+  | "chatbot"
   // Admin only tabs
   | "pricing"
   | "integrations"

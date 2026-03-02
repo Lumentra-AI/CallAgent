@@ -19,6 +19,7 @@ import {
   LogOut,
   User,
   ArrowRight,
+  MessageSquare,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -81,6 +82,14 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         action: navigate("/calls"),
         category: "navigation",
         keywords: ["phone", "history", "logs"],
+      },
+      {
+        id: "nav-chats",
+        label: "Go to Chats",
+        icon: MessageSquare,
+        action: navigate("/chats"),
+        category: "navigation",
+        keywords: ["chat", "widget", "messages", "conversations"],
       },
       {
         id: "nav-calendar",

@@ -17,6 +17,7 @@ import { resourcesRoutes } from "./routes/resources.js";
 import { voicemailRoutes } from "./routes/voicemails.js";
 import trainingDataRoutes from "./routes/training-data.js";
 import { chatRoutes } from "./routes/chat.js";
+import { chatSessionsRoutes } from "./routes/chat-sessions.js";
 import { setupRoutes } from "./routes/setup.js";
 import { capabilitiesRoutes } from "./routes/capabilities.js";
 import { integrationsRoutes } from "./routes/integrations.js";
@@ -123,6 +124,7 @@ app.route("/api/promotions", promotionsRoutes);
 app.route("/api/pending-bookings", pendingBookingsRoutes);
 app.route("/api/deals", dealsRoutes);
 app.route("/api/tasks", tasksRoutes);
+app.route("/api/chat-sessions", chatSessionsRoutes);
 
 // Root
 app.get("/", (c) => {

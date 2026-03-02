@@ -40,10 +40,22 @@
         const response = await fetch(
           `${this.apiUrl}/api/chat/config/${this.tenantId}`,
         );
+
+        // If 404, widget is disabled for this tenant - silently exit
+        if (response.status === 404) {
+          console.log("[LumentraChat] Widget not enabled for this tenant");
+          return;
+        }
+
         if (!response.ok) {
           throw new Error("Failed to load chat configuration");
         }
         this.config = await response.json();
+
+        // Server config overrides constructor defaults
+        if (this.config.position) {
+          this.position = this.config.position;
+        }
 
         // Inject styles
         this.injectStyles();
@@ -438,6 +450,7 @@
               Object.keys(this.visitorInfo).length > 0
                 ? this.visitorInfo
                 : undefined,
+            source_url: window.location.href,
           }),
         });
 

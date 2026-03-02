@@ -20,6 +20,7 @@ import {
 } from "../services/chat/conversation-store.js";
 import { getTenantById } from "../services/database/tenant-cache.js";
 import { findOrCreateByPhone } from "../services/contacts/contact-service.js";
+import { rateLimit } from "../middleware/rate-limit.js";
 import type { ToolExecutionContext } from "../types/voice.js";
 import {
   chatWithFallback,
@@ -44,6 +45,16 @@ chatRoutes.use(
     },
     allowMethods: ["GET", "POST", "OPTIONS"],
     allowHeaders: ["Content-Type", "X-Tenant-ID"],
+  }),
+);
+
+// Rate limit chat message endpoint: 20 messages/min per IP
+chatRoutes.use(
+  "/",
+  rateLimit({
+    windowMs: 60000,
+    max: 20,
+    message: "Too many messages. Please wait a moment before sending more.",
   }),
 );
 
@@ -111,6 +122,7 @@ const chatRequestSchema = z.object({
     })
     .optional(),
   marketing_mode: z.boolean().optional(),
+  source_url: z.string().max(2048).optional(),
 });
 
 chatRoutes.post("/", async (c) => {
@@ -123,8 +135,14 @@ chatRoutes.post("/", async (c) => {
       return c.json({ error: firstError }, 400);
     }
 
-    const { tenant_id, session_id, message, visitor_info, marketing_mode } =
-      parsed.data;
+    const {
+      tenant_id,
+      session_id,
+      message,
+      visitor_info,
+      marketing_mode,
+      source_url,
+    } = parsed.data;
 
     // Get tenant configuration
     const tenant = await getTenantById(tenant_id);
@@ -132,12 +150,17 @@ chatRoutes.post("/", async (c) => {
       return c.json({ error: "Invalid tenant" }, 404);
     }
 
-    // Get or create session (ensures session exists for history operations)
-    getOrCreateSession(session_id, tenant_id);
+    // Check if chat widget is enabled (skip for marketing mode)
+    if (!marketing_mode && !tenant.chat_widget_enabled) {
+      return c.json({ error: "Chat widget is not enabled" }, 403);
+    }
+
+    // Get or create session (persisted to DB)
+    await getOrCreateSession(session_id, tenant_id, source_url);
 
     // Update visitor info if provided
     if (visitor_info) {
-      updateVisitorInfo(session_id, visitor_info);
+      await updateVisitorInfo(session_id, visitor_info);
     }
 
     // Build system prompt - use Lumentra marketing prompt if in marketing mode
@@ -155,13 +178,14 @@ chatRoutes.post("/", async (c) => {
         );
 
     // Get conversation history
-    const history = getConversationHistory(session_id);
+    const history = await getConversationHistory(session_id);
 
     // Build context for tool execution
+    const currentVisitorInfo = await getVisitorInfo(session_id);
     const context: ToolExecutionContext & { sessionId: string } = {
       tenantId: tenant_id,
       callSid: session_id,
-      callerPhone: visitor_info?.phone || getVisitorInfo(session_id)?.phone,
+      callerPhone: visitor_info?.phone || currentVisitorInfo?.phone,
       sessionId: session_id,
     };
 
@@ -174,18 +198,18 @@ chatRoutes.post("/", async (c) => {
     );
 
     // Save to history
-    saveToHistory(session_id, message, chatResult.text);
+    await saveToHistory(session_id, message, chatResult.text);
 
     // Create/update contact if we have contact info
-    const currentVisitor = getVisitorInfo(session_id);
-    if (currentVisitor?.phone || currentVisitor?.email) {
+    const latestVisitor = await getVisitorInfo(session_id);
+    if (latestVisitor?.phone || latestVisitor?.email) {
       try {
         await findOrCreateByPhone(
           tenant_id,
-          currentVisitor.phone || currentVisitor.email || "",
+          latestVisitor.phone || latestVisitor.email || "",
           {
-            name: currentVisitor.name,
-            email: currentVisitor.email,
+            name: latestVisitor.name,
+            email: latestVisitor.email,
             source: "web",
           },
         );
@@ -230,6 +254,7 @@ interface WidgetConfig {
   greeting: string;
   industry: string;
   theme_color: string;
+  position: string;
 }
 
 chatRoutes.get("/config/:tenant_id", async (c) => {
@@ -241,16 +266,25 @@ chatRoutes.get("/config/:tenant_id", async (c) => {
       return c.json({ error: "Tenant not found" }, 404);
     }
 
+    // Return 404 if widget is disabled -- widget silently exits
+    if (!tenant.chat_widget_enabled) {
+      return c.json({ error: "Chat widget not enabled" }, 404);
+    }
+
+    const chatConfig = tenant.chat_config || {};
+
     const config: WidgetConfig = {
       agent_name: tenant.agent_name || "Assistant",
       business_name: tenant.business_name,
       greeting:
+        chatConfig.greeting ||
         tenant.greeting_standard
           ?.replace(/{businessName}/g, tenant.business_name)
           .replace(/{agentName}/g, tenant.agent_name || "Assistant") ||
         `Hi! I'm ${tenant.agent_name || "here"} to help you with ${tenant.business_name}. How can I assist you today?`,
       industry: tenant.industry,
-      theme_color: "#6366f1",
+      theme_color: chatConfig.theme_color || "#6366f1",
+      position: chatConfig.position || "bottom-right",
     };
 
     return c.json(config);
@@ -264,12 +298,13 @@ chatRoutes.get("/config/:tenant_id", async (c) => {
 // GET /api/chat/health - Health check with provider status
 // ============================================================================
 
-chatRoutes.get("/health", (c) => {
+chatRoutes.get("/health", async (c) => {
   const providers = getProviderStatus();
+  const sessions = await getSessionCount();
   return c.json({
     status: "ok",
     providers,
-    sessions: getSessionCount(),
+    sessions,
     timestamp: new Date().toISOString(),
   });
 });
