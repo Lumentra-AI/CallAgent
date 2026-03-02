@@ -418,7 +418,11 @@ setupRoutes.put("/step/:step", async (c) => {
 
         if (body.agent_name) updateData.agent_name = body.agent_name;
         if (body.agent_personality)
-          updateData.agent_personality = body.agent_personality;
+          updateData.agent_personality = JSON.stringify(
+            typeof body.agent_personality === "string"
+              ? { tone: body.agent_personality }
+              : body.agent_personality,
+          );
         if (body.voice_config)
           updateData.voice_config = JSON.stringify(body.voice_config);
         if (body.greeting_standard)
