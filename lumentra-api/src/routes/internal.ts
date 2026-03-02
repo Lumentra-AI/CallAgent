@@ -96,6 +96,7 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
     escalation_triggers: tenant.escalation_triggers,
     features: tenant.features,
     voice_pipeline: tenant.voice_pipeline,
+    max_call_duration_seconds: t.max_call_duration_seconds ?? 900,
     system_prompt: systemPrompt,
   });
 });

@@ -134,6 +134,13 @@ async def entrypoint(ctx: JobContext):
     # Track call start time for accurate duration
     call_started_at = datetime.now(timezone.utc)
 
+    # Call duration limit: transfer to human when exceeded (default 15 min, min 2 min)
+    max_duration = max(tenant_config.get("max_call_duration_seconds", 900), 120)
+    escalation_phone = tenant_config.get("escalation_phone", "")
+
+    # Duration watchdog: warns agent to wrap up, then transfers to human
+    watchdog_task: asyncio.Task | None = None
+
     # Metrics collection for observability
     usage_collector = metrics.UsageCollector()
 
@@ -143,6 +150,10 @@ async def entrypoint(ctx: JobContext):
         usage_collector.collect(ev.metrics)
 
     async def on_shutdown():
+        # Cancel the duration watchdog if still running
+        if watchdog_task and not watchdog_task.done():
+            watchdog_task.cancel()
+
         summary = usage_collector.get_summary()
         logger.info("Call usage: %s", summary)
 
@@ -165,9 +176,65 @@ async def entrypoint(ctx: JobContext):
 
     ctx.add_shutdown_callback(on_shutdown)
 
+    async def _duration_watchdog():
+        """Enforce max call duration with graceful escalation to human."""
+        try:
+            # Phase 1: Wait until 2 minutes before the limit
+            warn_at = max(max_duration - 120, 0)
+            if warn_at > 0:
+                await asyncio.sleep(warn_at)
+
+            # Nudge the agent to start wrapping up
+            session.generate_reply(
+                instructions="The call has been going on for a while. Start wrapping up the conversation naturally. Ask if there's anything else you can quickly help with."
+            )
+            logger.info("Duration watchdog: wrap-up nudge sent at %ds", warn_at)
+
+            # Phase 2: Wait until 30 seconds before the limit
+            await asyncio.sleep(max(max_duration - warn_at - 30, 30))
+
+            # Final warning: offer transfer to human
+            session.generate_reply(
+                instructions="You need to wrap up now. Politely tell the caller you need to go, and offer to transfer them to a human team member if they need more help."
+            )
+            logger.info("Duration watchdog: final warning sent")
+
+            # Phase 3: Wait the final 30 seconds, then force transfer/end
+            await asyncio.sleep(30)
+
+            logger.warning(
+                "Duration limit reached (%ds) for room %s, initiating transfer",
+                max_duration,
+                ctx.room.name,
+            )
+
+            # Transfer to human if escalation phone is configured
+            if escalation_phone:
+                from tools import _get_sip_participant
+                sip_participant = _get_sip_participant(ctx.room)
+                if sip_participant:
+                    try:
+                        sip_uri = f"sip:{escalation_phone}@sip.signalwire.com"
+                        await sip_participant.transfer_sip_call(sip_uri)
+                        logger.info("Duration limit: transferred to %s", escalation_phone)
+                        return
+                    except Exception as e:
+                        logger.error("Duration limit: transfer failed: %s", e)
+
+            # Fallback: end the call if transfer not possible
+            try:
+                await ctx.delete_room()
+                logger.info("Duration limit: room deleted (no escalation phone)")
+            except Exception as e:
+                logger.error("Duration limit: failed to end call: %s", e)
+
+        except asyncio.CancelledError:
+            logger.debug("Duration watchdog cancelled (call ended normally)")
+
     # Start the agent session with echo cancellation for SIP calls
+    agent = LumentraAgent(tenant_config, caller_phone, ctx)
     await session.start(
-        agent=LumentraAgent(tenant_config, caller_phone, ctx),
+        agent=agent,
         room=ctx.room,
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(
@@ -176,6 +243,11 @@ async def entrypoint(ctx: JobContext):
         ),
     )
     # Greeting is handled by LumentraAgent.on_enter()
+
+    # Start the duration watchdog after session is live
+    if max_duration > 0:
+        watchdog_task = asyncio.create_task(_duration_watchdog())
+        logger.info("Duration watchdog started: %ds limit", max_duration)
 
 
 if __name__ == "__main__":

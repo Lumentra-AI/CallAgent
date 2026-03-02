@@ -358,6 +358,7 @@ interface ApiProgressResponse {
     phone_config?: {
       setup_type?: PhoneSetupType;
       phone_number?: string;
+      status?: string;
     };
     timezone?: string;
     operating_hours?: {

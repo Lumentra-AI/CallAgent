@@ -465,18 +465,24 @@ phoneConfigRoutes.post("/forward", async (c) => {
       { id: tenantId },
     );
 
-    // Generate forwarding instructions
-    const instructions = `To forward calls from ${body.business_number} to your AI assistant:
+    // Generate conditional forwarding instructions (busy/no-answer, not unconditional)
+    const instructions = `To forward unanswered calls from ${body.business_number} to your AI assistant:
 
-1. From your business phone, dial *72
-2. When prompted, dial ${numbers[0]}
-3. Wait for confirmation tone or message
-4. Hang up
+1. Contact your carrier or use the codes below to set up conditional forwarding
+2. Forward to: ${numbers[0]}
+
+Common carrier codes (for no-answer forwarding):
+- AT&T: Dial *92, then enter ${numbers[0]}
+- Verizon: Dial *71, then enter ${numbers[0]} (or use My Verizon app)
+- T-Mobile: Dial **61*${numbers[0]}# and press Call
+- Other: Contact your carrier and ask for "conditional call forwarding" (busy + no answer)
 
 To cancel forwarding later:
-- Dial *73 from your business phone
+- AT&T: Dial *93
+- Verizon: Dial *73
+- T-Mobile: Dial ##61#
 
-Note: Forwarding codes may vary by carrier. If *72 doesn't work, contact your phone provider for their specific forwarding instructions.`;
+Note: This only forwards calls you miss -- your phone still rings first.`;
 
     return c.json({
       success: true,
