@@ -340,7 +340,7 @@ export default function BillingTab() {
                 </div>
                 <div>
                   <div className="font-medium text-foreground">
-                    ${invoice.amount.toFixed(2)} {invoice.currency}
+                    ${(invoice.amount ?? 0).toFixed(2)} {invoice.currency}
                   </div>
                   <div className="text-sm text-muted-foreground">
                     {new Date(invoice.createdAt).toLocaleDateString()}

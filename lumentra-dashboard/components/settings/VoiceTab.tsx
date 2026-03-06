@@ -178,8 +178,8 @@ export default function VoiceTab() {
   const provider = voiceConfig.provider;
   const voiceId = voiceConfig.voice_id;
   const voiceName = voiceConfig.voice_name;
-  const speakingRate = voiceConfig.speaking_rate;
-  const pitch = voiceConfig.pitch;
+  const speakingRate = voiceConfig.speaking_rate ?? 1.0;
+  const pitch = voiceConfig.pitch ?? 1.0;
 
   const availableVoices = VOICES[provider] || [];
 

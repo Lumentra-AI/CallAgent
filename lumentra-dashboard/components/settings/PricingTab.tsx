@@ -129,7 +129,7 @@ export default function PricingTab() {
               min="0"
               max="100"
               step="0.5"
-              value={(pricing.taxRate * 100).toFixed(1)}
+              value={((pricing.taxRate ?? 0) * 100).toFixed(1)}
               onChange={(e) =>
                 updatePricing({
                   taxRate: (parseFloat(e.target.value) || 0) / 100,

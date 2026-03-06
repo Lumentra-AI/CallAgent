@@ -507,5 +507,5 @@ export function formatCurrency(
 }
 
 export function formatPercentage(value: number, decimals: number = 1): string {
-  return `${value.toFixed(decimals)}%`;
+  return `${(value ?? 0).toFixed(decimals)}%`;
 }
