@@ -131,7 +131,7 @@ const columns: Column<Notification>[] = [
     key: "body",
     header: "Message",
     render: (notification) => (
-      <span className="text-zinc-400 line-clamp-1 max-w-[300px]">
+      <span className="text-zinc-400 max-w-[500px] whitespace-normal">
         {notification.body}
       </span>
     ),
