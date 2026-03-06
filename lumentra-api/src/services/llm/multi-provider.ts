@@ -576,7 +576,23 @@ async function sendGeminiToolResults(
   }));
 
   const result = await chatSession.sendMessage(functionResponses);
-  return { text: result.response.text(), provider: "gemini" };
+  const response = result.response;
+
+  // Check if Gemini wants to call more tools
+  const functionCalls = response.functionCalls();
+  if (functionCalls && functionCalls.length > 0) {
+    return {
+      text: "",
+      provider: "gemini",
+      toolCalls: functionCalls.map((fc, i) => ({
+        id: `gemini_${Date.now()}_${i}`,
+        name: fc.name,
+        args: fc.args as Record<string, unknown>,
+      })),
+    };
+  }
+
+  return { text: response.text(), provider: "gemini" };
 }
 
 async function sendOpenAIToolResults(
@@ -589,15 +605,38 @@ async function sendOpenAIToolResults(
     options.systemPrompt,
   );
 
+  const openaiTools = toOpenAITools(options.tools);
+
   const response = await openaiClient.chat.completions.create({
     model: openaiModel,
     messages,
+    tools: openaiTools.length > 0 ? openaiTools : undefined,
     temperature: 0.4,
     max_tokens: 500,
   });
 
+  const message = response.choices[0].message;
+
+  if (message.tool_calls && message.tool_calls.length > 0) {
+    return {
+      text: message.content || "",
+      provider: "openai",
+      toolCalls: message.tool_calls.map((tc) => {
+        const toolCall = tc as {
+          id: string;
+          function: { name: string; arguments: string };
+        };
+        return {
+          id: toolCall.id,
+          name: toolCall.function.name,
+          args: JSON.parse(toolCall.function.arguments || "{}"),
+        };
+      }),
+    };
+  }
+
   return {
-    text: response.choices[0].message.content || "",
+    text: message.content || "",
     provider: "openai",
   };
 }
@@ -612,14 +651,42 @@ async function sendGroqToolResults(
     options.systemPrompt,
   );
 
+  const groqTools = toOpenAITools(options.tools);
+
   const response = await groqClient.chat.completions.create({
     model: toolConfig.model,
     messages: messages as Parameters<
       typeof groqClient.chat.completions.create
     >[0]["messages"],
+    tools:
+      groqTools.length > 0
+        ? (groqTools as Parameters<
+            typeof groqClient.chat.completions.create
+          >[0]["tools"])
+        : undefined,
     temperature: 0.4,
     max_tokens: 500,
   });
+
+  const message = response.choices[0].message;
+
+  if (message.tool_calls && message.tool_calls.length > 0) {
+    return {
+      text: message.content || "",
+      provider: "groq",
+      toolCalls: message.tool_calls.map((tc) => {
+        const toolCall = tc as {
+          id: string;
+          function: { name: string; arguments: string };
+        };
+        return {
+          id: toolCall.id,
+          name: toolCall.function.name,
+          args: JSON.parse(toolCall.function.arguments || "{}"),
+        };
+      }),
+    };
+  }
 
   return { text: response.choices[0].message.content || "", provider: "groq" };
 }

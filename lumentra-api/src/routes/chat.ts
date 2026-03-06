@@ -361,7 +361,7 @@ async function chatWithMultiProvider(
 ): Promise<ChatResult> {
   console.log(`[CHAT] Processing message with multi-provider fallback`);
 
-  const options = {
+  let options = {
     userMessage,
     conversationHistory,
     systemPrompt,
@@ -370,14 +370,23 @@ async function chatWithMultiProvider(
 
   // First call - may return tool calls
   let response: LLMResponse = await chatWithFallback(options);
-
   console.log(`[CHAT] Response from ${response.provider}`);
 
-  // Handle tool calls if present
-  if (response.toolCalls && response.toolCalls.length > 0) {
-    console.log(`[CHAT] Executing ${response.toolCalls.length} tool calls`);
+  const allToolResults: Array<{
+    name: string;
+    args: Record<string, unknown>;
+    result: unknown;
+  }> = [];
 
-    const toolResults: Array<{
+  // Loop to handle multi-round tool calls (max 3 rounds)
+  let round = 0;
+  while (response.toolCalls && response.toolCalls.length > 0 && round < 3) {
+    round++;
+    console.log(
+      `[CHAT] Tool round ${round}: executing ${response.toolCalls.length} tool calls`,
+    );
+
+    const roundResults: Array<{
       id: string;
       name: string;
       args: Record<string, unknown>;
@@ -386,31 +395,57 @@ async function chatWithMultiProvider(
 
     for (const tc of response.toolCalls) {
       console.log(`[CHAT] Executing tool: ${tc.name}`, tc.args);
-
       const result = await executeChatTool(tc.name, tc.args, context);
-      toolResults.push({
-        id: tc.id,
-        name: tc.name,
-        args: tc.args,
-        result,
-      });
+      roundResults.push({ id: tc.id, name: tc.name, args: tc.args, result });
+      allToolResults.push({ name: tc.name, args: tc.args, result });
     }
 
-    // Send tool results back to get final response
-    const finalResponse = await sendToolResults(
-      response.provider,
-      options,
-      toolResults,
-    );
+    // Send tool results back -- may return more tool calls
+    response = await sendToolResults(response.provider, options, roundResults);
 
+    // Update options history for next round if needed
+    if (response.toolCalls && response.toolCalls.length > 0) {
+      options = {
+        ...options,
+        conversationHistory: [
+          ...options.conversationHistory,
+          {
+            role: "assistant" as const,
+            content: "",
+            timestamp: new Date(),
+            toolCalls: roundResults.map((r) => ({
+              id: r.id,
+              name: r.name,
+              args: r.args,
+            })),
+          },
+          ...roundResults.map((r) => ({
+            role: "tool" as const,
+            content:
+              typeof r.result === "string"
+                ? r.result
+                : JSON.stringify(r.result),
+            toolName: r.name,
+            toolCallId: r.id,
+            toolResult:
+              typeof r.result === "string"
+                ? r.result
+                : JSON.stringify(r.result),
+            timestamp: new Date(),
+          })),
+        ],
+      };
+    }
+  }
+
+  if (allToolResults.length > 0) {
     return {
-      text: finalResponse.text,
-      provider: finalResponse.provider,
-      toolCalls: toolResults,
+      text: response.text,
+      provider: response.provider,
+      toolCalls: allToolResults,
     };
   }
 
-  // No tool calls, return text response
   return {
     text: response.text,
     provider: response.provider,
