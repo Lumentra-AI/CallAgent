@@ -19,6 +19,7 @@ import type {
 import { query, queryOne, queryAll } from "../database/client.js";
 import { insertOne } from "../database/query-helpers.js";
 import { findOrCreateByPhone } from "../contacts/contact-service.js";
+import { sendBookingConfirmation } from "../notifications/notification-service.js";
 
 // Generate confirmation code
 function generateConfirmationCode(): string {
@@ -84,14 +85,19 @@ export async function executeCheckAvailability(
     );
     const allSlots = [
       "09:00",
+      "09:30",
       "10:00",
+      "10:30",
       "11:00",
-      "12:00",
+      "11:30",
       "13:00",
+      "13:30",
       "14:00",
+      "14:30",
       "15:00",
+      "15:30",
       "16:00",
-      "17:00",
+      "16:30",
     ];
     const availableSlots = allSlots.filter((slot) => !bookedTimes.has(slot));
 
@@ -174,6 +180,35 @@ export async function executeCreateBooking(
 
     const formattedTime = formatTimeForVoice(args.time);
     const formattedDate = formatDateForVoice(args.date);
+
+    // Wire CRM: find/create contact and queue booking confirmation (non-blocking)
+    const callerPhone = args.customer_phone || context.callerPhone;
+    if (callerPhone) {
+      try {
+        const contact = await findOrCreateByPhone(
+          context.tenantId,
+          callerPhone,
+          { name: args.customer_name },
+        );
+        if (contact) {
+          const bookingRecord = await queryOne<any>(
+            "SELECT * FROM bookings WHERE id = $1",
+            [data.id],
+          );
+          if (bookingRecord) {
+            sendBookingConfirmation(
+              context.tenantId,
+              bookingRecord,
+              contact,
+            ).catch((err) =>
+              console.error("[TOOLS] booking confirmation error:", err),
+            );
+          }
+        }
+      } catch (err) {
+        console.error("[TOOLS] CRM contact/notification error:", err);
+      }
+    }
 
     return {
       success: true,
