@@ -25,7 +25,7 @@
       this.tenantId = config.tenantId;
       this.apiUrl = config.apiUrl || DEFAULT_API_URL;
       this.position = config.position || "bottom-right";
-      this.sessionId = this.generateSessionId();
+      this.sessionId = this.loadOrCreateSession();
       this.isOpen = false;
       this.isLoading = false;
       this.config = null;
@@ -63,8 +63,11 @@
         // Create widget DOM
         this.createWidget();
 
-        // Show greeting
-        this.addMessage("assistant", this.config.greeting);
+        // Restore previous messages or show greeting
+        const restored = await this.restoreHistory();
+        if (!restored) {
+          this.addMessage("assistant", this.config.greeting);
+        }
 
         console.log(`[LumentraChat] Widget initialized v${WIDGET_VERSION}`);
       } catch (err) {
@@ -72,12 +75,34 @@
       }
     }
 
-    generateSessionId() {
-      return (
-        "chat_" +
-        Date.now().toString(36) +
-        Math.random().toString(36).substr(2, 9)
-      );
+    loadOrCreateSession() {
+      const storageKey = "lumentra_sid_" + this.tenantId;
+      try {
+        const stored = localStorage.getItem(storageKey);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.expires > Date.now()) {
+            return parsed.id;
+          }
+        }
+      } catch (e) {
+        // localStorage unavailable or corrupt
+      }
+      const id =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : "chat_" +
+            Date.now().toString(36) +
+            Math.random().toString(36).substr(2, 9);
+      try {
+        localStorage.setItem(
+          storageKey,
+          JSON.stringify({ id, expires: Date.now() + 24 * 60 * 60 * 1000 }),
+        );
+      } catch (e) {
+        // localStorage full or unavailable
+      }
+      return id;
     }
 
     injectStyles() {
@@ -335,6 +360,11 @@
       // Create chat container
       const container = document.createElement("div");
       container.className = "lumentra-chat-container hidden";
+      container.setAttribute("role", "dialog");
+      container.setAttribute(
+        "aria-label",
+        `Chat with ${this.config?.agent_name || "Assistant"}`,
+      );
       container.innerHTML = `
         <div class="lumentra-chat-header">
           <div class="lumentra-chat-header-info">
@@ -350,7 +380,7 @@
             </svg>
           </button>
         </div>
-        <div class="lumentra-chat-messages" id="lumentra-messages"></div>
+        <div class="lumentra-chat-messages" id="lumentra-messages" aria-live="polite"></div>
         <div class="lumentra-chat-input-container">
           <input
             type="text"
@@ -423,6 +453,29 @@
       this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
     }
 
+    async restoreHistory() {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        const res = await fetch(
+          `${this.apiUrl}/api/chat/history/${encodeURIComponent(this.sessionId)}`,
+          { signal: controller.signal },
+        );
+        clearTimeout(timeout);
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (!data.messages || data.messages.length === 0) return false;
+        for (const msg of data.messages) {
+          if (msg.role === "user" || msg.role === "assistant") {
+            this.addMessage(msg.role, msg.content);
+          }
+        }
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
     async sendMessage() {
       const message = this.input.value.trim();
       if (!message || this.isLoading) return;
@@ -437,11 +490,15 @@
       this.showTyping();
 
       try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+
         const response = await fetch(`${this.apiUrl}/api/chat`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
+          signal: controller.signal,
           body: JSON.stringify({
             tenant_id: this.tenantId,
             session_id: this.sessionId,
@@ -451,14 +508,22 @@
                 ? this.visitorInfo
                 : undefined,
             source_url: window.location.href,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           }),
         });
 
-        const data = await response.json();
+        clearTimeout(timeout);
+
+        let data;
+        try {
+          data = await response.json();
+        } catch (parseErr) {
+          throw new Error("Invalid response from server");
+        }
 
         this.hideTyping();
 
-        if (response.ok) {
+        if (response.ok && data.response) {
           this.addMessage("assistant", data.response);
 
           // Handle tool results (booking confirmations, etc.)
@@ -474,10 +539,11 @@
         }
       } catch (err) {
         this.hideTyping();
-        this.addMessage(
-          "assistant",
-          "Sorry, I'm having trouble connecting. Please try again.",
-        );
+        const msg =
+          err.name === "AbortError"
+            ? "The request took too long. Please try again."
+            : "Sorry, I'm having trouble connecting. Please try again.";
+        this.addMessage("assistant", msg);
         console.error("[LumentraChat] Network error:", err);
       } finally {
         this.isLoading = false;

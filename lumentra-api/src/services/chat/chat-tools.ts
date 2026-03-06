@@ -4,7 +4,12 @@
 import { SchemaType, type FunctionDeclaration } from "@google/generative-ai";
 import type { ToolExecutionContext } from "../../types/voice.js";
 import { executeTool as executeVoiceTool } from "../gemini/tools.js";
-import { updateVisitorInfo, type VisitorInfo } from "./conversation-store.js";
+import {
+  updateVisitorInfo,
+  getVisitorInfo,
+  type VisitorInfo,
+} from "./conversation-store.js";
+import { insertOne } from "../database/query-helpers.js";
 
 // Shared tool declarations (used by both voice agent and chat widget)
 const sharedFunctions: FunctionDeclaration[] = [
@@ -189,7 +194,7 @@ async function executeCollectContactInfo(
   }
 
   // Update session with visitor info
-  updateVisitorInfo(context.sessionId, info);
+  await updateVisitorInfo(context.sessionId, info);
 
   console.log(
     `[CHAT] Collected contact info for session ${context.sessionId}:`,
@@ -214,6 +219,30 @@ async function executeRequestCallback(
   console.log(
     `[CHAT] Callback requested - Tenant: ${context.tenantId}, Session: ${context.sessionId}, Reason: ${reason}, Time: ${preferredTime || "any"}`,
   );
+
+  // Persist to callback_queue
+  try {
+    const visitor = await getVisitorInfo(context.sessionId);
+    const notes = [
+      `Source: chat session ${context.sessionId}`,
+      preferredTime ? `Preferred time: ${preferredTime}` : null,
+      visitor?.name ? `Name: ${visitor.name}` : null,
+      visitor?.email ? `Email: ${visitor.email}` : null,
+    ]
+      .filter(Boolean)
+      .join(". ");
+
+    await insertOne("callback_queue", {
+      tenant_id: context.tenantId,
+      phone_number: visitor?.phone || context.callerPhone || "chat-no-phone",
+      reason,
+      priority: "medium",
+      status: "pending",
+      notes,
+    });
+  } catch (err) {
+    console.error("[CHAT] Failed to persist callback request:", err);
+  }
 
   return {
     success: true,

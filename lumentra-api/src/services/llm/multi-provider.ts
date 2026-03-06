@@ -139,12 +139,31 @@ function toOpenAIMessages(
     if (msg.role === "user") {
       result.push({ role: "user", content: msg.content });
     } else if (msg.role === "assistant") {
-      result.push({ role: "assistant", content: msg.content });
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        // Assistant message that triggered tool calls
+        result.push({
+          role: "assistant",
+          content: msg.content || null,
+          tool_calls: msg.toolCalls.map((tc) => ({
+            id: tc.id,
+            type: "function" as const,
+            function: {
+              name: tc.name,
+              arguments: JSON.stringify(tc.args || {}),
+            },
+          })),
+        } as ChatCompletionMessageParam);
+      } else {
+        result.push({ role: "assistant", content: msg.content });
+      }
     } else if (msg.role === "tool") {
       result.push({
         role: "tool" as const,
         tool_call_id: msg.toolCallId || "unknown",
-        content: JSON.stringify(msg.toolResult || msg.content),
+        content:
+          typeof msg.toolResult === "string"
+            ? msg.toolResult
+            : JSON.stringify(msg.toolResult || msg.content),
       });
     }
   }
@@ -197,6 +216,23 @@ export interface LLMChatOptions {
   tools: FunctionDeclaration[];
 }
 
+// Timeout wrapper for LLM calls
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`${label} timed out after ${ms}ms`)),
+        ms,
+      ),
+    ),
+  ]);
+}
+
 // Check if provider has initialized client
 function isProviderInitialized(provider: string): boolean {
   if (provider === "gemini") return genAI !== null;
@@ -234,7 +270,7 @@ export async function chatWithFallback(
 
     try {
       console.log(`[LLM] Trying ${provider.name}...`);
-      const result = await provider.fn();
+      const result = await withTimeout(provider.fn(), 15000, provider.name);
       console.log(`[LLM] ${provider.name} succeeded`);
       return result;
     } catch (error: unknown) {
@@ -432,8 +468,23 @@ export async function sendToolResults(
   options: LLMChatOptions,
   toolResults: Array<{ id: string; name: string; result: unknown }>,
 ): Promise<LLMResponse> {
-  // Add tool results to history
+  // Add assistant message with tool_calls, then tool result messages
+  // OpenAI/Groq require: assistant(tool_calls) -> tool(result) sequence
   const updatedHistory = [...options.conversationHistory];
+
+  // Push the assistant message that triggered the tool calls
+  updatedHistory.push({
+    role: "assistant",
+    content: "",
+    timestamp: new Date(),
+    toolCalls: toolResults.map((tr) => ({
+      id: tr.id,
+      name: tr.name,
+      args: {},
+    })),
+  });
+
+  // Push tool result messages
   for (const tr of toolResults) {
     const resultStr =
       typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result);
@@ -467,14 +518,27 @@ export async function sendToolResults(
 
     try {
       if (p === "gemini") {
-        return await sendGeminiToolResults(options, toolResults);
+        return await withTimeout(
+          sendGeminiToolResults(options, toolResults),
+          10000,
+          `${p} tool results`,
+        );
       } else if (p === "openai") {
-        return await sendOpenAIToolResults(updatedOptions);
+        return await withTimeout(
+          sendOpenAIToolResults(updatedOptions),
+          10000,
+          `${p} tool results`,
+        );
       } else {
-        return await sendGroqToolResults(updatedOptions);
+        return await withTimeout(
+          sendGroqToolResults(updatedOptions),
+          10000,
+          `${p} tool results`,
+        );
       }
     } catch (error) {
       console.error(`[LLM] ${p} tool result failed:`, error);
+      markProviderError(p);
     }
   }
 

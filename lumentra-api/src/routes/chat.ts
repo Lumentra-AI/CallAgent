@@ -123,6 +123,7 @@ const chatRequestSchema = z.object({
     .optional(),
   marketing_mode: z.boolean().optional(),
   source_url: z.string().max(2048).optional(),
+  timezone: z.string().max(100).optional(),
 });
 
 chatRoutes.post("/", async (c) => {
@@ -142,7 +143,14 @@ chatRoutes.post("/", async (c) => {
       visitor_info,
       marketing_mode,
       source_url,
+      timezone,
     } = parsed.data;
+
+    // Restrict marketing_mode to Lumentra's own tenant
+    const lumentraTenantId = process.env.LUMENTRA_TENANT_ID;
+    if (marketing_mode && tenant_id !== lumentraTenantId) {
+      return c.json({ error: "Unauthorized marketing mode" }, 403);
+    }
 
     // Get tenant configuration
     const tenant = await getTenantById(tenant_id);
@@ -175,6 +183,7 @@ chatRoutes.post("/", async (c) => {
             verbosity: "balanced",
             empathy: "medium",
           },
+          { timezone },
         );
 
     // Get conversation history
@@ -291,6 +300,25 @@ chatRoutes.get("/config/:tenant_id", async (c) => {
   } catch (err) {
     console.error("[CHAT] Config error:", err);
     return c.json({ error: "Failed to get config" }, 500);
+  }
+});
+
+// ============================================================================
+// GET /api/chat/history/:session_id - Restore chat history for widget
+// ============================================================================
+
+chatRoutes.get("/history/:session_id", async (c) => {
+  try {
+    const sessionId = c.req.param("session_id");
+    if (!sessionId || sessionId.length > 256) {
+      return c.json({ error: "Invalid session" }, 400);
+    }
+
+    const messages = await getConversationHistory(sessionId);
+    return c.json({ messages });
+  } catch (err) {
+    console.error("[CHAT] History error:", err);
+    return c.json({ messages: [] });
   }
 });
 

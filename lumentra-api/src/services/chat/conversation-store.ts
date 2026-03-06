@@ -43,29 +43,19 @@ export async function getOrCreateSession(
   tenantId: string,
   sourceUrl?: string,
 ): Promise<ConversationSession> {
-  // Try to find existing session
-  const existing = await queryOne<ChatSessionRow>(
-    `SELECT * FROM chat_sessions WHERE session_id = $1`,
-    [sessionId],
-  );
-
-  if (existing) {
-    return rowToSession(existing);
-  }
-
-  // Create new session
-  const created = await queryOne<ChatSessionRow>(
+  const row = await queryOne<ChatSessionRow>(
     `INSERT INTO chat_sessions (tenant_id, session_id, source_url)
      VALUES ($1, $2, $3)
+     ON CONFLICT (session_id) DO UPDATE SET last_message_at = NOW()
      RETURNING *`,
     [tenantId, sessionId, sourceUrl || null],
   );
 
-  if (!created) {
+  if (!row) {
     throw new Error("Failed to create chat session");
   }
 
-  return rowToSession(created);
+  return rowToSession(row);
 }
 
 /**
@@ -197,6 +187,38 @@ export async function getSessionCount(): Promise<number> {
      AND last_message_at > NOW() - INTERVAL '30 minutes'`,
   );
 }
+
+/**
+ * Close sessions idle for more than 2 hours
+ */
+export async function closeIdleSessions(): Promise<number> {
+  const result = await queryOne<{ count: string }>(
+    `WITH closed AS (
+       UPDATE chat_sessions
+       SET status = 'closed', closed_at = NOW()
+       WHERE status = 'active'
+         AND last_message_at < NOW() - INTERVAL '2 hours'
+       RETURNING 1
+     )
+     SELECT COUNT(*)::text as count FROM closed`,
+    [],
+  );
+  const count = parseInt(result?.count || "0", 10);
+  if (count > 0) {
+    console.log(`[CHAT] Closed ${count} idle sessions`);
+  }
+  return count;
+}
+
+// Start idle session cleanup interval (10 minutes)
+setInterval(
+  () => {
+    closeIdleSessions().catch((err) =>
+      console.error("[CHAT] Idle cleanup error:", err),
+    );
+  },
+  10 * 60 * 1000,
+);
 
 function rowToSession(row: ChatSessionRow): ConversationSession {
   const visitorInfo: VisitorInfo | undefined =

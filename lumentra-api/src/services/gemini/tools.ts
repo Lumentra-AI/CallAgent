@@ -30,6 +30,28 @@ function generateConfirmationCode(): string {
   return code;
 }
 
+// Validate a date string is YYYY-MM-DD, not in the past, and within 90 days
+function validateBookingDate(date: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return "Please provide a valid date in YYYY-MM-DD format.";
+  }
+  const parsed = new Date(date + "T12:00:00");
+  if (isNaN(parsed.getTime())) {
+    return "That doesn't appear to be a valid date.";
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (parsed < today) {
+    return "That date is in the past. Please choose a future date.";
+  }
+  const maxDate = new Date(today);
+  maxDate.setDate(maxDate.getDate() + 90);
+  if (parsed > maxDate) {
+    return "We can only book up to 90 days in advance. Please choose a closer date.";
+  }
+  return null;
+}
+
 // Tool execution functions
 
 interface BookingTimeRow {
@@ -44,6 +66,11 @@ export async function executeCheckAvailability(
     `[TOOLS] check_availability called for tenant ${context.tenantId}:`,
     args,
   );
+
+  const dateError = validateBookingDate(args.date);
+  if (dateError) {
+    return { available: false, message: dateError };
+  }
 
   try {
     const existingBookings = await queryAll<BookingTimeRow>(
@@ -109,6 +136,11 @@ export async function executeCreateBooking(
     `[TOOLS] create_booking called for tenant ${context.tenantId}:`,
     args,
   );
+
+  const dateError = validateBookingDate(args.date);
+  if (dateError) {
+    return { success: false, message: dateError };
+  }
 
   try {
     const confirmationCode = generateConfirmationCode();
