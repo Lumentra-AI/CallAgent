@@ -110,14 +110,14 @@ async def entrypoint(ctx: JobContext):
     session = AgentSession(
         stt=deepgram.STT(
             model="nova-3",
-            language="multi",
+            language="en",
             smart_format=True,
-            keyterm=[tenant_config["business_name"]],
+            keyterm=[tenant_config["business_name"]] + tenant_config.get("stt_keywords", []),
         ),
         llm=llm,
         tts=cartesia.TTS(
             model="sonic-3",
-            voice=tenant_config["voice_config"]["voice_id"],
+            voice=tenant_config.get("voice_config", {}).get("voice_id", "a0e99841-438c-4a64-b679-ae501e7d6091"),
             speed=0.95,
             emotion=["Content"],
         ),

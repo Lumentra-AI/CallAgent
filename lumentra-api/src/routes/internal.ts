@@ -17,6 +17,116 @@ import type { ToolExecutionContext } from "../types/voice.js";
 
 export const internalRoutes = new Hono();
 
+// Build STT keyword hints for Deepgram based on industry
+const INDUSTRY_STT_KEYWORDS: Record<string, string[]> = {
+  dental: [
+    "cleaning",
+    "filling",
+    "crown",
+    "root canal",
+    "extraction",
+    "whitening",
+    "Invisalign",
+    "hygienist",
+    "cavity",
+    "toothache",
+    "Dr. Chen",
+    "Dr. Patel",
+    "new patient",
+    "existing patient",
+    "insurance",
+    "Delta Dental",
+    "Cigna",
+    "Aetna",
+    "MetLife",
+    "Guardian",
+    "CareCredit",
+    "prophylaxis",
+    "scaling",
+    "X-ray",
+    "emergency",
+    "appointment",
+    "reschedule",
+    "cancellation",
+  ],
+  medical: [
+    "appointment",
+    "prescription",
+    "refill",
+    "follow-up",
+    "checkup",
+    "new patient",
+    "existing patient",
+    "insurance",
+    "referral",
+    "lab results",
+  ],
+  hotel: [
+    "reservation",
+    "check-in",
+    "checkout",
+    "king bed",
+    "queen bed",
+    "suite",
+    "double",
+    "single",
+    "room service",
+    "concierge",
+  ],
+  restaurant: [
+    "reservation",
+    "table",
+    "party",
+    "takeout",
+    "delivery",
+    "menu",
+    "special",
+    "vegetarian",
+    "allergy",
+    "gluten-free",
+  ],
+  salon: [
+    "haircut",
+    "color",
+    "highlights",
+    "blowout",
+    "manicure",
+    "pedicure",
+    "stylist",
+    "appointment",
+    "walk-in",
+  ],
+  auto_service: [
+    "oil change",
+    "tire rotation",
+    "brake",
+    "alignment",
+    "inspection",
+    "transmission",
+    "engine",
+    "diagnostic",
+  ],
+};
+
+function buildSttKeywords(
+  industry: string,
+  customInstructions?: string,
+): string[] {
+  const keywords = [...(INDUSTRY_STT_KEYWORDS[industry] || [])];
+
+  // Extract provider names from custom instructions (e.g., "Dr. Sarah Chen")
+  if (customInstructions) {
+    const drMatches = customInstructions.match(/Dr\.\s+\w+\s+\w+/g);
+    if (drMatches) {
+      for (const name of drMatches) {
+        if (!keywords.includes(name)) keywords.push(name);
+      }
+    }
+  }
+
+  return keywords;
+}
+
 // Internal API key auth middleware
 function internalAuth() {
   return async (c: Context, next: Next) => {
@@ -78,6 +188,9 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
     },
   );
 
+  // Build STT keyword hints per industry for better transcription accuracy
+  const sttKeywords = buildSttKeywords(tenant.industry, t.custom_instructions);
+
   return c.json({
     id: tenant.id,
     business_name: tenant.business_name,
@@ -97,6 +210,7 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
     features: tenant.features,
     voice_pipeline: tenant.voice_pipeline,
     max_call_duration_seconds: t.max_call_duration_seconds ?? 900,
+    stt_keywords: sttKeywords,
     system_prompt: systemPrompt,
   });
 });
