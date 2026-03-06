@@ -5,7 +5,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
-import { buildSystemPrompt } from "../services/gemini/chat.js";
+import { buildChatSystemPrompt } from "../services/gemini/chat.js";
 import {
   chatAgentFunctions,
   executeChatTool,
@@ -166,7 +166,7 @@ chatRoutes.post("/", async (c) => {
     // Build system prompt - use Lumentra marketing prompt if in marketing mode
     const systemPrompt = marketing_mode
       ? LUMENTRA_MARKETING_PROMPT
-      : buildSystemPrompt(
+      : buildChatSystemPrompt(
           tenant.agent_name || "Assistant",
           tenant.business_name,
           tenant.industry,
