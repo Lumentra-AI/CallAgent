@@ -286,225 +286,153 @@ export default function HoursSettingsPage() {
   }
 
   return (
-    <div className="relative h-full overflow-y-auto">
-      <div className="mx-auto max-w-3xl space-y-8 p-6">
-        <SpotlightNew className="opacity-20" />
+    <div className="mx-auto max-w-3xl space-y-8">
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-semibold text-foreground">
+          Operating Hours
+        </h2>
+        <p className="mt-2 text-muted-foreground">
+          Set your business hours and after-hours behavior
+        </p>
+      </div>
 
-        {/* Header */}
-        <div className="relative z-10">
-          <Link
-            href="/settings"
-            className="mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Settings
-          </Link>
-          <TextGenerateEffect
-            words="Operating Hours"
-            className="text-2xl font-semibold text-foreground md:text-3xl"
-            duration={0.3}
-          />
-          <p className="mt-2 text-muted-foreground">
-            Set your business hours and after-hours behavior
+      {/* Timezone */}
+      <div className="space-y-2">
+        <Label htmlFor="timezone">Timezone</Label>
+        <select
+          id="timezone"
+          value={formData.timezone}
+          onChange={(e) => {
+            setFormData((prev) => ({ ...prev, timezone: e.target.value }));
+            setSaveSuccess(false);
+            setError(null);
+          }}
+          className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+        >
+          <option value="">Select timezone</option>
+          {US_TIMEZONES.map((tz) => (
+            <option key={tz.value} value={tz.value}>
+              {tz.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Same hours toggle */}
+      <div className="flex items-center justify-between rounded-lg border p-4">
+        <div>
+          <Label>Same hours every weekday</Label>
+          <p className="text-sm text-muted-foreground">
+            Monday through Friday have the same hours
           </p>
         </div>
+        <Switch
+          checked={formData.sameEveryDay}
+          onCheckedChange={handleSameEveryDayChange}
+        />
+      </div>
 
-        {/* Timezone */}
-        <div className="relative z-10 space-y-2">
-          <Label htmlFor="timezone">Timezone</Label>
-          <select
-            id="timezone"
-            value={formData.timezone}
-            onChange={(e) => {
-              setFormData((prev) => ({ ...prev, timezone: e.target.value }));
-              setSaveSuccess(false);
-              setError(null);
-            }}
-            className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-          >
-            <option value="">Select timezone</option>
-            {US_TIMEZONES.map((tz) => (
-              <option key={tz.value} value={tz.value}>
-                {tz.label}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* Hours schedule */}
+      <div className="space-y-4">
+        <Label>Operating hours</Label>
 
-        {/* Same hours toggle */}
-        <div className="relative z-10 flex items-center justify-between rounded-lg border p-4">
-          <div>
-            <Label>Same hours every weekday</Label>
-            <p className="text-sm text-muted-foreground">
-              Monday through Friday have the same hours
-            </p>
-          </div>
-          <Switch
-            checked={formData.sameEveryDay}
-            onCheckedChange={handleSameEveryDayChange}
-          />
-        </div>
-
-        {/* Hours schedule */}
-        <div className="relative z-10 space-y-4">
-          <Label>Operating hours</Label>
-
-          {formData.sameEveryDay ? (
-            <div className="space-y-4">
-              <div className="rounded-lg border p-4">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">Monday - Friday</span>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={formData.schedule.monday?.status || "open"}
-                      onChange={(e) => {
-                        const status = e.target.value;
-                        setFormData((prev) => {
-                          const newSchedule = { ...prev.schedule };
-                          DAYS.slice(0, 5).forEach((day) => {
-                            newSchedule[day.key] = {
-                              ...newSchedule[day.key],
-                              status,
-                            };
-                          });
-                          return { ...prev, schedule: newSchedule };
+        {formData.sameEveryDay ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border p-4">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">Monday - Friday</span>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={formData.schedule.monday?.status || "open"}
+                    onChange={(e) => {
+                      const status = e.target.value;
+                      setFormData((prev) => {
+                        const newSchedule = { ...prev.schedule };
+                        DAYS.slice(0, 5).forEach((day) => {
+                          newSchedule[day.key] = {
+                            ...newSchedule[day.key],
+                            status,
+                          };
                         });
-                        setSaveSuccess(false);
-                        setError(null);
-                      }}
-                      className="h-8 rounded-md border bg-background px-2 text-sm"
-                    >
-                      <option value="open">Open</option>
-                      <option value="closed">Closed</option>
-                      <option value="24hours">24 Hours</option>
-                    </select>
-                    {formData.schedule.monday?.status === "open" && (
-                      <>
-                        <select
-                          value={formData.schedule.monday?.open || "09:00"}
-                          onChange={(e) => {
-                            const open = e.target.value;
-                            setFormData((prev) => {
-                              const newSchedule = { ...prev.schedule };
-                              DAYS.slice(0, 5).forEach((day) => {
-                                newSchedule[day.key] = {
-                                  ...newSchedule[day.key],
-                                  open,
-                                };
-                              });
-                              return { ...prev, schedule: newSchedule };
-                            });
-                            setSaveSuccess(false);
-                            setError(null);
-                          }}
-                          className="h-8 rounded-md border bg-background px-2 text-sm"
-                        >
-                          {TIME_OPTIONS.map((time) => (
-                            <option key={time} value={time}>
-                              {formatTime(time)}
-                            </option>
-                          ))}
-                        </select>
-                        <span className="text-muted-foreground">to</span>
-                        <select
-                          value={formData.schedule.monday?.close || "17:00"}
-                          onChange={(e) => {
-                            const close = e.target.value;
-                            setFormData((prev) => {
-                              const newSchedule = { ...prev.schedule };
-                              DAYS.slice(0, 5).forEach((day) => {
-                                newSchedule[day.key] = {
-                                  ...newSchedule[day.key],
-                                  close,
-                                };
-                              });
-                              return { ...prev, schedule: newSchedule };
-                            });
-                            setSaveSuccess(false);
-                            setError(null);
-                          }}
-                          className="h-8 rounded-md border bg-background px-2 text-sm"
-                        >
-                          {TIME_OPTIONS.map((time) => (
-                            <option key={time} value={time}>
-                              {formatTime(time)}
-                            </option>
-                          ))}
-                        </select>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Weekend rows */}
-              {DAYS.slice(5).map((day) => (
-                <div key={day.key} className="rounded-lg border p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">{day.label}</span>
-                    <div className="flex items-center gap-2">
+                        return { ...prev, schedule: newSchedule };
+                      });
+                      setSaveSuccess(false);
+                      setError(null);
+                    }}
+                    className="h-8 rounded-md border bg-background px-2 text-sm"
+                  >
+                    <option value="open">Open</option>
+                    <option value="closed">Closed</option>
+                    <option value="24hours">24 Hours</option>
+                  </select>
+                  {formData.schedule.monday?.status === "open" && (
+                    <>
                       <select
-                        value={formData.schedule[day.key]?.status || "closed"}
-                        onChange={(e) =>
-                          updateDaySchedule(day.key, "status", e.target.value)
-                        }
+                        value={formData.schedule.monday?.open || "09:00"}
+                        onChange={(e) => {
+                          const open = e.target.value;
+                          setFormData((prev) => {
+                            const newSchedule = { ...prev.schedule };
+                            DAYS.slice(0, 5).forEach((day) => {
+                              newSchedule[day.key] = {
+                                ...newSchedule[day.key],
+                                open,
+                              };
+                            });
+                            return { ...prev, schedule: newSchedule };
+                          });
+                          setSaveSuccess(false);
+                          setError(null);
+                        }}
                         className="h-8 rounded-md border bg-background px-2 text-sm"
                       >
-                        <option value="open">Open</option>
-                        <option value="closed">Closed</option>
-                        <option value="24hours">24 Hours</option>
+                        {TIME_OPTIONS.map((time) => (
+                          <option key={time} value={time}>
+                            {formatTime(time)}
+                          </option>
+                        ))}
                       </select>
-                      {formData.schedule[day.key]?.status === "open" && (
-                        <>
-                          <select
-                            value={formData.schedule[day.key]?.open || "09:00"}
-                            onChange={(e) =>
-                              updateDaySchedule(day.key, "open", e.target.value)
-                            }
-                            className="h-8 rounded-md border bg-background px-2 text-sm"
-                          >
-                            {TIME_OPTIONS.map((time) => (
-                              <option key={time} value={time}>
-                                {formatTime(time)}
-                              </option>
-                            ))}
-                          </select>
-                          <span className="text-muted-foreground">to</span>
-                          <select
-                            value={formData.schedule[day.key]?.close || "17:00"}
-                            onChange={(e) =>
-                              updateDaySchedule(
-                                day.key,
-                                "close",
-                                e.target.value,
-                              )
-                            }
-                            className="h-8 rounded-md border bg-background px-2 text-sm"
-                          >
-                            {TIME_OPTIONS.map((time) => (
-                              <option key={time} value={time}>
-                                {formatTime(time)}
-                              </option>
-                            ))}
-                          </select>
-                        </>
-                      )}
-                    </div>
-                  </div>
+                      <span className="text-muted-foreground">to</span>
+                      <select
+                        value={formData.schedule.monday?.close || "17:00"}
+                        onChange={(e) => {
+                          const close = e.target.value;
+                          setFormData((prev) => {
+                            const newSchedule = { ...prev.schedule };
+                            DAYS.slice(0, 5).forEach((day) => {
+                              newSchedule[day.key] = {
+                                ...newSchedule[day.key],
+                                close,
+                              };
+                            });
+                            return { ...prev, schedule: newSchedule };
+                          });
+                          setSaveSuccess(false);
+                          setError(null);
+                        }}
+                        className="h-8 rounded-md border bg-background px-2 text-sm"
+                      >
+                        {TIME_OPTIONS.map((time) => (
+                          <option key={time} value={time}>
+                            {formatTime(time)}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )}
                 </div>
-              ))}
+              </div>
             </div>
-          ) : (
-            <div className="space-y-2">
-              {DAYS.map((day) => (
-                <div
-                  key={day.key}
-                  className="flex items-center justify-between rounded-lg border p-3"
-                >
-                  <span className="w-24 font-medium">{day.label}</span>
+
+            {/* Weekend rows */}
+            {DAYS.slice(5).map((day) => (
+              <div key={day.key} className="rounded-lg border p-4">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{day.label}</span>
                   <div className="flex items-center gap-2">
                     <select
-                      value={formData.schedule[day.key]?.status || "open"}
+                      value={formData.schedule[day.key]?.status || "closed"}
                       onChange={(e) =>
                         updateDaySchedule(day.key, "status", e.target.value)
                       }
@@ -521,7 +449,7 @@ export default function HoursSettingsPage() {
                           onChange={(e) =>
                             updateDaySchedule(day.key, "open", e.target.value)
                           }
-                          className="h-8 w-24 rounded-md border bg-background px-2 text-sm"
+                          className="h-8 rounded-md border bg-background px-2 text-sm"
                         >
                           {TIME_OPTIONS.map((time) => (
                             <option key={time} value={time}>
@@ -529,15 +457,13 @@ export default function HoursSettingsPage() {
                             </option>
                           ))}
                         </select>
-                        <span className="text-xs text-muted-foreground">
-                          to
-                        </span>
+                        <span className="text-muted-foreground">to</span>
                         <select
                           value={formData.schedule[day.key]?.close || "17:00"}
                           onChange={(e) =>
                             updateDaySchedule(day.key, "close", e.target.value)
                           }
-                          className="h-8 w-24 rounded-md border bg-background px-2 text-sm"
+                          className="h-8 rounded-md border bg-background px-2 text-sm"
                         >
                           {TIME_OPTIONS.map((time) => (
                             <option key={time} value={time}>
@@ -549,82 +475,137 @@ export default function HoursSettingsPage() {
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* After hours behavior */}
-        <div className="relative z-10 space-y-3">
-          <Label>After-hours behavior</Label>
+              </div>
+            ))}
+          </div>
+        ) : (
           <div className="space-y-2">
-            {AFTER_HOURS_OPTIONS.map((option) => {
-              const isSelected = formData.afterHoursBehavior === option.value;
-              return (
-                <label
-                  key={option.value}
-                  className={cn(
-                    "flex cursor-pointer items-start gap-3 rounded-lg border p-4 hover:bg-muted/50",
-                    isSelected && "border-primary bg-primary/5",
+            {DAYS.map((day) => (
+              <div
+                key={day.key}
+                className="flex items-center justify-between rounded-lg border p-3"
+              >
+                <span className="w-24 font-medium">{day.label}</span>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={formData.schedule[day.key]?.status || "open"}
+                    onChange={(e) =>
+                      updateDaySchedule(day.key, "status", e.target.value)
+                    }
+                    className="h-8 rounded-md border bg-background px-2 text-sm"
+                  >
+                    <option value="open">Open</option>
+                    <option value="closed">Closed</option>
+                    <option value="24hours">24 Hours</option>
+                  </select>
+                  {formData.schedule[day.key]?.status === "open" && (
+                    <>
+                      <select
+                        value={formData.schedule[day.key]?.open || "09:00"}
+                        onChange={(e) =>
+                          updateDaySchedule(day.key, "open", e.target.value)
+                        }
+                        className="h-8 w-24 rounded-md border bg-background px-2 text-sm"
+                      >
+                        {TIME_OPTIONS.map((time) => (
+                          <option key={time} value={time}>
+                            {formatTime(time)}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-xs text-muted-foreground">to</span>
+                      <select
+                        value={formData.schedule[day.key]?.close || "17:00"}
+                        onChange={(e) =>
+                          updateDaySchedule(day.key, "close", e.target.value)
+                        }
+                        className="h-8 w-24 rounded-md border bg-background px-2 text-sm"
+                      >
+                        {TIME_OPTIONS.map((time) => (
+                          <option key={time} value={time}>
+                            {formatTime(time)}
+                          </option>
+                        ))}
+                      </select>
+                    </>
                   )}
-                >
-                  <input
-                    type="radio"
-                    name="afterHours"
-                    value={option.value}
-                    checked={isSelected}
-                    onChange={(e) => {
-                      setFormData((prev) => ({
-                        ...prev,
-                        afterHoursBehavior: e.target.value,
-                      }));
-                      setSaveSuccess(false);
-                      setError(null);
-                    }}
-                    className="mt-1 h-4 w-4"
-                  />
-                  <div>
-                    <span className="font-medium">{option.label}</span>
-                    <p className="text-sm text-muted-foreground">
-                      {option.description}
-                    </p>
-                  </div>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Error/Success messages */}
-        {error && (
-          <div className="relative z-10 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-            {error}
+                </div>
+              </div>
+            ))}
           </div>
         )}
+      </div>
 
-        {saveSuccess && (
-          <div className="relative z-10 rounded-lg border border-green-500/50 bg-green-500/10 p-4 text-sm text-green-600">
-            Settings saved successfully
-          </div>
-        )}
-
-        {/* Save button */}
-        <div className="relative z-10 flex justify-end pt-4">
-          <ShimmerButton
-            onClick={handleSave}
-            disabled={!canSave || isSaving}
-            shimmerColor="#ffffff"
-            shimmerSize="0.05em"
-            borderRadius="8px"
-            background={canSave ? "hsl(var(--primary))" : "hsl(var(--muted))"}
-            className={cn(
-              "px-8 py-3 text-sm font-medium",
-              !canSave && "cursor-not-allowed opacity-50",
-            )}
-          >
-            {isSaving ? "Saving..." : "Save Changes"}
-          </ShimmerButton>
+      {/* After hours behavior */}
+      <div className="space-y-3">
+        <Label>After-hours behavior</Label>
+        <div className="space-y-2">
+          {AFTER_HOURS_OPTIONS.map((option) => {
+            const isSelected = formData.afterHoursBehavior === option.value;
+            return (
+              <label
+                key={option.value}
+                className={cn(
+                  "flex cursor-pointer items-start gap-3 rounded-lg border p-4 hover:bg-muted/50",
+                  isSelected && "border-primary bg-primary/5",
+                )}
+              >
+                <input
+                  type="radio"
+                  name="afterHours"
+                  value={option.value}
+                  checked={isSelected}
+                  onChange={(e) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      afterHoursBehavior: e.target.value,
+                    }));
+                    setSaveSuccess(false);
+                    setError(null);
+                  }}
+                  className="mt-1 h-4 w-4"
+                />
+                <div>
+                  <span className="font-medium">{option.label}</span>
+                  <p className="text-sm text-muted-foreground">
+                    {option.description}
+                  </p>
+                </div>
+              </label>
+            );
+          })}
         </div>
+      </div>
+
+      {/* Error/Success messages */}
+      {error && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      {saveSuccess && (
+        <div className="rounded-lg border border-green-500/50 bg-green-500/10 p-4 text-sm text-green-600">
+          Settings saved successfully
+        </div>
+      )}
+
+      {/* Save button */}
+      <div className="flex justify-end pt-4">
+        <ShimmerButton
+          onClick={handleSave}
+          disabled={!canSave || isSaving}
+          shimmerColor="#ffffff"
+          shimmerSize="0.05em"
+          borderRadius="8px"
+          background={canSave ? "hsl(var(--primary))" : "hsl(var(--muted))"}
+          className={cn(
+            "px-8 py-3 text-sm font-medium",
+            !canSave && "cursor-not-allowed opacity-50",
+          )}
+        >
+          {isSaving ? "Saving..." : "Save Changes"}
+        </ShimmerButton>
       </div>
     </div>
   );

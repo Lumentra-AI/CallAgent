@@ -124,276 +124,261 @@ export default function ChatbotSettingsPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background">
-      <SpotlightNew />
+    <div className="mx-auto max-w-3xl">
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+            <MessageSquare className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold">Chat Widget</h2>
+            <p className="text-sm text-muted-foreground">
+              Configure the embeddable chat widget for your website
+            </p>
+          </div>
+        </div>
+      </div>
 
-      <div className="relative z-10 mx-auto max-w-3xl px-6 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <Link
-            href="/settings"
-            className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Settings
-          </Link>
+      {/* Error / Success messages */}
+      {error && (
+        <div className="mb-6 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4" />
+            {error}
+          </div>
+        </div>
+      )}
 
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-              <MessageSquare className="h-5 w-5 text-primary" />
-            </div>
+      {saveSuccess && (
+        <div className="mb-6 rounded-lg border border-green-500/50 bg-green-500/10 p-4 text-sm text-green-600">
+          <div className="flex items-center gap-2">
+            <Check className="h-4 w-4" />
+            Chat widget settings saved successfully
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-6">
+        {/* Enable/Disable */}
+        <ShineBorder
+          className="w-full rounded-xl border bg-card p-6"
+          borderRadius={12}
+          color={formData.chat_widget_enabled ? "#22c55e" : "#71717a"}
+        >
+          <div className="flex items-center justify-between">
             <div>
-              <TextGenerateEffect
-                words="Chat Widget"
-                className="text-2xl font-bold"
-              />
+              <h3 className="text-lg font-semibold">Enable Chat Widget</h3>
               <p className="text-sm text-muted-foreground">
-                Configure the embeddable chat widget for your website
+                When enabled, the chat widget will appear on websites using your
+                embed code
               </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={formData.chat_widget_enabled}
+              onClick={() =>
+                setFormData((prev) => ({
+                  ...prev,
+                  chat_widget_enabled: !prev.chat_widget_enabled,
+                }))
+              }
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200",
+                formData.chat_widget_enabled
+                  ? "bg-green-500"
+                  : "bg-muted-foreground/30",
+              )}
+            >
+              <span
+                className={cn(
+                  "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200",
+                  formData.chat_widget_enabled
+                    ? "translate-x-5"
+                    : "translate-x-0",
+                )}
+              />
+            </button>
+          </div>
+        </ShineBorder>
+
+        {/* Appearance */}
+        <div className="rounded-xl border bg-card p-6">
+          <h3 className="mb-4 text-lg font-semibold">Appearance</h3>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="theme_color">Theme Color</Label>
+                <div className="mt-1.5 flex items-center gap-3">
+                  <input
+                    type="color"
+                    id="theme_color"
+                    value={formData.theme_color}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        theme_color: e.target.value,
+                      }))
+                    }
+                    className="h-10 w-10 cursor-pointer rounded border border-border bg-transparent"
+                  />
+                  <Input
+                    value={formData.theme_color}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        theme_color: e.target.value,
+                      }))
+                    }
+                    placeholder="#6366f1"
+                    className="font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="position">Widget Position</Label>
+                <select
+                  id="position"
+                  value={formData.position}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      position: e.target.value,
+                    }))
+                  }
+                  className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {POSITION_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Preview */}
+            <div className="mt-4 rounded-lg border border-border/50 bg-zinc-900 p-4">
+              <p className="mb-2 text-xs text-muted-foreground">Preview</p>
+              <div className="flex items-center gap-3">
+                <div
+                  className="flex h-12 w-12 items-center justify-center rounded-full text-white shadow-md"
+                  style={{ backgroundColor: formData.theme_color }}
+                >
+                  <MessageSquare className="h-5 w-5" />
+                </div>
+                <div className="rounded-xl bg-zinc-800 px-4 py-2.5 text-sm text-zinc-100">
+                  {formData.greeting ||
+                    currentTenant?.greeting_standard ||
+                    "Hi! How can I help you today?"}
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Error / Success messages */}
-        {error && (
-          <div className="mb-6 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4" />
-              {error}
-            </div>
-          </div>
-        )}
+        {/* Greeting */}
+        <div className="rounded-xl border bg-card p-6">
+          <h3 className="mb-4 text-lg font-semibold">Chat Greeting</h3>
+          <p className="mb-3 text-sm text-muted-foreground">
+            The first message visitors see when they open the chat. Leave empty
+            to use your default voice greeting.
+          </p>
+          <Textarea
+            value={formData.greeting}
+            onChange={(e) =>
+              setFormData((prev) => ({
+                ...prev,
+                greeting: e.target.value,
+              }))
+            }
+            placeholder={
+              currentTenant?.greeting_standard ||
+              "Hi! How can I help you today?"
+            }
+            rows={3}
+          />
+        </div>
 
-        {saveSuccess && (
-          <div className="mb-6 rounded-lg border border-green-500/50 bg-green-500/10 p-4 text-sm text-green-600">
-            <div className="flex items-center gap-2">
-              <Check className="h-4 w-4" />
-              Chat widget settings saved successfully
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-6">
-          {/* Enable/Disable */}
-          <ShineBorder
-            className="w-full rounded-xl border bg-card p-6"
-            borderRadius={12}
-            color={formData.chat_widget_enabled ? "#22c55e" : "#71717a"}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold">Enable Chat Widget</h3>
-                <p className="text-sm text-muted-foreground">
-                  When enabled, the chat widget will appear on websites using
-                  your embed code
-                </p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={formData.chat_widget_enabled}
-                onClick={() =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    chat_widget_enabled: !prev.chat_widget_enabled,
-                  }))
-                }
-                className={cn(
-                  "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200",
-                  formData.chat_widget_enabled
-                    ? "bg-green-500"
-                    : "bg-muted-foreground/30",
-                )}
-              >
-                <span
-                  className={cn(
-                    "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200",
-                    formData.chat_widget_enabled
-                      ? "translate-x-5"
-                      : "translate-x-0",
-                  )}
-                />
-              </button>
-            </div>
-          </ShineBorder>
-
-          {/* Appearance */}
-          <div className="rounded-xl border bg-card p-6">
-            <h3 className="mb-4 text-lg font-semibold">Appearance</h3>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="theme_color">Theme Color</Label>
-                  <div className="mt-1.5 flex items-center gap-3">
-                    <input
-                      type="color"
-                      id="theme_color"
-                      value={formData.theme_color}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          theme_color: e.target.value,
-                        }))
-                      }
-                      className="h-10 w-10 cursor-pointer rounded border border-border bg-transparent"
-                    />
-                    <Input
-                      value={formData.theme_color}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          theme_color: e.target.value,
-                        }))
-                      }
-                      placeholder="#6366f1"
-                      className="font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="position">Widget Position</Label>
-                  <select
-                    id="position"
-                    value={formData.position}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        position: e.target.value,
-                      }))
-                    }
-                    className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {POSITION_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Preview */}
-              <div className="mt-4 rounded-lg border border-border/50 bg-zinc-900 p-4">
-                <p className="mb-2 text-xs text-muted-foreground">Preview</p>
-                <div className="flex items-center gap-3">
-                  <div
-                    className="flex h-12 w-12 items-center justify-center rounded-full text-white shadow-md"
-                    style={{ backgroundColor: formData.theme_color }}
-                  >
-                    <MessageSquare className="h-5 w-5" />
-                  </div>
-                  <div className="rounded-xl bg-zinc-800 px-4 py-2.5 text-sm text-zinc-100">
-                    {formData.greeting ||
-                      currentTenant?.greeting_standard ||
-                      "Hi! How can I help you today?"}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Greeting */}
-          <div className="rounded-xl border bg-card p-6">
-            <h3 className="mb-4 text-lg font-semibold">Chat Greeting</h3>
-            <p className="mb-3 text-sm text-muted-foreground">
-              The first message visitors see when they open the chat. Leave
-              empty to use your default voice greeting.
-            </p>
-            <Textarea
-              value={formData.greeting}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  greeting: e.target.value,
-                }))
-              }
-              placeholder={
-                currentTenant?.greeting_standard ||
-                "Hi! How can I help you today?"
-              }
-              rows={3}
-            />
-          </div>
-
-          {/* Embed Code */}
-          <div className="rounded-xl border bg-card p-6">
-            <h3 className="mb-4 text-lg font-semibold">Embed Code</h3>
-            <p className="mb-3 text-sm text-muted-foreground">
-              Add this code to your website, just before the closing{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                &lt;/body&gt;
-              </code>{" "}
-              tag.
-            </p>
-            <div className="relative">
-              <pre className="overflow-x-auto rounded-lg border bg-zinc-900 p-4 text-sm text-zinc-300">
-                <code>{embedCode}</code>
-              </pre>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => copyToClipboard(embedCode)}
-                className="absolute right-2 top-2"
-              >
-                {copied ? (
-                  <>
-                    <Check className="mr-1.5 h-3.5 w-3.5" />
-                    Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="mr-1.5 h-3.5 w-3.5" />
-                    Copy
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-
-          {/* Allowed Origins */}
-          <div className="rounded-xl border bg-card p-6">
-            <h3 className="mb-4 text-lg font-semibold">Allowed Origins</h3>
-            <p className="mb-3 text-sm text-muted-foreground">
-              Restrict which domains can use your chat widget. Leave empty to
-              allow all domains (recommended for most setups).
-            </p>
-            <Input
-              value={formData.allowed_origins}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  allowed_origins: e.target.value,
-                }))
-              }
-              placeholder="https://example.com, https://www.example.com"
-            />
-            <p className="mt-1.5 text-xs text-muted-foreground">
-              Comma-separated list of allowed origins (e.g.
-              https://yourdomain.com)
-            </p>
-          </div>
-
-          {/* Save */}
-          <div className="flex justify-end pt-2 pb-8">
-            <ShimmerButton
-              onClick={handleSave}
-              disabled={isSaving}
-              shimmerColor="#ffffff"
-              shimmerSize="0.05em"
-              shimmerDuration="2s"
-              className="px-8 py-2.5"
+        {/* Embed Code */}
+        <div className="rounded-xl border bg-card p-6">
+          <h3 className="mb-4 text-lg font-semibold">Embed Code</h3>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Add this code to your website, just before the closing{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              &lt;/body&gt;
+            </code>{" "}
+            tag.
+          </p>
+          <div className="relative">
+            <pre className="overflow-x-auto rounded-lg border bg-zinc-900 p-4 text-sm text-zinc-300">
+              <code>{embedCode}</code>
+            </pre>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => copyToClipboard(embedCode)}
+              className="absolute right-2 top-2"
             >
-              {isSaving ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Saving...
-                </span>
+              {copied ? (
+                <>
+                  <Check className="mr-1.5 h-3.5 w-3.5" />
+                  Copied
+                </>
               ) : (
-                "Save Changes"
+                <>
+                  <Copy className="mr-1.5 h-3.5 w-3.5" />
+                  Copy
+                </>
               )}
-            </ShimmerButton>
+            </Button>
           </div>
+        </div>
+
+        {/* Allowed Origins */}
+        <div className="rounded-xl border bg-card p-6">
+          <h3 className="mb-4 text-lg font-semibold">Allowed Origins</h3>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Restrict which domains can use your chat widget. Leave empty to
+            allow all domains (recommended for most setups).
+          </p>
+          <Input
+            value={formData.allowed_origins}
+            onChange={(e) =>
+              setFormData((prev) => ({
+                ...prev,
+                allowed_origins: e.target.value,
+              }))
+            }
+            placeholder="https://example.com, https://www.example.com"
+          />
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Comma-separated list of allowed origins (e.g.
+            https://yourdomain.com)
+          </p>
+        </div>
+
+        {/* Save */}
+        <div className="flex justify-end pt-2 pb-8">
+          <ShimmerButton
+            onClick={handleSave}
+            disabled={isSaving}
+            shimmerColor="#ffffff"
+            shimmerSize="0.05em"
+            shimmerDuration="2s"
+            className="px-8 py-2.5"
+          >
+            {isSaving ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Saving...
+              </span>
+            ) : (
+              "Save Changes"
+            )}
+          </ShimmerButton>
         </div>
       </div>
     </div>

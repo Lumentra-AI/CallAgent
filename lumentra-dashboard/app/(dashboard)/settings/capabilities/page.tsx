@@ -285,133 +285,118 @@ export default function CapabilitiesSettingsPage() {
   }
 
   return (
-    <div className="relative h-full overflow-y-auto">
-      <div className="mx-auto max-w-3xl space-y-8 p-6">
-        <SpotlightNew className="opacity-20" />
+    <div className="mx-auto max-w-3xl space-y-8">
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-semibold text-foreground">Capabilities</h2>
+        <p className="mt-2 text-muted-foreground">
+          {industryPreset
+            ? `Manage what your assistant can do for ${industryPreset.label.toLowerCase()} businesses`
+            : "Choose what your assistant should handle"}
+        </p>
+      </div>
 
-        {/* Header */}
-        <div className="relative z-10">
-          <Link
-            href="/settings"
-            className="mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+      {/* Core capabilities */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="h-1 w-4 rounded-full bg-primary" />
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+            Core Features
+          </Label>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {coreCapabilities.map(renderCapabilityCard)}
+        </div>
+      </div>
+
+      {/* Communication capabilities */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="h-1 w-4 rounded-full bg-blue-500" />
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+            Communication
+          </Label>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {communicationCapabilities.map(renderCapabilityCard)}
+        </div>
+      </div>
+
+      {/* Advanced capabilities */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="h-1 w-4 rounded-full bg-amber-500" />
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+            Advanced
+          </Label>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {advancedCapabilities.map(renderCapabilityCard)}
+        </div>
+      </div>
+
+      {/* Selection summary */}
+      {capabilities.length > 0 && (
+        <div>
+          <ShineBorder
+            borderRadius={12}
+            borderWidth={1}
+            duration={12}
+            color="#22c55e"
+            className="w-full min-w-full bg-muted/30 p-4"
           >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Settings
-          </Link>
-          <TextGenerateEffect
-            words="Capabilities"
-            className="text-2xl font-semibold text-foreground md:text-3xl"
-            duration={0.3}
-          />
-          <p className="mt-2 text-muted-foreground">
-            {industryPreset
-              ? `Manage what your assistant can do for ${industryPreset.label.toLowerCase()} businesses`
-              : "Choose what your assistant should handle"}
-          </p>
+            <p className="text-sm">
+              <span className="font-bold text-primary">
+                {capabilities.length}
+              </span>{" "}
+              {capabilities.length === 1 ? "capability" : "capabilities"}{" "}
+              enabled - your assistant can help with{" "}
+              {capabilities
+                .map((c) =>
+                  CAPABILITY_OPTIONS.find(
+                    (o) => o.id === c,
+                  )?.label.toLowerCase(),
+                )
+                .filter(Boolean)
+                .join(", ")}
+            </p>
+          </ShineBorder>
         </div>
+      )}
 
-        {/* Core capabilities */}
-        <div className="relative z-10 space-y-4">
-          <div className="flex items-center gap-2">
-            <div className="h-1 w-4 rounded-full bg-primary" />
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-              Core Features
-            </Label>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            {coreCapabilities.map(renderCapabilityCard)}
-          </div>
+      {/* Error/Success messages */}
+      {error && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+          {error}
         </div>
+      )}
 
-        {/* Communication capabilities */}
-        <div className="relative z-10 space-y-4">
-          <div className="flex items-center gap-2">
-            <div className="h-1 w-4 rounded-full bg-blue-500" />
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-              Communication
-            </Label>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            {communicationCapabilities.map(renderCapabilityCard)}
-          </div>
+      {saveSuccess && (
+        <div className="rounded-lg border border-green-500/50 bg-green-500/10 p-4 text-sm text-green-600">
+          Settings saved successfully
         </div>
+      )}
 
-        {/* Advanced capabilities */}
-        <div className="relative z-10 space-y-4">
-          <div className="flex items-center gap-2">
-            <div className="h-1 w-4 rounded-full bg-amber-500" />
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-              Advanced
-            </Label>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {advancedCapabilities.map(renderCapabilityCard)}
-          </div>
-        </div>
-
-        {/* Selection summary */}
-        {capabilities.length > 0 && (
-          <div className="relative z-10">
-            <ShineBorder
-              borderRadius={12}
-              borderWidth={1}
-              duration={12}
-              color="#22c55e"
-              className="w-full min-w-full bg-muted/30 p-4"
-            >
-              <p className="text-sm">
-                <span className="font-bold text-primary">
-                  {capabilities.length}
-                </span>{" "}
-                {capabilities.length === 1 ? "capability" : "capabilities"}{" "}
-                enabled - your assistant can help with{" "}
-                {capabilities
-                  .map((c) =>
-                    CAPABILITY_OPTIONS.find(
-                      (o) => o.id === c,
-                    )?.label.toLowerCase(),
-                  )
-                  .filter(Boolean)
-                  .join(", ")}
-              </p>
-            </ShineBorder>
-          </div>
-        )}
-
-        {/* Error/Success messages */}
-        {error && (
-          <div className="relative z-10 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-            {error}
-          </div>
-        )}
-
-        {saveSuccess && (
-          <div className="relative z-10 rounded-lg border border-green-500/50 bg-green-500/10 p-4 text-sm text-green-600">
-            Settings saved successfully
-          </div>
-        )}
-
-        {/* Save button */}
-        <div className="relative z-10 flex justify-end pt-4">
-          <ShimmerButton
-            onClick={handleSave}
-            disabled={isSaving || capabilities.length === 0}
-            shimmerColor="#ffffff"
-            shimmerSize="0.05em"
-            borderRadius="8px"
-            background={
-              capabilities.length > 0
-                ? "hsl(var(--primary))"
-                : "hsl(var(--muted))"
-            }
-            className={cn(
-              "px-8 py-3 text-sm font-medium",
-              capabilities.length === 0 && "cursor-not-allowed opacity-50",
-            )}
-          >
-            {isSaving ? "Saving..." : "Save Changes"}
-          </ShimmerButton>
-        </div>
+      {/* Save button */}
+      <div className="flex justify-end pt-4">
+        <ShimmerButton
+          onClick={handleSave}
+          disabled={isSaving || capabilities.length === 0}
+          shimmerColor="#ffffff"
+          shimmerSize="0.05em"
+          borderRadius="8px"
+          background={
+            capabilities.length > 0
+              ? "hsl(var(--primary))"
+              : "hsl(var(--muted))"
+          }
+          className={cn(
+            "px-8 py-3 text-sm font-medium",
+            capabilities.length === 0 && "cursor-not-allowed opacity-50",
+          )}
+        >
+          {isSaving ? "Saving..." : "Save Changes"}
+        </ShimmerButton>
       </div>
     </div>
   );

@@ -577,9 +577,7 @@ export type ViewType =
 
 export type SettingsTab =
   | "general"
-  | "business"
   | "agent"
-  | "assistant"
   | "voice"
   | "greetings"
   | "responses"
@@ -587,7 +585,6 @@ export type SettingsTab =
   | "hours"
   | "escalation"
   | "billing"
-  | "phone"
   | "capabilities"
   | "promotions"
   | "chatbot"

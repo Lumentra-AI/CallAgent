@@ -377,133 +377,118 @@ export default function IntegrationsSettingsPage() {
   const ModeIcon = currentMode?.icon || LinkIcon;
 
   return (
-    <div className="relative h-full overflow-y-auto">
-      <div className="mx-auto max-w-3xl space-y-8 p-6">
-        <SpotlightNew className="opacity-20" />
+    <div className="mx-auto max-w-3xl space-y-8">
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-semibold text-foreground">Integrations</h2>
+        <p className="mt-2 text-muted-foreground">
+          Connect your booking and calendar systems
+        </p>
+      </div>
 
-        {/* Header */}
-        <div className="relative z-10">
-          <Link
-            href="/settings"
-            className="mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Settings
-          </Link>
-          <TextGenerateEffect
-            words="Integrations"
-            className="text-2xl font-semibold text-foreground md:text-3xl"
-            duration={0.3}
-          />
-          <p className="mt-2 text-muted-foreground">
-            Connect your booking and calendar systems
-          </p>
-        </div>
-
-        {/* Current Mode */}
-        <div className="relative z-10">
-          <ShineBorder
-            borderRadius={12}
-            borderWidth={2}
-            duration={8}
-            color={integrationMode === "external" ? "#22c55e" : "#6366f1"}
-            className="w-full min-w-full bg-card p-0"
-          >
-            <div className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                  <ModeIcon className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <p className="font-medium">{currentMode?.title}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {currentMode?.description}
-                  </p>
-                </div>
+      {/* Current Mode */}
+      <div>
+        <ShineBorder
+          borderRadius={12}
+          borderWidth={2}
+          duration={8}
+          color={integrationMode === "external" ? "#22c55e" : "#6366f1"}
+          className="w-full min-w-full bg-card p-0"
+        >
+          <div className="p-6">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                <ModeIcon className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <p className="font-medium">{currentMode?.title}</p>
+                <p className="text-sm text-muted-foreground">
+                  {currentMode?.description}
+                </p>
               </div>
             </div>
-          </ShineBorder>
-        </div>
+          </div>
+        </ShineBorder>
+      </div>
 
-        {/* Connected Integrations */}
-        {integrations.length > 0 && (
-          <div className="relative z-10 space-y-4">
-            <Label>Connected Integrations</Label>
+      {/* Connected Integrations */}
+      {integrations.length > 0 && (
+        <div className="relative z-10 space-y-4">
+          <Label>Connected Integrations</Label>
+          <div className="space-y-2">
+            {integrations.map((integration) => {
+              const option = INTEGRATION_OPTIONS.find(
+                (o) => o.id === integration.provider,
+              );
+              if (!option) return null;
+              return renderIntegrationCard(option);
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Available Integrations */}
+      <div className="relative z-10 space-y-6">
+        {/* Calendar integrations */}
+        {calendarIntegrations.length > 0 && (
+          <div className="space-y-3">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+              Calendars
+            </Label>
             <div className="space-y-2">
-              {integrations.map((integration) => {
-                const option = INTEGRATION_OPTIONS.find(
-                  (o) => o.id === integration.provider,
-                );
-                if (!option) return null;
-                return renderIntegrationCard(option);
-              })}
+              {calendarIntegrations
+                .filter((i) => !isConnected(i.id))
+                .map(renderIntegrationCard)}
             </div>
           </div>
         )}
 
-        {/* Available Integrations */}
-        <div className="relative z-10 space-y-6">
-          {/* Calendar integrations */}
-          {calendarIntegrations.length > 0 && (
-            <div className="space-y-3">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-                Calendars
-              </Label>
-              <div className="space-y-2">
-                {calendarIntegrations
-                  .filter((i) => !isConnected(i.id))
-                  .map(renderIntegrationCard)}
-              </div>
+        {/* Booking integrations */}
+        {bookingIntegrations.length > 0 && (
+          <div className="space-y-3">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+              Booking Systems
+            </Label>
+            <div className="space-y-2">
+              {bookingIntegrations
+                .filter((i) => !isConnected(i.id))
+                .map(renderIntegrationCard)}
             </div>
-          )}
-
-          {/* Booking integrations */}
-          {bookingIntegrations.length > 0 && (
-            <div className="space-y-3">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-                Booking Systems
-              </Label>
-              <div className="space-y-2">
-                {bookingIntegrations
-                  .filter((i) => !isConnected(i.id))
-                  .map(renderIntegrationCard)}
-              </div>
-            </div>
-          )}
-
-          {/* POS integrations */}
-          {posIntegrations.length > 0 && (
-            <div className="space-y-3">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-                Point of Sale
-              </Label>
-              <div className="space-y-2">
-                {posIntegrations
-                  .filter((i) => !isConnected(i.id))
-                  .map(renderIntegrationCard)}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Error message */}
-        {error && (
-          <div className="relative z-10 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-            {error}
           </div>
         )}
 
-        {/* Help Section */}
-        <div className="relative z-10 rounded-xl border border-dashed p-6">
-          <h3 className="font-medium">Don&apos;t see your system?</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Your assistant will collect caller information and you&apos;ll
-            confirm bookings manually. We add new integrations regularly.
-          </p>
-          <Button variant="outline" className="mt-4">
-            Request Integration
-          </Button>
+        {/* POS integrations */}
+        {posIntegrations.length > 0 && (
+          <div className="space-y-3">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+              Point of Sale
+            </Label>
+            <div className="space-y-2">
+              {posIntegrations
+                .filter((i) => !isConnected(i.id))
+                .map(renderIntegrationCard)}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Error message */}
+      {error && (
+        <div className="relative z-10 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+          {error}
         </div>
+      )}
+
+      {/* Help Section */}
+      <div className="relative z-10 rounded-xl border border-dashed p-6">
+        <h3 className="font-medium">Don&apos;t see your system?</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Your assistant will collect caller information and you&apos;ll confirm
+          bookings manually. We add new integrations regularly.
+        </p>
+        <Button variant="outline" className="mt-4">
+          Request Integration
+        </Button>
       </div>
     </div>
   );

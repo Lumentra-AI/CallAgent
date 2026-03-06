@@ -1,7 +1,7 @@
 "use client";
 
-import SettingsPanel from "@/components/settings";
+import SettingsContent from "@/components/settings/SettingsContent";
 
 export default function SettingsRoute() {
-  return <SettingsPanel />;
+  return <SettingsContent />;
 }
