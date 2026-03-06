@@ -206,8 +206,10 @@ chatRoutes.post("/", async (c) => {
       context,
     );
 
-    // Save to history
-    await saveToHistory(session_id, message, chatResult.text);
+    // Save to history (skip empty assistant responses)
+    if (chatResult.text) {
+      await saveToHistory(session_id, message, chatResult.text);
+    }
 
     // Create/update contact if we have contact info
     const latestVisitor = await getVisitorInfo(session_id);

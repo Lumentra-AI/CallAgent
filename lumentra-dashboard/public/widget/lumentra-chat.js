@@ -428,6 +428,7 @@
     }
 
     addMessage(role, content) {
+      if (!content || !content.trim()) return;
       const div = document.createElement("div");
       div.className = `lumentra-message ${role}`;
       div.textContent = content;
