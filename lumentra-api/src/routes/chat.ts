@@ -48,12 +48,12 @@ chatRoutes.use(
   }),
 );
 
-// Rate limit chat message endpoint: 20 messages/min per IP
+// Rate limit chat message endpoint: 60 messages/min per IP
 chatRoutes.use(
   "/",
   rateLimit({
     windowMs: 60000,
-    max: 20,
+    max: 60,
     message: "Too many messages. Please wait a moment before sending more.",
   }),
 );
