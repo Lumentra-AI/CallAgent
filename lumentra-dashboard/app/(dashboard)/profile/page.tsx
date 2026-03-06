@@ -17,7 +17,6 @@ import { Label } from "@/components/ui/label";
 import {
   AvatarUpload,
   ThemeSelector,
-  LanguageSelector,
   NotificationPreferences,
 } from "@/components/profile";
 import type { NotificationSettings } from "@/components/profile";
@@ -203,12 +202,7 @@ export default function ProfilePage() {
               />
             )}
 
-            {activeTab === "preferences" && (
-              <PreferencesTab
-                language={profileData.language}
-                onLanguageChange={(lang) => updateProfile("language", lang)}
-              />
-            )}
+            {activeTab === "preferences" && <PreferencesTab />}
           </motion.div>
         </div>
       </main>
@@ -445,12 +439,7 @@ function SecurityTab() {
 // PREFERENCES TAB
 // ============================================================================
 
-interface PreferencesTabProps {
-  language: string;
-  onLanguageChange: (language: string) => void;
-}
-
-function PreferencesTab({ language, onLanguageChange }: PreferencesTabProps) {
+function PreferencesTab() {
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -468,7 +457,21 @@ function PreferencesTab({ language, onLanguageChange }: PreferencesTabProps) {
 
       {/* Language */}
       <section className="rounded-2xl border border-border bg-card p-6">
-        <LanguageSelector value={language} onChange={onLanguageChange} />
+        <div className="space-y-4">
+          <div>
+            <h4 className="text-sm font-medium text-foreground">Language</h4>
+            <p className="text-xs text-muted-foreground">Interface language</p>
+          </div>
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+            <span className="text-xl">
+              {String.fromCodePoint(127482, 127480)}
+            </span>
+            <div>
+              <div className="text-sm font-medium text-foreground">English</div>
+              <div className="text-xs text-muted-foreground">English</div>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Accessibility */}
