@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grand Plaza Hotel - Chat Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      padding: 40px;
+      background: #f4f4f5;
+      color: #18181b;
+    }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    p { color: #71717a; margin-bottom: 24px; }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 600px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .card h2 { font-size: 18px; margin: 0 0 12px; }
+    .card ul { padding-left: 20px; color: #52525b; line-height: 1.8; }
+  </style>
+</head>
+<body>
+  <h1>Grand Plaza Hotel</h1>
+  <p>Sample website page with Lumentra chat widget</p>
+
+  <div class="card">
+    <h2>Test the Chat Widget</h2>
+    <ul>
+      <li>Click the purple chat bubble in the bottom-right corner</li>
+      <li>Try asking about room availability, booking, or hotel amenities</li>
+      <li>The AI agent "Luna" will respond using the hotel's configuration</li>
+    </ul>
+  </div>
+
+  <script src="https://app.lumentraai.com/widget/lumentra-chat.js"></script>
+  <script>
+    new LumentraChat({ tenantId: 'f2a7e5d3-da5e-4b6f-82ee-5a42a5f47a28' });
+  </script>
+</body>
+</html>
