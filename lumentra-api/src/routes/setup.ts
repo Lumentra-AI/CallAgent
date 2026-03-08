@@ -611,11 +611,6 @@ setupRoutes.post("/complete", async (c) => {
       return c.json({ error: "Tenant not found" }, 404);
     }
 
-    // Verify required data is present
-    if (!tenant.business_name || !tenant.industry) {
-      return c.json({ error: "Business information incomplete" }, 400);
-    }
-
     // Check phone configuration
     const phoneConfigSql = `
       SELECT phone_number, status
@@ -628,6 +623,50 @@ setupRoutes.post("/complete", async (c) => {
       status: string;
     }>(phoneConfigSql, [tenantId]);
 
+    // Validate all required fields before activating
+    const errors: string[] = [];
+    const incompleteSteps: string[] = [];
+
+    if (!tenant.business_name || !tenant.industry) {
+      errors.push("Business name and industry are required");
+      incompleteSteps.push("business");
+    }
+
+    if (
+      !phoneConfig?.phone_number ||
+      !["active", "porting_with_temp"].includes(phoneConfig.status)
+    ) {
+      errors.push("Phone number setup is required");
+      incompleteSteps.push("phone");
+    } else if (
+      tenant.phone_number?.startsWith("pending_") &&
+      !phoneConfig.phone_number
+    ) {
+      errors.push("Phone number setup is required");
+      incompleteSteps.push("phone");
+    }
+
+    if (!tenant.agent_name) {
+      errors.push("AI assistant name is required");
+      incompleteSteps.push("assistant");
+    }
+
+    if (!tenant.timezone) {
+      errors.push("Timezone is required");
+      incompleteSteps.push("hours");
+    }
+
+    if (errors.length > 0) {
+      return c.json(
+        {
+          error: "Setup incomplete",
+          missing: errors,
+          incompleteSteps,
+        },
+        400,
+      );
+    }
+
     // Build update data
     const updateData: Record<string, unknown> = {
       status: "active",
@@ -637,7 +676,7 @@ setupRoutes.post("/complete", async (c) => {
       updated_at: new Date().toISOString(),
     };
 
-    // Update phone number from phone_configurations if available
+    // Update phone number from phone_configurations
     if (phoneConfig?.phone_number) {
       updateData.phone_number = phoneConfig.phone_number;
     }
@@ -647,9 +686,25 @@ setupRoutes.post("/complete", async (c) => {
     // Invalidate cache
     await invalidateTenant(tenantId);
 
+    // Non-blocking warnings for optional fields
+    const warnings: string[] = [];
+    if (!tenant.greeting_standard)
+      warnings.push(
+        "No greeting configured - agent will use a generic greeting",
+      );
+    if (!tenant.escalation_enabled)
+      warnings.push(
+        "No escalation contacts - calls cannot be transferred to humans",
+      );
+    if (!tenant.operating_hours)
+      warnings.push(
+        "No operating hours set - agent won't distinguish business hours",
+      );
+
     return c.json({
       success: true,
       tenantId,
+      warnings: warnings.length > 0 ? warnings : undefined,
     });
   } catch (error) {
     console.error("[SETUP] Error completing setup:", error);
