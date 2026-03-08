@@ -146,42 +146,64 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
     return c.json({ error: "Tenant not found" }, 404);
   }
 
-  // Build the system prompt using the existing prompt builder
-  // The DB SELECT * returns columns beyond the base Tenant type (location, custom_instructions)
+  // Apply defaults for null config fields before building prompt or response
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const t = tenant as any;
+  const businessName = tenant.business_name || "our business";
+  const agentName = tenant.agent_name || "AI Assistant";
+  const industry = tenant.industry || "general";
+  const tz = tenant.timezone || "America/New_York";
+
+  // Build the system prompt using defaulted values
   const systemPrompt = buildSystemPrompt(
-    tenant.agent_name,
-    tenant.business_name,
-    tenant.industry,
-    tenant.agent_personality,
+    agentName,
+    businessName,
+    industry,
+    tenant.agent_personality || {
+      tone: "friendly",
+      verbosity: "moderate",
+      empathy: "high",
+    },
     {
       operatingHours: t.operating_hours,
       locationAddress: t.location_address || undefined,
       locationCity: t.location_city || undefined,
       customInstructions: t.custom_instructions || undefined,
       escalationPhone: tenant.escalation_phone || undefined,
-      timezone: tenant.timezone,
+      timezone: tz,
     },
   );
 
   // Build STT keyword hints per industry for better transcription accuracy
-  const sttKeywords = buildSttKeywords(tenant.industry, t.custom_instructions);
+  const sttKeywords = buildSttKeywords(industry, t.custom_instructions);
 
   return c.json({
     id: tenant.id,
-    business_name: tenant.business_name,
-    industry: tenant.industry,
-    agent_name: tenant.agent_name,
+    business_name: businessName,
+    industry,
+    agent_name: agentName,
     phone_number: tenant.phone_number,
     voice_config: tenant.voice_config,
-    agent_personality: tenant.agent_personality,
-    greeting_standard: tenant.greeting_standard,
-    greeting_after_hours: tenant.greeting_after_hours,
+    agent_personality: tenant.agent_personality || "friendly",
+    greeting_standard:
+      tenant.greeting_standard ||
+      `Thank you for calling ${businessName}. How can I help you today?`,
+    greeting_after_hours:
+      tenant.greeting_after_hours ||
+      `Thank you for calling ${businessName}. We're currently closed. I can still help you with general questions or take a message.`,
     greeting_returning: tenant.greeting_returning,
-    timezone: tenant.timezone,
-    operating_hours: tenant.operating_hours,
-    escalation_enabled: tenant.escalation_enabled,
+    timezone: tz,
+    operating_hours: tenant.operating_hours || {
+      monday: { open: "09:00", close: "17:00" },
+      tuesday: { open: "09:00", close: "17:00" },
+      wednesday: { open: "09:00", close: "17:00" },
+      thursday: { open: "09:00", close: "17:00" },
+      friday: { open: "09:00", close: "17:00" },
+      saturday: null,
+      sunday: null,
+    },
+    escalation_enabled:
+      tenant.escalation_enabled && tenant.escalation_phone ? true : false,
     escalation_phone: tenant.escalation_phone,
     escalation_triggers: tenant.escalation_triggers,
     features: tenant.features,

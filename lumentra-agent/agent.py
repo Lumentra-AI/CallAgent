@@ -53,8 +53,12 @@ class LumentraAgent(Agent):
         self.job_ctx = job_ctx
 
     async def on_enter(self):
+        greeting = self.tenant_config.get("greeting_standard") or (
+            f"Thank you for calling {self.tenant_config.get('business_name', 'us')}. "
+            "How can I help you?"
+        )
         self.session.generate_reply(
-            instructions=f"Greet the caller: {self.tenant_config['greeting_standard']}"
+            instructions=f"Greet the caller: {greeting}"
         )
 
 
