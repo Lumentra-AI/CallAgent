@@ -20,3 +20,5 @@ export {
   readRateLimit,
   tenantRateLimit,
 } from "./rate-limit.js";
+
+export { validateWebhookSecret } from "./webhook-auth.js";

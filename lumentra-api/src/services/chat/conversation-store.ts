@@ -210,8 +210,8 @@ export async function closeIdleSessions(): Promise<number> {
   return count;
 }
 
-// Start idle session cleanup interval (10 minutes)
-setInterval(
+// Start idle session cleanup interval (10 minutes) without blocking test/process exit
+const idleSessionCleanupInterval = setInterval(
   () => {
     closeIdleSessions().catch((err) =>
       console.error("[CHAT] Idle cleanup error:", err),
@@ -219,6 +219,8 @@ setInterval(
   },
   10 * 60 * 1000,
 );
+
+idleSessionCleanupInterval.unref?.();
 
 function rowToSession(row: ChatSessionRow): ConversationSession {
   const visitorInfo: VisitorInfo | undefined =

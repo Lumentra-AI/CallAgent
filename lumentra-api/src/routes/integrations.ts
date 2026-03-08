@@ -16,8 +16,8 @@ const oauthStates = new Map<
   { tenantId: string; provider: string; expiresAt: number }
 >();
 
-// Clean up expired states periodically
-setInterval(() => {
+// Clean up expired states periodically without blocking process shutdown
+const oauthStateCleanupInterval = setInterval(() => {
   const now = Date.now();
   for (const [key, value] of oauthStates.entries()) {
     if (value.expiresAt < now) {
@@ -25,6 +25,8 @@ setInterval(() => {
     }
   }
 }, 60000); // Every minute
+
+oauthStateCleanupInterval.unref?.();
 
 // OAuth provider configurations
 const OAUTH_CONFIGS: Record<

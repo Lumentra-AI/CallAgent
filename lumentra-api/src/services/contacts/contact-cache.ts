@@ -172,10 +172,12 @@ export const contactCache = new ContactCache({
   ttlMs: 5 * 60 * 1000, // 5 minutes
 });
 
-// Prune expired entries every minute
-setInterval(() => {
+// Prune expired entries every minute without blocking short-lived processes
+const contactCachePruneInterval = setInterval(() => {
   const pruned = contactCache.prune();
   if (pruned > 0) {
     console.log(`[ContactCache] Pruned ${pruned} expired entries`);
   }
 }, 60 * 1000);
+
+contactCachePruneInterval.unref?.();

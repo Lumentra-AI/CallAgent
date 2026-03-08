@@ -28,12 +28,13 @@ export async function initTenantCache(): Promise<void> {
     await refreshCache();
     cacheInitialized = true;
 
-    // Set up periodic refresh
-    setInterval(() => {
+    // Set up periodic refresh without blocking shutdown
+    const refreshInterval = setInterval(() => {
       refreshCache().catch((err) => {
         console.error("[CACHE] Failed to refresh tenant cache:", err);
       });
     }, REFRESH_INTERVAL_MS);
+    refreshInterval.unref?.();
   } catch (err) {
     console.error("[CACHE] Failed to initialize tenant cache:", err);
     // Don't throw - we can still query DB as fallback

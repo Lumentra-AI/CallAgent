@@ -11,7 +11,8 @@
     "dev:llama70b": "GROQ_MODEL=llama-3.3-70b-versatile tsx watch src/index.ts",
     "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --outfile=dist/index.js --format=esm --packages=external",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:sip-forward": "node --import tsx --test tests/sip-forward.test.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",

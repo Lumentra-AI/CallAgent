@@ -13,8 +13,8 @@ interface RateLimitEntry {
 // In-memory store (use Redis in production for multi-instance)
 const store = new Map<string, RateLimitEntry>();
 
-// Clean up expired entries periodically
-setInterval(() => {
+// Clean up expired entries periodically without keeping short-lived processes alive
+const cleanupInterval = setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of store.entries()) {
     if (entry.resetAt <= now) {
@@ -22,6 +22,8 @@ setInterval(() => {
     }
   }
 }, 60000); // Clean every minute
+
+cleanupInterval.unref?.();
 
 interface RateLimitConfig {
   windowMs: number; // Time window in milliseconds
