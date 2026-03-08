@@ -22,3 +22,5 @@ export {
 } from "./rate-limit.js";
 
 export { validateWebhookSecret } from "./webhook-auth.js";
+export { securityHeaders } from "./security-headers.js";
+export { internalAuth } from "./internal-auth.js";

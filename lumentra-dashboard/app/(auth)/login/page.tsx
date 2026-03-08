@@ -13,6 +13,7 @@ import {
   OAuthButtons,
   AuthMiniWidget,
 } from "@/components/auth";
+import { getSafeRedirectPath } from "@/lib/security/redirect";
 import { Loader2, Mail, Lock, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -23,7 +24,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const { signIn } = useAuth();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/setup";
+  const redirect = getSafeRedirectPath(searchParams.get("redirect"));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -31,6 +31,7 @@ import {
   userAuthMiddleware,
   rateLimit,
   validateWebhookSecret,
+  securityHeaders,
 } from "./middleware/index.js";
 
 function isSipForwardRequest(c: Context): boolean {
@@ -88,6 +89,7 @@ export function createApp() {
       credentials: true,
     }),
   );
+  app.use("*", securityHeaders());
 
   // Global rate limiting
   app.use(

@@ -32,5 +32,6 @@ healthRoutes.get("/", async (c) => {
 
 // Quick health check for load balancers (no DB check)
 healthRoutes.get("/ping", (c) => {
+  c.header("Cache-Control", "public, max-age=30");
   return c.text("pong");
 });

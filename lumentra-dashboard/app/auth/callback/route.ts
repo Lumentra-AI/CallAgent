@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
+import { getSafeRedirectPath } from "@/lib/security/redirect";
 
 function resolveAppOrigin(request: NextRequest): string {
   const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const appOrigin = resolveAppOrigin(request);
   const code = requestUrl.searchParams.get("code");
-  const next = requestUrl.searchParams.get("next") ?? "/setup";
+  const next = getSafeRedirectPath(requestUrl.searchParams.get("next"));
   const error = requestUrl.searchParams.get("error");
   const errorDescription = requestUrl.searchParams.get("error_description");
 

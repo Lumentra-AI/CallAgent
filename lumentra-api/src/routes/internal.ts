@@ -3,7 +3,6 @@
 // Authenticated via INTERNAL_API_KEY bearer token
 
 import { Hono } from "hono";
-import type { Context, Next } from "hono";
 import {
   getTenantByPhoneWithFallback,
   getTenantById,
@@ -14,6 +13,7 @@ import { insertOne } from "../services/database/query-helpers.js";
 import { findOrCreateByPhone } from "../services/contacts/contact-service.js";
 import { runPostCallAutomation } from "../services/automation/post-call.js";
 import type { ToolExecutionContext } from "../types/voice.js";
+import { internalAuth } from "../middleware/internal-auth.js";
 
 export const internalRoutes = new Hono();
 
@@ -125,29 +125,6 @@ function buildSttKeywords(
   }
 
   return keywords;
-}
-
-// Internal API key auth middleware
-function internalAuth() {
-  return async (c: Context, next: Next) => {
-    const apiKey = process.env.INTERNAL_API_KEY;
-    if (!apiKey) {
-      console.error("[INTERNAL] INTERNAL_API_KEY not configured");
-      return c.json({ error: "Internal API not configured" }, 500);
-    }
-
-    const authHeader = c.req.header("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return c.json({ error: "Missing Authorization header" }, 401);
-    }
-
-    const token = authHeader.slice(7);
-    if (token !== apiKey) {
-      return c.json({ error: "Invalid API key" }, 403);
-    }
-
-    await next();
-  };
 }
 
 // Apply auth to all routes
