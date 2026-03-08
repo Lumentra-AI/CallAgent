@@ -234,34 +234,6 @@ export default function Waveform() {
           </div>
         </div>
 
-        {/* State Toggle Buttons (for demo/testing) */}
-        <div className="hidden sm:flex items-center gap-1 bg-muted rounded-lg p-1">
-          <StateButton
-            active={speakerState === "idle"}
-            onClick={() => setSpeakerState("idle")}
-            icon={PhoneOff}
-            label="Idle"
-          />
-          <StateButton
-            active={speakerState === "ringing"}
-            onClick={() => setSpeakerState("ringing")}
-            icon={Phone}
-            label="Ring"
-          />
-          <StateButton
-            active={speakerState === "user"}
-            onClick={() => setSpeakerState("user")}
-            icon={Mic}
-            label="User"
-          />
-          <StateButton
-            active={speakerState === "ai"}
-            onClick={() => setSpeakerState("ai")}
-            icon={Volume2}
-            label="AI"
-          />
-        </div>
-
         {/* Call Status Badge */}
         <div
           className={cn(
@@ -341,11 +313,9 @@ export default function Waveform() {
               </div>
               <div>
                 <div className="text-sm font-medium text-foreground">
-                  John Smith
+                  Incoming Caller
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  +1 (555) 0123-4567
-                </div>
+                <div className="text-xs text-muted-foreground">Active Call</div>
               </div>
             </div>
             <div className="text-sm font-mono text-muted-foreground">
@@ -401,37 +371,6 @@ export default function Waveform() {
         </div>
       )}
     </div>
-  );
-}
-
-// ============================================================================
-// STATE BUTTON
-// ============================================================================
-
-function StateButton({
-  active,
-  onClick,
-  icon: Icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ElementType;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all",
-        active
-          ? "bg-background text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground hover:bg-accent",
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      <span className="hidden lg:inline">{label}</span>
-    </button>
   );
 }
 

@@ -2,16 +2,7 @@
 
 import React from "react";
 import { useConfig } from "@/context/ConfigContext";
-import { Button } from "@/components/ui/button";
-import {
-  Calendar,
-  Database,
-  MessageSquare,
-  Cloud,
-  Check,
-  ExternalLink,
-  Plug,
-} from "lucide-react";
+import { Calendar, Database, MessageSquare, Cloud, Plug } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ============================================================================
@@ -24,7 +15,6 @@ interface Integration {
   description: string;
   icon: React.ElementType;
   category: "calendar" | "pms" | "messaging" | "crm";
-  connected: boolean;
 }
 
 const INTEGRATIONS: Integration[] = [
@@ -35,7 +25,6 @@ const INTEGRATIONS: Integration[] = [
     description: "Sync appointments",
     icon: Calendar,
     category: "calendar",
-    connected: true,
   },
   {
     id: "calendly",
@@ -43,7 +32,6 @@ const INTEGRATIONS: Integration[] = [
     description: "Booking integration",
     icon: Calendar,
     category: "calendar",
-    connected: false,
   },
   {
     id: "acuity",
@@ -51,7 +39,6 @@ const INTEGRATIONS: Integration[] = [
     description: "Appointment management",
     icon: Calendar,
     category: "calendar",
-    connected: false,
   },
 
   // PMS (Hotel)
@@ -61,7 +48,6 @@ const INTEGRATIONS: Integration[] = [
     description: "Property management",
     icon: Database,
     category: "pms",
-    connected: false,
   },
   {
     id: "opera",
@@ -69,7 +55,6 @@ const INTEGRATIONS: Integration[] = [
     description: "Enterprise PMS",
     icon: Database,
     category: "pms",
-    connected: false,
   },
   {
     id: "guesty",
@@ -77,7 +62,6 @@ const INTEGRATIONS: Integration[] = [
     description: "Vacation rentals",
     icon: Database,
     category: "pms",
-    connected: false,
   },
 
   // Messaging
@@ -87,7 +71,6 @@ const INTEGRATIONS: Integration[] = [
     description: "SMS notifications",
     icon: MessageSquare,
     category: "messaging",
-    connected: true,
   },
   {
     id: "sendgrid",
@@ -95,7 +78,6 @@ const INTEGRATIONS: Integration[] = [
     description: "Email delivery",
     icon: MessageSquare,
     category: "messaging",
-    connected: false,
   },
 
   // CRM
@@ -105,7 +87,6 @@ const INTEGRATIONS: Integration[] = [
     description: "Customer data sync",
     icon: Cloud,
     category: "crm",
-    connected: false,
   },
   {
     id: "hubspot",
@@ -113,7 +94,6 @@ const INTEGRATIONS: Integration[] = [
     description: "Marketing CRM",
     icon: Cloud,
     category: "crm",
-    connected: false,
   },
 ];
 
@@ -143,18 +123,17 @@ export default function IntegrationsTab() {
         </p>
       </div>
 
-      {/* Connected Summary */}
+      {/* Coming Soon Notice */}
       <div className="flex items-center gap-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/20">
-          <Plug className="h-5 w-5 text-green-500" />
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-700/30">
+          <Plug className="h-5 w-5 text-zinc-400" />
         </div>
         <div>
           <div className="text-sm font-medium text-white">
-            {INTEGRATIONS.filter((i) => i.connected).length} Connected
+            Integrations are coming soon
           </div>
           <div className="text-xs text-zinc-500">
-            {INTEGRATIONS.filter((i) => !i.connected).length} available
-            integrations
+            Connect third-party services to extend your AI agent.
           </div>
         </div>
       </div>
@@ -187,67 +166,6 @@ export default function IntegrationsTab() {
           </section>
         );
       })}
-
-      {/* API Access */}
-      <section className="space-y-4">
-        <div className="border-b border-zinc-800 pb-2">
-          <h4 className="text-sm font-medium text-white">API Access</h4>
-        </div>
-
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-white">REST API</div>
-              <div className="text-xs text-zinc-500">
-                Connect custom systems via our API
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-white"
-            >
-              <ExternalLink className="mr-2 h-3 w-3" />
-              View Docs
-            </Button>
-          </div>
-
-          <div className="mt-4 space-y-2">
-            <div className="text-xs text-zinc-600">API Key</div>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 rounded border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-xs text-zinc-400">
-                lum_sk_********************************
-              </code>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-white"
-              >
-                Copy
-              </Button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Webhooks */}
-      <section className="space-y-4">
-        <div className="border-b border-zinc-800 pb-2">
-          <h4 className="text-sm font-medium text-white">Webhooks</h4>
-        </div>
-
-        <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center">
-          <Plug className="mx-auto mb-3 h-8 w-8 text-zinc-600" />
-          <p className="text-sm text-zinc-400">No webhooks configured</p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-4 border-zinc-700 text-zinc-400"
-          >
-            Add Webhook
-          </Button>
-        </div>
-      </section>
     </div>
   );
 }
@@ -262,27 +180,18 @@ function IntegrationCard({ integration }: { integration: Integration }) {
   return (
     <div
       className={cn(
-        "flex items-center justify-between rounded-lg border p-4 transition-all",
-        integration.connected
-          ? "border-green-500/30 bg-green-500/5"
-          : "border-zinc-800 bg-zinc-900 hover:border-zinc-700",
+        "flex items-center justify-between rounded-lg border p-4",
+        "border-zinc-800 bg-zinc-900",
       )}
     >
       <div className="flex items-center gap-3">
         <div
           className={cn(
             "flex h-10 w-10 items-center justify-center rounded-lg border",
-            integration.connected
-              ? "border-green-500/30 bg-green-500/10"
-              : "border-zinc-700 bg-zinc-800",
+            "border-zinc-700 bg-zinc-800",
           )}
         >
-          <Icon
-            className={cn(
-              "h-5 w-5",
-              integration.connected ? "text-green-500" : "text-zinc-400",
-            )}
-          />
+          <Icon className="h-5 w-5 text-zinc-400" />
         </div>
         <div>
           <div className="text-sm font-medium text-white">
@@ -292,20 +201,9 @@ function IntegrationCard({ integration }: { integration: Integration }) {
         </div>
       </div>
 
-      {integration.connected ? (
-        <div className="flex items-center gap-1 text-xs text-green-500">
-          <Check className="h-3 w-3" />
-          <span>Connected</span>
-        </div>
-      ) : (
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-white"
-        >
-          Connect
-        </Button>
-      )}
+      <span className="rounded-full border border-zinc-700 bg-zinc-800 px-2.5 py-0.5 text-xs font-medium text-zinc-400">
+        Coming Soon
+      </span>
     </div>
   );
 }

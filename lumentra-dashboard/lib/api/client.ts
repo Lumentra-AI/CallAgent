@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
-  (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001");
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:3100");
 
 // Current tenant ID - can be set dynamically
 let currentTenantId: string | null = null;

@@ -123,28 +123,40 @@ const VOICES = {
   ],
   cartesia: [
     {
-      id: "sonic",
-      name: "Sonic",
-      description: "Fast, clear voice",
-      gender: "neutral",
-    },
-    {
-      id: "neutral",
-      name: "Neutral",
-      description: "Balanced, professional",
-      gender: "neutral",
-    },
-    {
-      id: "warm",
-      name: "Warm",
-      description: "Friendly, welcoming",
+      id: "694f9389-aac1-45b6-b726-9d9369183238",
+      name: "Sarah",
+      description: "Natural, conversational female",
       gender: "female",
     },
     {
-      id: "deep",
-      name: "Deep",
-      description: "Authoritative, calm",
+      id: "829ccd10-f8b3-43cd-b8a0-4aeaa81f3b30",
+      name: "Customer Support Lady",
+      description: "Warm, professional female",
+      gender: "female",
+    },
+    {
+      id: "248be419-c632-4f23-adf1-5324ed7dbf1d",
+      name: "Professional Woman",
+      description: "Polished, clear female",
+      gender: "female",
+    },
+    {
+      id: "a167e0f3-df7e-4d52-a9c3-f949145efdab",
+      name: "Customer Support Man",
+      description: "Friendly, helpful male",
       gender: "male",
+    },
+    {
+      id: "a0e99841-438c-4a64-b679-ae501e7d6091",
+      name: "Barbershop Man",
+      description: "Warm, approachable male",
+      gender: "male",
+    },
+    {
+      id: "00a77add-48d5-4ef6-8157-71e5437b282d",
+      name: "Calm Lady",
+      description: "Soothing, reassuring female",
+      gender: "female",
     },
   ],
 };
@@ -155,8 +167,8 @@ const VOICES = {
 
 const DEFAULT_VOICE_CONFIG = {
   provider: "cartesia" as const,
-  voice_id: "sonic",
-  voice_name: "Sonic",
+  voice_id: "694f9389-aac1-45b6-b726-9d9369183238",
+  voice_name: "Sarah",
   speaking_rate: 1.0,
   pitch: 1.0,
 };
