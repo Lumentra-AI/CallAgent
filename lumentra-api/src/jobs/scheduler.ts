@@ -11,6 +11,7 @@ import {
   cleanupOldSlots,
 } from "./availability-generator.js";
 import { sendReviewRequests } from "./review-requests.js";
+import { checkPortStatus } from "./check-port-status.js";
 
 /**
  * Start the background job scheduler
@@ -89,6 +90,15 @@ export function startScheduler(): void {
     }
   });
 
+  // Check port request status every 6 hours
+  cron.schedule("0 */6 * * *", async () => {
+    try {
+      await checkPortStatus();
+    } catch (error) {
+      console.error("[SCHEDULER] Port status check failed:", error);
+    }
+  });
+
   console.log("[SCHEDULER] Jobs scheduled:");
   console.log("  - Reminders: every 10 minutes");
   console.log("  - Callbacks: every 5 minutes");
@@ -96,4 +106,5 @@ export function startScheduler(): void {
   console.log("  - Engagement scores: every hour");
   console.log("  - Daily slot generation: midnight");
   console.log("  - Review requests: 9 AM daily");
+  console.log("  - Port status check: every 6 hours");
 }

@@ -13,6 +13,7 @@ import {
   requireRole,
 } from "../middleware/index.js";
 import { encryptIfNeeded } from "../services/crypto/encryption.js";
+import { notifyAdmin } from "../services/notifications/admin-notify.js";
 import {
   searchAvailableNumbers,
   provisionNumber,
@@ -466,6 +467,19 @@ phoneConfigRoutes.post(
           { id: tenantId },
         );
       }
+
+      // Notify admin team about the new port request
+      notifyAdmin("port_request_submitted", {
+        portRequestId: portRequest.id,
+        tenantId,
+        phoneNumber: body.phone_number,
+        carrier: body.current_carrier,
+        authorizedName: body.authorized_name,
+        hasTempNumber: !!temporaryNumber,
+        temporaryNumber,
+      }).catch((err) =>
+        console.error("[PHONE] Admin notification failed:", err),
+      );
 
       return c.json({
         success: true,

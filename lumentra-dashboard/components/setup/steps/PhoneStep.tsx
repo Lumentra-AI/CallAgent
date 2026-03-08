@@ -14,6 +14,8 @@ import {
   CheckCircle,
   Loader2,
   Copy,
+  AlertCircle,
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -132,6 +134,187 @@ const PHONE_OPTIONS: PhoneOption[] = [
   },
 ];
 
+const PORT_STATUS_STEPS = [
+  { key: "draft", label: "Submitted" },
+  { key: "submitted", label: "Under review" },
+  { key: "pending", label: "Carrier processing" },
+  { key: "approved", label: "Approved" },
+  { key: "completed", label: "Completed" },
+] as const;
+
+function getPortStatusIndex(status: string): number {
+  const idx = PORT_STATUS_STEPS.findIndex((s) => s.key === status);
+  return idx === -1 ? 0 : idx;
+}
+
+function PortStatusTracker({
+  portRequest,
+  tempNumber,
+}: {
+  portRequest: {
+    status: string;
+    phone_number: string;
+    estimated_completion?: string | null;
+    rejection_reason?: string | null;
+    completed_at?: string | null;
+  };
+  tempNumber: string | null;
+}) {
+  const isRejected = portRequest.status === "rejected";
+  const isCompleted = portRequest.status === "completed";
+  const currentIndex = getPortStatusIndex(portRequest.status);
+
+  if (isRejected) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3">
+          <XCircle className="h-5 w-5 text-destructive" />
+          <span className="text-sm font-medium text-destructive">
+            Port request rejected
+          </span>
+        </div>
+        {portRequest.rejection_reason && (
+          <div className="rounded-lg border bg-muted/30 p-4 text-sm">
+            <p className="font-medium">Reason:</p>
+            <p className="mt-1 text-muted-foreground">
+              {portRequest.rejection_reason}
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (isCompleted) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 rounded-lg border border-green-500/50 bg-green-50 p-3 dark:bg-green-950/20">
+          <CheckCircle className="h-5 w-5 text-green-600" />
+          <span className="text-sm font-medium text-green-800 dark:text-green-200">
+            Number ported successfully
+          </span>
+        </div>
+        <div className="rounded-lg border bg-muted/30 p-4 text-sm">
+          <p>
+            Your number{" "}
+            <span className="font-mono font-semibold">
+              {portRequest.phone_number}
+            </span>{" "}
+            is now active and receiving calls.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 rounded-lg border border-blue-500/50 bg-blue-50 p-3 dark:bg-blue-950/20">
+        <Clock className="h-5 w-5 text-blue-600" />
+        <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+          Porting {portRequest.phone_number} - in progress
+        </span>
+      </div>
+
+      {/* Progress steps */}
+      <div className="rounded-lg border p-4">
+        <div className="flex items-center justify-between">
+          {PORT_STATUS_STEPS.map((step, i) => {
+            const isDone = i < currentIndex;
+            const isCurrent = i === currentIndex;
+
+            return (
+              <div key={step.key} className="flex flex-1 flex-col items-center">
+                <div className="flex w-full items-center">
+                  {i > 0 && (
+                    <div
+                      className={cn(
+                        "h-0.5 flex-1",
+                        isDone || isCurrent
+                          ? "bg-primary"
+                          : "bg-muted-foreground/20",
+                      )}
+                    />
+                  )}
+                  <div
+                    className={cn(
+                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs",
+                      isDone && "bg-primary text-primary-foreground",
+                      isCurrent &&
+                        "border-2 border-primary bg-primary/10 text-primary",
+                      !isDone &&
+                        !isCurrent &&
+                        "border border-muted-foreground/30 text-muted-foreground/50",
+                    )}
+                  >
+                    {isDone ? (
+                      <Check className="h-3 w-3" />
+                    ) : (
+                      <span>{i + 1}</span>
+                    )}
+                  </div>
+                  {i < PORT_STATUS_STEPS.length - 1 && (
+                    <div
+                      className={cn(
+                        "h-0.5 flex-1",
+                        isDone ? "bg-primary" : "bg-muted-foreground/20",
+                      )}
+                    />
+                  )}
+                </div>
+                <span
+                  className={cn(
+                    "mt-1.5 text-center text-[10px] leading-tight",
+                    isCurrent
+                      ? "font-medium text-primary"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {step.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Estimated completion */}
+      {portRequest.estimated_completion && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <AlertCircle className="h-4 w-4" />
+          <span>
+            Estimated completion:{" "}
+            {new Date(portRequest.estimated_completion).toLocaleDateString(
+              "en-US",
+              { month: "long", day: "numeric", year: "numeric" },
+            )}
+          </span>
+        </div>
+      )}
+
+      {/* Temporary number info */}
+      {tempNumber && (
+        <div className="rounded-lg border bg-muted/30 p-4 text-sm">
+          <p className="text-muted-foreground">
+            Your assistant is available at:
+          </p>
+          <p className="mt-1 font-mono text-lg font-semibold">{tempNumber}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            This temporary number will be replaced when porting completes.
+          </p>
+        </div>
+      )}
+
+      {!tempNumber && (
+        <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+          Your current number stays active during the porting process (5-15
+          business days).
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PhoneStep() {
   const router = useRouter();
   const { state, dispatch, saveStep, goToNextStep, goToPreviousStep } =
@@ -161,6 +344,16 @@ export function PhoneStep() {
   const [portTempNumber, setPortTempNumber] = useState<string | null>(null);
   const [accountNumber, setAccountNumber] = useState("");
   const [pin, setPin] = useState("");
+  // Server-side port request data (loaded from API)
+  const [existingPortRequest, setExistingPortRequest] = useState<{
+    id: string;
+    status: string;
+    phone_number: string;
+    estimated_completion?: string | null;
+    rejection_reason?: string | null;
+    submitted_at?: string | null;
+    completed_at?: string | null;
+  } | null>(null);
 
   // Forward state
   const [forwardCarrier, setForwardCarrier] = useState("att");
@@ -182,6 +375,47 @@ export function PhoneStep() {
       setNumberProvisioned(true);
     }
   }, [setupType, number]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch existing port request status on mount
+  useEffect(() => {
+    if (setupType !== "port") return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await get<{
+          config: { port_request_id?: string; phone_number?: string } | null;
+          portRequest: {
+            id: string;
+            status: string;
+            phone_number: string;
+            estimated_completion?: string | null;
+            rejection_reason?: string | null;
+            submitted_at?: string | null;
+            completed_at?: string | null;
+          } | null;
+        }>("/api/phone/config");
+
+        if (cancelled) return;
+
+        if (data.portRequest) {
+          setExistingPortRequest(data.portRequest);
+          if (data.portRequest.status !== "draft") {
+            setPortSubmitted(true);
+          }
+          if (data.config?.phone_number) {
+            setPortTempNumber(data.config.phone_number);
+          }
+        }
+      } catch {
+        // Non-fatal -- form still works
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setupType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // SIP state
   const [creatingSip, setCreatingSip] = useState(false);
@@ -299,6 +533,11 @@ export function PhoneStep() {
       if (data.success) {
         setPortSubmitted(true);
         setPortTempNumber(data.temporaryNumber);
+        setExistingPortRequest({
+          id: data.portRequestId,
+          status: "draft",
+          phone_number: portRequest!.phone_number!,
+        });
         if (data.temporaryNumber) {
           dispatch({
             type: "SET_PHONE_DATA",
@@ -532,29 +771,29 @@ export function PhoneStep() {
     <div className="space-y-6">
       {portSubmitted ? (
         <div className="space-y-4">
-          <div className="flex items-center gap-2 rounded-lg border border-green-500/50 bg-green-50 p-3 dark:bg-green-950/20">
-            <CheckCircle className="h-5 w-5 text-green-600" />
-            <span className="text-sm font-medium text-green-800 dark:text-green-200">
-              Port request submitted
-            </span>
-          </div>
-
-          <div className="rounded-lg border bg-muted/30 p-4 text-sm">
-            <p>
-              Your number will be transferred in approximately 5-15 business
-              days. Your current number stays active during the process.
-            </p>
-            {portTempNumber && (
-              <div className="mt-3">
-                <p className="text-muted-foreground">
-                  In the meantime, your assistant is available at:
-                </p>
-                <p className="mt-1 font-mono text-lg font-semibold">
-                  {portTempNumber}
+          {/* Port status tracker */}
+          {existingPortRequest && (
+            <PortStatusTracker
+              portRequest={existingPortRequest}
+              tempNumber={portTempNumber}
+            />
+          )}
+          {!existingPortRequest && (
+            <>
+              <div className="flex items-center gap-2 rounded-lg border border-green-500/50 bg-green-50 p-3 dark:bg-green-950/20">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+                <span className="text-sm font-medium text-green-800 dark:text-green-200">
+                  Port request submitted
+                </span>
+              </div>
+              <div className="rounded-lg border bg-muted/30 p-4 text-sm">
+                <p>
+                  Your number will be transferred in approximately 5-15 business
+                  days.
                 </p>
               </div>
-            )}
-          </div>
+            </>
+          )}
         </div>
       ) : (
         <>
