@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { queryOne } from "../services/database/client.js";
+import { queryOne, queryCount } from "../services/database/client.js";
 import {
   insertOne,
   updateOne,
@@ -101,6 +101,43 @@ async function releaseExistingPhoneConfig(tenantId: string): Promise<void> {
         `[PHONE] Released old number ${existing.phone_number} (SID: ${existing.provider_sid}) for tenant ${tenantId}`,
       );
     }
+  }
+}
+
+const DAILY_PROVISION_LIMIT = 3;
+
+/**
+ * Check if a tenant has hit their daily provisioning limit (3/day).
+ */
+async function checkDailyProvisionLimit(tenantId: string): Promise<boolean> {
+  const count = await queryCount(
+    `SELECT COUNT(*) FROM phone_provision_log
+     WHERE tenant_id = $1
+       AND action IN ('provision', 'forward', 'sip')
+       AND created_at > NOW() - INTERVAL '24 hours'`,
+    [tenantId],
+  );
+  return count >= DAILY_PROVISION_LIMIT;
+}
+
+/**
+ * Log a provisioning action for audit and daily limit enforcement.
+ */
+async function logProvisionAction(
+  tenantId: string,
+  phoneNumber: string,
+  providerSid: string | null,
+  action: string,
+): Promise<void> {
+  try {
+    await insertOne("phone_provision_log", {
+      tenant_id: tenantId,
+      phone_number: phoneNumber,
+      provider_sid: providerSid,
+      action,
+    });
+  } catch (err) {
+    console.error("[PHONE] Failed to log provision action:", err);
   }
 }
 
@@ -213,8 +250,42 @@ phoneConfigRoutes.post(
 
       const tenantId = membership.tenant_id;
 
+      // Daily provisioning limit
+      if (await checkDailyProvisionLimit(tenantId)) {
+        return c.json(
+          {
+            error:
+              "Daily provisioning limit reached. Please try again tomorrow.",
+          },
+          429,
+        );
+      }
+
+      // Confirmation required if tenant already has an active number
+      const existing = await queryOne<PhoneConfigRow>(
+        "SELECT * FROM phone_configurations WHERE tenant_id = $1 AND status = 'active' LIMIT 1",
+        [tenantId],
+      );
+      if (existing && body.confirm !== true) {
+        return c.json(
+          {
+            error: `You already have an active number (${existing.phone_number}). Send confirm: true to replace it.`,
+            existing_number: existing.phone_number,
+          },
+          409,
+        );
+      }
+
       // Release any existing number before provisioning a new one
-      await releaseExistingPhoneConfig(tenantId);
+      if (existing) {
+        await releaseExistingPhoneConfig(tenantId);
+        await logProvisionAction(
+          tenantId,
+          existing.phone_number || "unknown",
+          existing.provider_sid,
+          "release",
+        );
+      }
 
       // Provision number with SignalWire
       const { sid, error: provisionError } = await provisionNumber(
@@ -270,6 +341,8 @@ phoneConfigRoutes.post(
           },
           { id: tenantId },
         );
+
+        await logProvisionAction(tenantId, body.phoneNumber, sid, "provision");
 
         return c.json({
           success: true,
@@ -331,9 +404,31 @@ phoneConfigRoutes.post("/port", criticalRateLimit("phone-port"), async (c) => {
 
     const tenantId = membership.tenant_id;
 
+    // Daily provisioning limit (only applies when requesting a temp number)
+    if (body.use_temp_number && (await checkDailyProvisionLimit(tenantId))) {
+      return c.json(
+        {
+          error: "Daily provisioning limit reached. Please try again tomorrow.",
+        },
+        429,
+      );
+    }
+
     // Release any existing number before provisioning a temp number
     if (body.use_temp_number) {
-      await releaseExistingPhoneConfig(tenantId);
+      const existingPort = await queryOne<PhoneConfigRow>(
+        "SELECT * FROM phone_configurations WHERE tenant_id = $1 LIMIT 1",
+        [tenantId],
+      );
+      if (existingPort?.provider_sid) {
+        await releaseExistingPhoneConfig(tenantId);
+        await logProvisionAction(
+          tenantId,
+          existingPort.phone_number || "unknown",
+          existingPort.provider_sid,
+          "release",
+        );
+      }
     }
 
     // Create port request
@@ -372,6 +467,7 @@ phoneConfigRoutes.post("/port", criticalRateLimit("phone-port"), async (c) => {
           } else {
             temporaryNumber = numbers[0];
             tempSid = sid;
+            await logProvisionAction(tenantId, numbers[0], sid, "port");
           }
         }
       }
@@ -507,8 +603,42 @@ phoneConfigRoutes.post(
 
       const tenantId = membership.tenant_id;
 
+      // Daily provisioning limit
+      if (await checkDailyProvisionLimit(tenantId)) {
+        return c.json(
+          {
+            error:
+              "Daily provisioning limit reached. Please try again tomorrow.",
+          },
+          429,
+        );
+      }
+
+      // Confirmation required if tenant already has an active number
+      const existingFwd = await queryOne<PhoneConfigRow>(
+        "SELECT * FROM phone_configurations WHERE tenant_id = $1 AND status = 'active' LIMIT 1",
+        [tenantId],
+      );
+      if (existingFwd && body.confirm !== true) {
+        return c.json(
+          {
+            error: `You already have an active number (${existingFwd.phone_number}). Send confirm: true to replace it.`,
+            existing_number: existingFwd.phone_number,
+          },
+          409,
+        );
+      }
+
       // Release any existing number before provisioning a forwarding number
-      await releaseExistingPhoneConfig(tenantId);
+      if (existingFwd) {
+        await releaseExistingPhoneConfig(tenantId);
+        await logProvisionAction(
+          tenantId,
+          existingFwd.phone_number || "unknown",
+          existingFwd.provider_sid,
+          "release",
+        );
+      }
 
       // Provision a Lumentra number for receiving forwarded calls
       const areaCode = body.business_number.replace(/\D/g, "").substring(0, 3);
@@ -587,6 +717,8 @@ To cancel forwarding later:
 - T-Mobile: Dial ##61#
 
 Note: This only forwards calls you miss -- your phone still rings first.`;
+
+        await logProvisionAction(tenantId, numbers[0], sid, "forward");
 
         return c.json({
           success: true,
@@ -691,8 +823,45 @@ phoneConfigRoutes.post("/sip", criticalRateLimit("phone-sip"), async (c) => {
 
     const tenantId = membership.tenant_id;
 
+    // Daily provisioning limit
+    if (await checkDailyProvisionLimit(tenantId)) {
+      return c.json(
+        {
+          error: "Daily provisioning limit reached. Please try again tomorrow.",
+        },
+        429,
+      );
+    }
+
+    // Confirmation required if tenant already has an active config
+    const existingSip = await queryOne<PhoneConfigRow>(
+      "SELECT * FROM phone_configurations WHERE tenant_id = $1 AND status = 'active' LIMIT 1",
+      [tenantId],
+    );
+    if (existingSip) {
+      const sipBody = await c.req
+        .json()
+        .catch(() => ({}) as Record<string, unknown>);
+      if (sipBody.confirm !== true) {
+        return c.json(
+          {
+            error: `You already have an active configuration (${existingSip.setup_type}: ${existingSip.phone_number || existingSip.provider_sid}). Send confirm: true to replace it.`,
+          },
+          409,
+        );
+      }
+    }
+
     // Release any existing phone config before creating new SIP endpoint
-    await releaseExistingPhoneConfig(tenantId);
+    if (existingSip) {
+      await releaseExistingPhoneConfig(tenantId);
+      await logProvisionAction(
+        tenantId,
+        existingSip.phone_number || "sip-endpoint",
+        existingSip.provider_sid,
+        "release",
+      );
+    }
 
     const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
     const webhookUrl = withWebhookSecret(`${backendUrl}/sip/forward`);
@@ -739,6 +908,13 @@ phoneConfigRoutes.post("/sip", criticalRateLimit("phone-sip"), async (c) => {
           status: "pending",
         },
         ["tenant_id"],
+      );
+
+      await logProvisionAction(
+        tenantId,
+        endpoint.sipUri,
+        endpoint.endpointId,
+        "sip",
       );
 
       return c.json({
