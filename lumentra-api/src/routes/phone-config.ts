@@ -15,10 +15,12 @@ import {
   searchAvailableNumbers,
   provisionNumber,
   configureNumberWebhooks,
+  releaseNumber,
 } from "../services/signalwire/phone.js";
 import {
   createSipEndpoint,
   configureSipRouting,
+  deleteSipEndpoint,
   getSipEndpointStatus,
 } from "../services/signalwire/sip.js";
 
@@ -67,6 +69,39 @@ interface PortRequestRow {
   rejection_reason: string | null;
   submitted_at: string | null;
   completed_at: string | null;
+}
+
+/**
+ * Release the existing phone config for a tenant before re-provisioning.
+ * Prevents orphaned numbers on SignalWire that keep billing.
+ */
+async function releaseExistingPhoneConfig(tenantId: string): Promise<void> {
+  const existing = await queryOne<PhoneConfigRow>(
+    "SELECT * FROM phone_configurations WHERE tenant_id = $1 LIMIT 1",
+    [tenantId],
+  );
+
+  if (!existing || !existing.provider_sid) return;
+
+  if (existing.setup_type === "sip") {
+    const { error } = await deleteSipEndpoint(existing.provider_sid);
+    if (error) {
+      console.error("[PHONE] Failed to delete old SIP endpoint:", error);
+    } else {
+      console.info(
+        `[PHONE] Released old SIP endpoint ${existing.provider_sid} for tenant ${tenantId}`,
+      );
+    }
+  } else {
+    const { error } = await releaseNumber(existing.provider_sid);
+    if (error) {
+      console.error("[PHONE] Failed to release old number:", error);
+    } else {
+      console.info(
+        `[PHONE] Released old number ${existing.phone_number} (SID: ${existing.provider_sid}) for tenant ${tenantId}`,
+      );
+    }
+  }
 }
 
 /**
@@ -178,6 +213,9 @@ phoneConfigRoutes.post(
 
       const tenantId = membership.tenant_id;
 
+      // Release any existing number before provisioning a new one
+      await releaseExistingPhoneConfig(tenantId);
+
       // Provision number with SignalWire
       const { sid, error: provisionError } = await provisionNumber(
         body.phoneNumber,
@@ -271,6 +309,11 @@ phoneConfigRoutes.post("/port", criticalRateLimit("phone-port"), async (c) => {
     }
 
     const tenantId = membership.tenant_id;
+
+    // Release any existing number before provisioning a temp number
+    if (body.use_temp_number) {
+      await releaseExistingPhoneConfig(tenantId);
+    }
 
     // Create port request
     const portRequest = await insertOne<PortRequestRow>("port_requests", {
@@ -434,6 +477,9 @@ phoneConfigRoutes.post(
 
       const tenantId = membership.tenant_id;
 
+      // Release any existing number before provisioning a forwarding number
+      await releaseExistingPhoneConfig(tenantId);
+
       // Provision a Lumentra number for receiving forwarded calls
       const areaCode = body.business_number.replace(/\D/g, "").substring(0, 3);
       const { numbers } = await searchAvailableNumbers(areaCode);
@@ -588,6 +634,10 @@ phoneConfigRoutes.post("/sip", criticalRateLimit("phone-sip"), async (c) => {
     }
 
     const tenantId = membership.tenant_id;
+
+    // Release any existing phone config before creating new SIP endpoint
+    await releaseExistingPhoneConfig(tenantId);
+
     const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
     const webhookUrl = withWebhookSecret(`${backendUrl}/sip/forward`);
 
