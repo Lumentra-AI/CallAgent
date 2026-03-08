@@ -7,16 +7,14 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AuthCard, AuthLogo, OAuthButtons } from "@/components/auth";
 import {
-  Loader2,
-  Mail,
-  Lock,
-  User,
-  Building,
-  AlertCircle,
-  Check,
-} from "lucide-react";
+  AuthCard,
+  AuthLogo,
+  OAuthButtons,
+  PasswordRequirements,
+} from "@/components/auth";
+import { validatePassword } from "@/lib/utils/password";
+import { Loader2, Mail, Lock, User, Building, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function SignupPage() {
@@ -28,15 +26,30 @@ export default function SignupPage() {
   });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
   const { signUp } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const plan = searchParams.get("plan") || "professional";
+  const passwordValidation = validatePassword(formData.password);
+  const canSubmit =
+    !isLoading &&
+    formData.name.trim().length > 0 &&
+    formData.company.trim().length > 0 &&
+    formData.email.trim().length > 0 &&
+    passwordValidation.valid;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (!passwordValidation.valid) {
+      setError(
+        passwordValidation.errors[0] ||
+          "Password does not meet the minimum security requirements",
+      );
+      return;
+    }
+
     setIsLoading(true);
 
     const { error } = await signUp(formData.email, formData.password, {
@@ -49,36 +62,11 @@ export default function SignupPage() {
       setError(error.message);
       setIsLoading(false);
     } else {
-      setSuccess(true);
+      router.replace(
+        `/verify-email?email=${encodeURIComponent(formData.email)}`,
+      );
     }
   };
-
-  if (success) {
-    return (
-      <div className="flex min-h-screen items-center justify-center p-4">
-        <AuthCard className="text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-500/10">
-            <Check className="h-8 w-8 text-green-500" />
-          </div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Check your email
-          </h1>
-          <p className="mt-2 text-muted-foreground">
-            We&apos;ve sent you a confirmation link to{" "}
-            <strong>{formData.email}</strong>. Click the link to verify your
-            account and complete your setup.
-          </p>
-          <div className="mt-4 p-3 rounded-lg bg-muted/50 text-xs text-muted-foreground">
-            After confirming, you&apos;ll be guided through a quick setup to
-            configure your AI assistant.
-          </div>
-          <Button onClick={() => router.push("/login")} className="mt-6 w-full">
-            Go to login
-          </Button>
-        </AuthCard>
-      </div>
-    );
-  }
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
@@ -174,16 +162,13 @@ export default function SignupPage() {
                   setFormData({ ...formData, password: e.target.value })
                 }
                 className="pl-10"
-                minLength={8}
                 required
               />
             </div>
-            <p className="text-xs text-muted-foreground">
-              Must be at least 8 characters
-            </p>
+            <PasswordRequirements password={formData.password} />
           </div>
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button type="submit" className="w-full" disabled={!canSubmit}>
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

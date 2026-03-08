@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTenant } from "@/context/TenantContext";
+import { ApiClientError, get } from "@/lib/api/client";
 import { Loader2 } from "lucide-react";
-import { get } from "@/lib/api/client";
 import type { SetupStep } from "@/types";
 
 interface ProgressResponse {
@@ -33,9 +33,17 @@ export default function SetupPage() {
           } else {
             router.replace(`/setup/${progress.step}`);
           }
-        } catch {
-          // No progress yet, start from beginning
-          router.replace("/setup/business");
+        } catch (error) {
+          if (
+            error instanceof ApiClientError &&
+            error.status === 403 &&
+            /email verification required/i.test(error.message)
+          ) {
+            router.replace("/verify-email");
+          } else {
+            // No progress yet, start from beginning
+            router.replace("/setup/business");
+          }
         } finally {
           setLoadingProgress(false);
         }

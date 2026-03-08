@@ -235,7 +235,11 @@ export type SetupStep =
   | "escalation"
   | "review";
 
-export type TenantStatus = "draft" | "active" | "suspended";
+export type TenantStatus =
+  | "draft"
+  | "pending_verification"
+  | "active"
+  | "suspended";
 
 export type PhoneSetupType = "new" | "port" | "forward";
 

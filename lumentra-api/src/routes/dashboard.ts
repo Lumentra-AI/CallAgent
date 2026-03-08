@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { queryOne, queryAll } from "../services/database/client.js";
-import { getAuthTenantId } from "../middleware/index.js";
+import { getAuthTenantId, readRateLimit } from "../middleware/index.js";
 
 export const dashboardRoutes = new Hono();
+dashboardRoutes.use("*", readRateLimit("dashboard-read"));
 
 // Track server start time for uptime calculation
 const serverStartTime = Date.now();

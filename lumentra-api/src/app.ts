@@ -30,6 +30,7 @@ import {
   authMiddleware,
   userAuthMiddleware,
   rateLimit,
+  tenantRateLimit,
   validateWebhookSecret,
   securityHeaders,
 } from "./middleware/index.js";
@@ -95,8 +96,9 @@ export function createApp() {
   app.use(
     "*",
     rateLimit({
+      prefix: "global",
       windowMs: 60000,
-      max: 100,
+      max: 300,
       skip: isSipForwardRequest,
     }),
   );
@@ -106,6 +108,7 @@ export function createApp() {
   app.use(
     "/sip/forward",
     rateLimit({
+      prefix: "sip-forward",
       windowMs: 60000,
       max: 30,
       message: "Too many SIP forwarding requests, please try again later.",
@@ -120,11 +123,20 @@ export function createApp() {
 
   // User-only auth (no tenant required) for setup and tenant listing
   app.use("/api/setup/*", userAuthMiddleware());
+  app.use(
+    "/api/setup/*",
+    rateLimit({
+      prefix: "setup",
+      windowMs: 60000,
+      max: 20,
+    }),
+  );
   app.use("/api/tenants", userAuthMiddleware());
   app.use("/api/tenants/*", userAuthMiddleware());
 
   // Full auth (requires X-Tenant-ID) for all other API routes
   app.use("/api/*", authMiddleware());
+  app.use("/api/*", tenantRateLimit(300, "tenant-api"));
 
   // Protected API routes
   app.route("/api/calls", callsRoutes);

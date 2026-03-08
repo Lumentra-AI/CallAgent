@@ -5,7 +5,11 @@ import {
   updateOne,
   upsert,
 } from "../services/database/query-helpers.js";
-import { getAuthUserId } from "../middleware/index.js";
+import {
+  getAuthUserId,
+  criticalRateLimit,
+  strictRateLimit,
+} from "../middleware/index.js";
 import { encryptIfNeeded } from "../services/crypto/encryption.js";
 import {
   searchAvailableNumbers,
@@ -69,17 +73,21 @@ interface PortRequestRow {
  * GET /api/phone/available
  * Search for available phone numbers
  */
-phoneConfigRoutes.get("/available", async (c) => {
-  const areaCode = c.req.query("areaCode");
+phoneConfigRoutes.get(
+  "/available",
+  strictRateLimit("phone-search"),
+  async (c) => {
+    const areaCode = c.req.query("areaCode");
 
-  const { numbers, error } = await searchAvailableNumbers(areaCode);
+    const { numbers, error } = await searchAvailableNumbers(areaCode);
 
-  if (error) {
-    return c.json({ error }, 500);
-  }
+    if (error) {
+      return c.json({ error }, 500);
+    }
 
-  return c.json({ numbers });
-});
+    return c.json({ numbers });
+  },
+);
 
 /**
  * GET /api/phone/config
@@ -138,17 +146,20 @@ phoneConfigRoutes.get("/config", async (c) => {
  * POST /api/phone/provision
  * Provision a new phone number
  */
-phoneConfigRoutes.post("/provision", async (c) => {
-  const body = await c.req.json();
-  const userId = getAuthUserId(c);
+phoneConfigRoutes.post(
+  "/provision",
+  criticalRateLimit("phone-provision"),
+  async (c) => {
+    const body = await c.req.json();
+    const userId = getAuthUserId(c);
 
-  if (!body.phoneNumber) {
-    return c.json({ error: "phoneNumber is required" }, 400);
-  }
+    if (!body.phoneNumber) {
+      return c.json({ error: "phoneNumber is required" }, 400);
+    }
 
-  try {
-    // Get tenant
-    const membershipSql = `
+    try {
+      // Get tenant
+      const membershipSql = `
       SELECT tenant_id, role
       FROM tenant_members
       WHERE user_id = $1
@@ -156,75 +167,76 @@ phoneConfigRoutes.post("/provision", async (c) => {
         AND role = ANY($2)
       LIMIT 1
     `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
+      const membership = await queryOne<MembershipRow>(membershipSql, [
+        userId,
+        ["owner", "admin"],
+      ]);
 
-    if (!membership) {
-      return c.json({ error: "Forbidden" }, 403);
-    }
+      if (!membership) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
 
-    const tenantId = membership.tenant_id;
+      const tenantId = membership.tenant_id;
 
-    // Provision number with SignalWire
-    const { sid, error: provisionError } = await provisionNumber(
-      body.phoneNumber,
-    );
-
-    if (provisionError || !sid) {
-      return c.json(
-        { error: provisionError || "Failed to provision number" },
-        500,
+      // Provision number with SignalWire
+      const { sid, error: provisionError } = await provisionNumber(
+        body.phoneNumber,
       );
+
+      if (provisionError || !sid) {
+        return c.json(
+          { error: provisionError || "Failed to provision number" },
+          500,
+        );
+      }
+
+      // Configure webhooks
+      const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
+      const webhookUrl = `${backendUrl}/sip/forward`;
+      await configureNumberWebhooks(sid, webhookUrl);
+
+      // Create or update phone configuration
+      const config = await upsert<PhoneConfigRow>(
+        "phone_configurations",
+        {
+          tenant_id: tenantId,
+          phone_number: body.phoneNumber,
+          setup_type: "new",
+          provider: "signalwire",
+          provider_sid: sid,
+          status: "active",
+          verified_at: new Date().toISOString(),
+        },
+        ["tenant_id"],
+      );
+
+      // Update tenant's phone number
+      await updateOne(
+        "tenants",
+        {
+          phone_number: body.phoneNumber,
+          updated_at: new Date().toISOString(),
+        },
+        { id: tenantId },
+      );
+
+      return c.json({
+        success: true,
+        phoneNumber: body.phoneNumber,
+        configId: config.id,
+      });
+    } catch (error) {
+      console.error("[PHONE] Error provisioning number:", error);
+      return c.json({ error: "Failed to provision phone number" }, 500);
     }
-
-    // Configure webhooks
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-    const webhookUrl = `${backendUrl}/sip/forward`;
-    await configureNumberWebhooks(sid, webhookUrl);
-
-    // Create or update phone configuration
-    const config = await upsert<PhoneConfigRow>(
-      "phone_configurations",
-      {
-        tenant_id: tenantId,
-        phone_number: body.phoneNumber,
-        setup_type: "new",
-        provider: "signalwire",
-        provider_sid: sid,
-        status: "active",
-        verified_at: new Date().toISOString(),
-      },
-      ["tenant_id"],
-    );
-
-    // Update tenant's phone number
-    await updateOne(
-      "tenants",
-      {
-        phone_number: body.phoneNumber,
-        updated_at: new Date().toISOString(),
-      },
-      { id: tenantId },
-    );
-
-    return c.json({
-      success: true,
-      phoneNumber: body.phoneNumber,
-      configId: config.id,
-    });
-  } catch (error) {
-    console.error("[PHONE] Error provisioning number:", error);
-    return c.json({ error: "Failed to provision phone number" }, 500);
-  }
-});
+  },
+);
 
 /**
  * POST /api/phone/port
  * Submit a number port request
  */
-phoneConfigRoutes.post("/port", async (c) => {
+phoneConfigRoutes.post("/port", criticalRateLimit("phone-port"), async (c) => {
   const body = await c.req.json();
   const userId = getAuthUserId(c);
 
@@ -390,17 +402,20 @@ phoneConfigRoutes.get("/port/:id/status", async (c) => {
  * POST /api/phone/forward
  * Set up call forwarding
  */
-phoneConfigRoutes.post("/forward", async (c) => {
-  const body = await c.req.json();
-  const userId = getAuthUserId(c);
+phoneConfigRoutes.post(
+  "/forward",
+  criticalRateLimit("phone-forward"),
+  async (c) => {
+    const body = await c.req.json();
+    const userId = getAuthUserId(c);
 
-  if (!body.business_number) {
-    return c.json({ error: "business_number is required" }, 400);
-  }
+    if (!body.business_number) {
+      return c.json({ error: "business_number is required" }, 400);
+    }
 
-  try {
-    // Get tenant
-    const membershipSql = `
+    try {
+      // Get tenant
+      const membershipSql = `
       SELECT tenant_id, role
       FROM tenant_members
       WHERE user_id = $1
@@ -408,65 +423,65 @@ phoneConfigRoutes.post("/forward", async (c) => {
         AND role = ANY($2)
       LIMIT 1
     `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
+      const membership = await queryOne<MembershipRow>(membershipSql, [
+        userId,
+        ["owner", "admin"],
+      ]);
 
-    if (!membership) {
-      return c.json({ error: "Forbidden" }, 403);
-    }
+      if (!membership) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
 
-    const tenantId = membership.tenant_id;
+      const tenantId = membership.tenant_id;
 
-    // Provision a Lumentra number for receiving forwarded calls
-    const areaCode = body.business_number.replace(/\D/g, "").substring(0, 3);
-    const { numbers } = await searchAvailableNumbers(areaCode);
+      // Provision a Lumentra number for receiving forwarded calls
+      const areaCode = body.business_number.replace(/\D/g, "").substring(0, 3);
+      const { numbers } = await searchAvailableNumbers(areaCode);
 
-    if (numbers.length === 0) {
-      return c.json({ error: "No numbers available in that area code" }, 400);
-    }
+      if (numbers.length === 0) {
+        return c.json({ error: "No numbers available in that area code" }, 400);
+      }
 
-    const { sid, error: provisionError } = await provisionNumber(numbers[0]);
+      const { sid, error: provisionError } = await provisionNumber(numbers[0]);
 
-    if (provisionError || !sid) {
-      return c.json(
-        { error: provisionError || "Failed to provision number" },
-        500,
+      if (provisionError || !sid) {
+        return c.json(
+          { error: provisionError || "Failed to provision number" },
+          500,
+        );
+      }
+
+      // Configure webhooks
+      const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
+      const webhookUrl = `${backendUrl}/sip/forward`;
+      await configureNumberWebhooks(sid, webhookUrl);
+
+      // Create phone configuration
+      const config = await upsert<PhoneConfigRow>(
+        "phone_configurations",
+        {
+          tenant_id: tenantId,
+          phone_number: numbers[0],
+          setup_type: "forward",
+          provider: "signalwire",
+          provider_sid: sid,
+          status: "pending", // Pending until user confirms forwarding is active
+        },
+        ["tenant_id"],
       );
-    }
 
-    // Configure webhooks
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-    const webhookUrl = `${backendUrl}/sip/forward`;
-    await configureNumberWebhooks(sid, webhookUrl);
+      // Update tenant phone number
+      await updateOne(
+        "tenants",
+        {
+          phone_number: numbers[0],
+          updated_at: new Date().toISOString(),
+        },
+        { id: tenantId },
+      );
 
-    // Create phone configuration
-    const config = await upsert<PhoneConfigRow>(
-      "phone_configurations",
-      {
-        tenant_id: tenantId,
-        phone_number: numbers[0],
-        setup_type: "forward",
-        provider: "signalwire",
-        provider_sid: sid,
-        status: "pending", // Pending until user confirms forwarding is active
-      },
-      ["tenant_id"],
-    );
-
-    // Update tenant phone number
-    await updateOne(
-      "tenants",
-      {
-        phone_number: numbers[0],
-        updated_at: new Date().toISOString(),
-      },
-      { id: tenantId },
-    );
-
-    // Generate conditional forwarding instructions (busy/no-answer, not unconditional)
-    const instructions = `To forward unanswered calls from ${body.business_number} to your AI assistant:
+      // Generate conditional forwarding instructions (busy/no-answer, not unconditional)
+      const instructions = `To forward unanswered calls from ${body.business_number} to your AI assistant:
 
 1. Contact your carrier or use the codes below to set up conditional forwarding
 2. Forward to: ${numbers[0]}
@@ -484,17 +499,18 @@ To cancel forwarding later:
 
 Note: This only forwards calls you miss -- your phone still rings first.`;
 
-    return c.json({
-      success: true,
-      forwardTo: numbers[0],
-      instructions,
-      configId: config.id,
-    });
-  } catch (error) {
-    console.error("[PHONE] Error setting up forwarding:", error);
-    return c.json({ error: "Failed to set up call forwarding" }, 500);
-  }
-});
+      return c.json({
+        success: true,
+        forwardTo: numbers[0],
+        instructions,
+        configId: config.id,
+      });
+    } catch (error) {
+      console.error("[PHONE] Error setting up forwarding:", error);
+      return c.json({ error: "Failed to set up call forwarding" }, 500);
+    }
+  },
+);
 
 /**
  * POST /api/phone/verify-forward
@@ -549,7 +565,7 @@ phoneConfigRoutes.post("/verify-forward", async (c) => {
  * POST /api/phone/sip
  * Create a SIP trunk endpoint
  */
-phoneConfigRoutes.post("/sip", async (c) => {
+phoneConfigRoutes.post("/sip", criticalRateLimit("phone-sip"), async (c) => {
   const userId = getAuthUserId(c);
 
   try {

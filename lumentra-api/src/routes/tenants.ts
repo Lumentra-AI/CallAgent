@@ -6,7 +6,11 @@ import {
 } from "../services/database/client.js";
 import { insertOne, updateOne } from "../services/database/query-helpers.js";
 import { invalidateTenant } from "../services/database/tenant-cache.js";
-import { getAuthTenantId, getAuthUserId } from "../middleware/index.js";
+import {
+  getAuthTenantId,
+  getAuthUserId,
+  strictRateLimit,
+} from "../middleware/index.js";
 
 export const tenantsRoutes = new Hono();
 
@@ -298,7 +302,7 @@ tenantsRoutes.post("/", async (c) => {
  * PUT /api/tenants/:id
  * Update tenant configuration (owner/admin only)
  */
-tenantsRoutes.put("/:id", async (c) => {
+tenantsRoutes.put("/:id", strictRateLimit("tenants-update"), async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
   const userId = getAuthUserId(c);

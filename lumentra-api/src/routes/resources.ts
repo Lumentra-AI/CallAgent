@@ -16,7 +16,7 @@ import {
 } from "../services/resources/resource-service.js";
 import { PaginationParams } from "../types/crm.js";
 
-import { getAuthTenantId } from "../middleware/index.js";
+import { getAuthTenantId, strictRateLimit } from "../middleware/index.js";
 
 export const resourcesRoutes = new Hono();
 
@@ -204,7 +204,7 @@ resourcesRoutes.get("/:id", async (c) => {
  * POST /api/resources
  * Create a new resource
  */
-resourcesRoutes.post("/", async (c) => {
+resourcesRoutes.post("/", strictRateLimit("resources-create"), async (c) => {
   try {
     const tenantId = getTenantId(c);
     const body = await c.req.json();

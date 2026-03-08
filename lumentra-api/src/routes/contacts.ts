@@ -26,7 +26,11 @@ import {
 } from "../services/contacts/contact-service.js";
 import { isValidPhone } from "../services/contacts/phone-utils.js";
 import { ContactFilters, PaginationParams } from "../types/crm.js";
-import { getAuthTenantId, getAuthUserId } from "../middleware/index.js";
+import {
+  getAuthTenantId,
+  getAuthUserId,
+  strictRateLimit,
+} from "../middleware/index.js";
 
 export const contactsRoutes = new Hono();
 
@@ -286,7 +290,7 @@ contactsRoutes.get("/:id", async (c) => {
  * POST /api/contacts
  * Create new contact
  */
-contactsRoutes.post("/", async (c) => {
+contactsRoutes.post("/", strictRateLimit("contacts-create"), async (c) => {
   try {
     const tenantId = getTenantId(c);
     const body = await c.req.json();

@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:redirect": "node --experimental-strip-types --test tests/redirect-path.test.ts"
+    "test:redirect": "node --experimental-strip-types --test tests/redirect-path.test.ts",
+    "test:password-policy": "node --experimental-strip-types --test tests/password-policy.test.ts",
+    "test:email-verification": "node --experimental-strip-types --test tests/email-verification.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.12",

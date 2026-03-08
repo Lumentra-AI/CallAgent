@@ -16,7 +16,7 @@ import {
   getUpcomingBookings,
 } from "../services/bookings/booking-service.js";
 import { BookingFilters, PaginationParams } from "../types/crm.js";
-import { getAuthTenantId } from "../middleware/index.js";
+import { getAuthTenantId, strictRateLimit } from "../middleware/index.js";
 
 export const bookingsRoutes = new Hono();
 
@@ -219,7 +219,7 @@ bookingsRoutes.get("/:id", async (c) => {
  * POST /api/bookings
  * Create a new booking
  */
-bookingsRoutes.post("/", async (c) => {
+bookingsRoutes.post("/", strictRateLimit("bookings-create"), async (c) => {
   try {
     const tenantId = getTenantId(c);
     const body = await c.req.json();
@@ -314,7 +314,7 @@ bookingsRoutes.patch("/:id", async (c) => {
  * DELETE /api/bookings/:id
  * Cancel a booking
  */
-bookingsRoutes.delete("/:id", async (c) => {
+bookingsRoutes.delete("/:id", strictRateLimit("bookings-delete"), async (c) => {
   try {
     const tenantId = getTenantId(c);
     const id = c.req.param("id");

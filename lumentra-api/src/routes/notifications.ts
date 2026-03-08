@@ -16,7 +16,7 @@ import {
 } from "../services/notifications/notification-service.js";
 import type { NotificationTemplate } from "../types/crm.js";
 
-import { getAuthTenantId } from "../middleware/index.js";
+import { getAuthTenantId, readRateLimit } from "../middleware/index.js";
 
 export const notificationsRoutes = new Hono();
 
@@ -69,7 +69,7 @@ interface NotificationPreferenceRow {
 }
 
 // GET /api/notifications
-notificationsRoutes.get("/", async (c) => {
+notificationsRoutes.get("/", readRateLimit("notifications-read"), async (c) => {
   try {
     const tenantId = getTenantId(c);
     const query = c.req.query();
@@ -134,62 +134,74 @@ notificationsRoutes.get("/", async (c) => {
 });
 
 // GET /api/notifications/templates - MUST be before /:id route
-notificationsRoutes.get("/templates", async (c) => {
-  try {
-    const tenantId = getTenantId(c);
+notificationsRoutes.get(
+  "/templates",
+  readRateLimit("notifications-read"),
+  async (c) => {
+    try {
+      const tenantId = getTenantId(c);
 
-    const data = await queryAll<NotificationTemplateRow>(
-      `SELECT * FROM notification_templates
+      const data = await queryAll<NotificationTemplateRow>(
+        `SELECT * FROM notification_templates
        WHERE tenant_id = $1
        ORDER BY notification_type, channel`,
-      [tenantId],
-    );
+        [tenantId],
+      );
 
-    return c.json({ templates: data || [] });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return c.json({ error: message }, 500);
-  }
-});
+      return c.json({ templates: data || [] });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return c.json({ error: message }, 500);
+    }
+  },
+);
 
 // GET /api/notifications/preferences - MUST be before /:id route
-notificationsRoutes.get("/preferences", async (c) => {
-  try {
-    const tenantId = getTenantId(c);
+notificationsRoutes.get(
+  "/preferences",
+  readRateLimit("notifications-read"),
+  async (c) => {
+    try {
+      const tenantId = getTenantId(c);
 
-    const data = await queryAll<NotificationPreferenceRow>(
-      `SELECT * FROM notification_preferences WHERE tenant_id = $1`,
-      [tenantId],
-    );
+      const data = await queryAll<NotificationPreferenceRow>(
+        `SELECT * FROM notification_preferences WHERE tenant_id = $1`,
+        [tenantId],
+      );
 
-    return c.json({ preferences: data || [] });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return c.json({ error: message }, 500);
-  }
-});
+      return c.json({ preferences: data || [] });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return c.json({ error: message }, 500);
+    }
+  },
+);
 
 // GET /api/notifications/:id - parameterized route MUST be after specific routes
-notificationsRoutes.get("/:id", async (c) => {
-  try {
-    const tenantId = getTenantId(c);
-    const id = c.req.param("id");
+notificationsRoutes.get(
+  "/:id",
+  readRateLimit("notifications-read"),
+  async (c) => {
+    try {
+      const tenantId = getTenantId(c);
+      const id = c.req.param("id");
 
-    const data = await queryOne<NotificationRow>(
-      `SELECT * FROM notifications WHERE tenant_id = $1 AND id = $2`,
-      [tenantId, id],
-    );
+      const data = await queryOne<NotificationRow>(
+        `SELECT * FROM notifications WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, id],
+      );
 
-    if (!data) {
-      return c.json({ error: "Not found" }, 404);
+      if (!data) {
+        return c.json({ error: "Not found" }, 404);
+      }
+
+      return c.json(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return c.json({ error: message }, 500);
     }
-
-    return c.json(data);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return c.json({ error: message }, 500);
-  }
-});
+  },
+);
 
 // POST /api/notifications/send
 notificationsRoutes.post("/send", async (c) => {

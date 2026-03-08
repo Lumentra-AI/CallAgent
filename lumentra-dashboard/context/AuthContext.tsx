@@ -9,6 +9,8 @@ import {
   type ReactNode,
 } from "react";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { buildAuthCallbackUrl } from "@/lib/supabase/auth-redirect";
+import { validatePassword } from "@/lib/utils/password";
 import type { User, Session } from "@supabase/supabase-js";
 
 interface AuthContextType {
@@ -95,11 +97,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!supabase) {
         return { error: new Error("Auth not configured") };
       }
+
+      const validation = validatePassword(password);
+      if (!validation.valid) {
+        return {
+          error: new Error(
+            validation.errors[0] ||
+              "Password does not meet the minimum security requirements",
+          ),
+        };
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: metadata,
+          emailRedirectTo: buildAuthCallbackUrl(window.location.origin),
         },
       });
       if (!error && data.session) {
@@ -121,13 +135,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithOAuth = useCallback(
     async (provider: "google" | "github") => {
       if (!supabase) return;
-      const configuredRedirect = process.env.NEXT_PUBLIC_AUTH_REDIRECT_URL;
-      const redirectTo =
-        configuredRedirect || `${window.location.origin}/auth/callback`;
       await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo,
+          redirectTo: buildAuthCallbackUrl(window.location.origin),
         },
       });
     },

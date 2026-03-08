@@ -28,6 +28,7 @@ cleanupInterval.unref?.();
 interface RateLimitConfig {
   windowMs: number; // Time window in milliseconds
   max: number; // Max requests per window
+  prefix?: string; // Namespace for this limiter's buckets
   keyGenerator?: (c: Context) => string; // Custom key generator
   skip?: (c: Context) => boolean; // Skip rate limiting for certain requests
   message?: string; // Custom error message
@@ -39,11 +40,14 @@ const defaultConfig: RateLimitConfig = {
   message: "Too many requests, please try again later",
 };
 
+let rateLimitPrefixCounter = 0;
+
 /**
  * Create rate limiting middleware
  */
 export function rateLimit(config: Partial<RateLimitConfig> = {}) {
   const options = { ...defaultConfig, ...config };
+  const prefix = options.prefix || `rl_${++rateLimitPrefixCounter}`;
 
   return async (c: Context, next: Next) => {
     // Check if we should skip
@@ -52,9 +56,10 @@ export function rateLimit(config: Partial<RateLimitConfig> = {}) {
     }
 
     // Generate key for this client
-    const key = options.keyGenerator
+    const clientKey = options.keyGenerator
       ? options.keyGenerator(c)
       : getClientKey(c);
+    const key = `${prefix}:${clientKey}`;
 
     const now = Date.now();
     let entry = store.get(key);
@@ -125,8 +130,9 @@ function getClientKey(c: Context): string {
 /**
  * Stricter rate limit for sensitive endpoints (login, signup)
  */
-export function strictRateLimit() {
+export function strictRateLimit(prefix?: string) {
   return rateLimit({
+    prefix,
     windowMs: 60000, // 1 minute
     max: 10, // 10 attempts per minute
     message: "Too many attempts, please try again later",
@@ -136,8 +142,9 @@ export function strictRateLimit() {
 /**
  * Very strict rate limit for critical operations (password reset)
  */
-export function criticalRateLimit() {
+export function criticalRateLimit(prefix?: string) {
   return rateLimit({
+    prefix,
     windowMs: 3600000, // 1 hour
     max: 5, // 5 attempts per hour
     message: "Rate limit exceeded. Please try again in an hour.",
@@ -147,8 +154,9 @@ export function criticalRateLimit() {
 /**
  * Generous rate limit for read-heavy endpoints
  */
-export function readRateLimit() {
+export function readRateLimit(prefix?: string) {
   return rateLimit({
+    prefix,
     windowMs: 60000, // 1 minute
     max: 120, // 120 requests per minute
   });
@@ -157,8 +165,9 @@ export function readRateLimit() {
 /**
  * Rate limit by tenant (for multi-tenant fair usage)
  */
-export function tenantRateLimit(maxPerMinute: number = 300) {
+export function tenantRateLimit(maxPerMinute: number = 300, prefix?: string) {
   return rateLimit({
+    prefix,
     windowMs: 60000,
     max: maxPerMinute,
     keyGenerator: (c) => {

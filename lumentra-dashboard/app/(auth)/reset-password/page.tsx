@@ -7,7 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AuthCard, AuthLogo } from "@/components/auth";
+import { AuthCard, AuthLogo, PasswordRequirements } from "@/components/auth";
+import { validatePassword } from "@/lib/utils/password";
 import {
   Loader2,
   Lock,
@@ -25,6 +26,13 @@ export default function ResetPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isValidSession, setIsValidSession] = useState<boolean | null>(null);
   const router = useRouter();
+  const passwordValidation = validatePassword(password);
+  const passwordsMatch = password === confirmPassword;
+  const canSubmit =
+    !isLoading &&
+    isValidSession === true &&
+    passwordValidation.valid &&
+    passwordsMatch;
 
   useEffect(() => {
     const checkSession = async () => {
@@ -47,12 +55,15 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setError("");
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters");
+    if (!passwordValidation.valid) {
+      setError(
+        passwordValidation.errors[0] ||
+          "Password does not meet the minimum security requirements",
+      );
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (!passwordsMatch) {
       setError("Passwords do not match");
       return;
     }
@@ -172,14 +183,14 @@ export default function ResetPasswordPage() {
               <Input
                 id="password"
                 type="password"
-                placeholder="At least 8 characters"
+                placeholder="Use a strong password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="pl-10"
                 required
-                minLength={8}
               />
             </div>
+            <PasswordRequirements password={password} />
           </div>
 
           <div className="space-y-2">
@@ -194,12 +205,14 @@ export default function ResetPasswordPage() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="pl-10"
                 required
-                minLength={8}
               />
             </div>
+            {confirmPassword.length > 0 && !passwordsMatch && (
+              <p className="text-xs text-destructive">Passwords do not match</p>
+            )}
           </div>
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button type="submit" className="w-full" disabled={!canSubmit}>
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

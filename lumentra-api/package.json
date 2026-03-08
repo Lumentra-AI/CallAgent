@@ -13,7 +13,9 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test:sip-forward": "node --import tsx --test tests/sip-forward.test.ts",
-    "test:security-hardening": "node --import tsx --test tests/security-hardening.test.ts"
+    "test:security-hardening": "node --import tsx --test tests/security-hardening.test.ts",
+    "test:rate-limit-application": "node --import tsx --test tests/rate-limit-application.test.ts",
+    "test:setup-email-verification": "node --import tsx --test tests/setup-email-verification.test.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",

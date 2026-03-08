@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordRequirements } from "@/components/auth";
 import {
   AvatarUpload,
   ThemeSelector,
@@ -22,6 +23,7 @@ import {
 import type { NotificationSettings } from "@/components/profile";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
+import { validatePassword } from "@/lib/utils/password";
 import Link from "next/link";
 
 // ============================================================================
@@ -304,9 +306,10 @@ function SecurityTab() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
+  const passwordValidation = validatePassword(newPassword);
   const passwordsMatch = newPassword === confirmPassword;
   const canChangePassword =
-    currentPassword.length > 0 && newPassword.length >= 8 && passwordsMatch;
+    currentPassword.length > 0 && passwordValidation.valid && passwordsMatch;
 
   return (
     <div className="space-y-8">
@@ -341,11 +344,7 @@ function SecurityTab() {
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="Enter new password"
             />
-            {newPassword.length > 0 && newPassword.length < 8 && (
-              <p className="text-xs text-destructive">
-                Password must be at least 8 characters
-              </p>
-            )}
+            <PasswordRequirements password={newPassword} />
           </div>
 
           <div className="space-y-2">

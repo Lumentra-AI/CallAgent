@@ -1,16 +1,32 @@
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import {
   queryOne,
   queryAll,
   transaction,
 } from "../services/database/client.js";
 import { updateOne } from "../services/database/query-helpers.js";
-import { getAuthUserId } from "../middleware/index.js";
+import { getAuthContext, getAuthUserId } from "../middleware/index.js";
 import { invalidateTenant } from "../services/database/tenant-cache.js";
 import type { SetupStep } from "../types/database.js";
 import type { PoolClient } from "pg";
 
 export const setupRoutes = new Hono();
+export const EMAIL_VERIFICATION_REQUIRED_MESSAGE =
+  "Email verification required";
+
+export function requireVerifiedEmail(): MiddlewareHandler {
+  return async (c, next) => {
+    const auth = getAuthContext(c);
+
+    if (!auth.user.email_confirmed_at) {
+      return c.json({ error: EMAIL_VERIFICATION_REQUIRED_MESSAGE }, 403);
+    }
+
+    await next();
+  };
+}
+
+setupRoutes.use("*", requireVerifiedEmail());
 
 const SETUP_STEPS: SetupStep[] = [
   "business",
