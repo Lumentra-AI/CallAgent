@@ -228,41 +228,62 @@ phoneConfigRoutes.post(
         );
       }
 
-      // Configure webhooks
+      // Configure webhooks - rollback on failure
       const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
       const webhookUrl = `${backendUrl}/sip/forward`;
-      await configureNumberWebhooks(sid, webhookUrl);
+      const { success: webhookConfigured, error: webhookError } =
+        await configureNumberWebhooks(sid, webhookUrl);
 
-      // Create or update phone configuration
-      const config = await upsert<PhoneConfigRow>(
-        "phone_configurations",
-        {
-          tenant_id: tenantId,
-          phone_number: body.phoneNumber,
-          setup_type: "new",
-          provider: "signalwire",
-          provider_sid: sid,
-          status: "active",
-          verified_at: new Date().toISOString(),
-        },
-        ["tenant_id"],
-      );
+      if (!webhookConfigured) {
+        console.error(
+          "[PHONE] Webhook config failed, releasing number:",
+          webhookError,
+        );
+        await releaseNumber(sid);
+        return c.json(
+          { error: "Failed to configure phone number. Please try again." },
+          500,
+        );
+      }
 
-      // Update tenant's phone number
-      await updateOne(
-        "tenants",
-        {
-          phone_number: body.phoneNumber,
-          updated_at: new Date().toISOString(),
-        },
-        { id: tenantId },
-      );
+      // Save to DB - rollback on failure
+      try {
+        const config = await upsert<PhoneConfigRow>(
+          "phone_configurations",
+          {
+            tenant_id: tenantId,
+            phone_number: body.phoneNumber,
+            setup_type: "new",
+            provider: "signalwire",
+            provider_sid: sid,
+            status: "active",
+            verified_at: new Date().toISOString(),
+          },
+          ["tenant_id"],
+        );
 
-      return c.json({
-        success: true,
-        phoneNumber: body.phoneNumber,
-        configId: config.id,
-      });
+        await updateOne(
+          "tenants",
+          {
+            phone_number: body.phoneNumber,
+            updated_at: new Date().toISOString(),
+          },
+          { id: tenantId },
+        );
+
+        return c.json({
+          success: true,
+          phoneNumber: body.phoneNumber,
+          configId: config.id,
+        });
+      } catch (dbError) {
+        console.error("[PHONE] DB save failed, releasing number:", dbError);
+        await releaseNumber(sid);
+        return c.json(
+          { error: "Failed to save phone configuration. Please try again." },
+          500,
+        );
+      }
     } catch (error) {
       console.error("[PHONE] Error provisioning number:", error);
       return c.json({ error: "Failed to provision phone number" }, 500);
@@ -330,19 +351,28 @@ phoneConfigRoutes.post("/port", criticalRateLimit("phone-port"), async (c) => {
     let temporaryNumber = null;
     let tempSid = null;
     if (body.use_temp_number) {
-      // Search for a number in the same area code
       const areaCode = body.phone_number.substring(2, 5);
       const { numbers } = await searchAvailableNumbers(areaCode);
       if (numbers.length > 0) {
         const { sid } = await provisionNumber(numbers[0]);
         if (sid) {
-          temporaryNumber = numbers[0];
-          tempSid = sid;
-
-          // Configure webhooks for temp number
+          // Configure webhooks - rollback on failure
           const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
           const webhookUrl = `${backendUrl}/sip/forward`;
-          await configureNumberWebhooks(sid, webhookUrl);
+          const { success: webhookConfigured, error: webhookError } =
+            await configureNumberWebhooks(sid, webhookUrl);
+
+          if (!webhookConfigured) {
+            console.error(
+              "[PHONE] Port temp webhook config failed, releasing number:",
+              webhookError,
+            );
+            await releaseNumber(sid);
+            // Continue without temp number - port request is still valid
+          } else {
+            temporaryNumber = numbers[0];
+            tempSid = sid;
+          }
         }
       }
     }
@@ -497,37 +527,50 @@ phoneConfigRoutes.post(
         );
       }
 
-      // Configure webhooks
+      // Configure webhooks - rollback on failure
       const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
       const webhookUrl = `${backendUrl}/sip/forward`;
-      await configureNumberWebhooks(sid, webhookUrl);
+      const { success: webhookConfigured, error: webhookError } =
+        await configureNumberWebhooks(sid, webhookUrl);
 
-      // Create phone configuration
-      const config = await upsert<PhoneConfigRow>(
-        "phone_configurations",
-        {
-          tenant_id: tenantId,
-          phone_number: numbers[0],
-          setup_type: "forward",
-          provider: "signalwire",
-          provider_sid: sid,
-          status: "pending", // Pending until user confirms forwarding is active
-        },
-        ["tenant_id"],
-      );
+      if (!webhookConfigured) {
+        console.error(
+          "[PHONE] Forward webhook config failed, releasing number:",
+          webhookError,
+        );
+        await releaseNumber(sid);
+        return c.json(
+          { error: "Failed to configure forwarding number. Please try again." },
+          500,
+        );
+      }
 
-      // Update tenant phone number
-      await updateOne(
-        "tenants",
-        {
-          phone_number: numbers[0],
-          updated_at: new Date().toISOString(),
-        },
-        { id: tenantId },
-      );
+      // Save to DB - rollback on failure
+      try {
+        const config = await upsert<PhoneConfigRow>(
+          "phone_configurations",
+          {
+            tenant_id: tenantId,
+            phone_number: numbers[0],
+            setup_type: "forward",
+            provider: "signalwire",
+            provider_sid: sid,
+            status: "pending", // Pending until user confirms forwarding is active
+          },
+          ["tenant_id"],
+        );
 
-      // Generate conditional forwarding instructions (busy/no-answer, not unconditional)
-      const instructions = `To forward unanswered calls from ${body.business_number} to your AI assistant:
+        await updateOne(
+          "tenants",
+          {
+            phone_number: numbers[0],
+            updated_at: new Date().toISOString(),
+          },
+          { id: tenantId },
+        );
+
+        // Generate conditional forwarding instructions (busy/no-answer, not unconditional)
+        const instructions = `To forward unanswered calls from ${body.business_number} to your AI assistant:
 
 1. Contact your carrier or use the codes below to set up conditional forwarding
 2. Forward to: ${numbers[0]}
@@ -545,12 +588,25 @@ To cancel forwarding later:
 
 Note: This only forwards calls you miss -- your phone still rings first.`;
 
-      return c.json({
-        success: true,
-        forwardTo: numbers[0],
-        instructions,
-        configId: config.id,
-      });
+        return c.json({
+          success: true,
+          forwardTo: numbers[0],
+          instructions,
+          configId: config.id,
+        });
+      } catch (dbError) {
+        console.error(
+          "[PHONE] Forward DB save failed, releasing number:",
+          dbError,
+        );
+        await releaseNumber(sid);
+        return c.json(
+          {
+            error: "Failed to save forwarding configuration. Please try again.",
+          },
+          500,
+        );
+      }
     } catch (error) {
       console.error("[PHONE] Error setting up forwarding:", error);
       return c.json({ error: "Failed to set up call forwarding" }, 500);
@@ -651,39 +707,55 @@ phoneConfigRoutes.post("/sip", criticalRateLimit("phone-sip"), async (c) => {
       );
     }
 
-    // Configure routing to point to our voice webhook
+    // Configure routing - rollback on failure
     const { error: routingError } = await configureSipRouting(
       endpoint.endpointId,
       webhookUrl,
     );
 
     if (routingError) {
-      console.warn("[PHONE] SIP routing config failed:", routingError);
-      // Non-fatal: endpoint was created, routing can be retried
+      console.error(
+        "[PHONE] SIP routing config failed, deleting endpoint:",
+        routingError,
+      );
+      await deleteSipEndpoint(endpoint.endpointId);
+      return c.json(
+        { error: "Failed to configure SIP routing. Please try again." },
+        500,
+      );
     }
 
-    // Create phone configuration
-    const config = await upsert<PhoneConfigRow>(
-      "phone_configurations",
-      {
-        tenant_id: tenantId,
-        setup_type: "sip",
-        provider: "signalwire",
-        provider_sid: endpoint.endpointId,
-        sip_uri: endpoint.sipUri,
-        sip_username: endpoint.username,
-        status: "pending",
-      },
-      ["tenant_id"],
-    );
+    // Save to DB - rollback on failure
+    try {
+      const config = await upsert<PhoneConfigRow>(
+        "phone_configurations",
+        {
+          tenant_id: tenantId,
+          setup_type: "sip",
+          provider: "signalwire",
+          provider_sid: endpoint.endpointId,
+          sip_uri: endpoint.sipUri,
+          sip_username: endpoint.username,
+          status: "pending",
+        },
+        ["tenant_id"],
+      );
 
-    return c.json({
-      success: true,
-      sipUri: endpoint.sipUri,
-      username: endpoint.username,
-      password: endpoint.password,
-      configId: config.id,
-    });
+      return c.json({
+        success: true,
+        sipUri: endpoint.sipUri,
+        username: endpoint.username,
+        password: endpoint.password,
+        configId: config.id,
+      });
+    } catch (dbError) {
+      console.error("[PHONE] SIP DB save failed, deleting endpoint:", dbError);
+      await deleteSipEndpoint(endpoint.endpointId);
+      return c.json(
+        { error: "Failed to save SIP configuration. Please try again." },
+        500,
+      );
+    }
   } catch (error) {
     console.error("[PHONE] Error creating SIP endpoint:", error);
     return c.json({ error: "Failed to create SIP endpoint" }, 500);
