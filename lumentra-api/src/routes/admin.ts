@@ -46,7 +46,7 @@ adminRoutes.get("/port-requests", async (c) => {
 
     if (status) {
       sql = `
-        SELECT pr.*, t.business_name, t.owner_email
+        SELECT pr.*, t.business_name, t.contact_email
         FROM port_requests pr
         JOIN tenants t ON t.id = pr.tenant_id
         WHERE pr.status = $1
@@ -56,7 +56,7 @@ adminRoutes.get("/port-requests", async (c) => {
       params = [status, limit, offset];
     } else {
       sql = `
-        SELECT pr.*, t.business_name, t.owner_email
+        SELECT pr.*, t.business_name, t.contact_email
         FROM port_requests pr
         JOIN tenants t ON t.id = pr.tenant_id
         ORDER BY pr.created_at DESC
@@ -66,7 +66,7 @@ adminRoutes.get("/port-requests", async (c) => {
     }
 
     const requests = await queryAll<
-      PortRequestRow & { business_name: string; owner_email: string }
+      PortRequestRow & { business_name: string; contact_email: string }
     >(sql, params);
 
     return c.json({ portRequests: requests, count: requests.length });
@@ -85,9 +85,9 @@ adminRoutes.get("/port-requests/:id", async (c) => {
 
   try {
     const request = await queryOne<
-      PortRequestRow & { business_name: string; owner_email: string }
+      PortRequestRow & { business_name: string; contact_email: string }
     >(
-      `SELECT pr.*, t.business_name, t.owner_email
+      `SELECT pr.*, t.business_name, t.contact_email
        FROM port_requests pr
        JOIN tenants t ON t.id = pr.tenant_id
        WHERE pr.id = $1`,
@@ -148,7 +148,6 @@ adminRoutes.put("/port-requests/:id/status", async (c) => {
 
     const updates: Record<string, unknown> = {
       status: body.status,
-      updated_at: new Date().toISOString(),
     };
 
     if (body.status === "submitted" && !existing.submitted_at) {
@@ -215,7 +214,6 @@ adminRoutes.post("/port-requests/:id/complete", async (c) => {
       {
         status: "completed",
         completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
       },
       { id },
     );
@@ -254,7 +252,6 @@ adminRoutes.post("/port-requests/:id/complete", async (c) => {
           status: "active",
           provider_sid: null, // Ported number is managed by the carrier
           verified_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
         },
         { id: phoneConfig.id },
       );
