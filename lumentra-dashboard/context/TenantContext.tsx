@@ -92,6 +92,7 @@ interface TenantContextType {
   currentTenant: TenantDetails | null;
   isLoading: boolean;
   error: string | null;
+  isSuspended: boolean;
   selectTenant: (tenantId: string) => void;
   refreshTenants: () => Promise<void>;
   refreshCurrentTenant: () => Promise<void>;
@@ -111,6 +112,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isSuspended = currentTenant?.status === "suspended";
 
   /** Fetch full tenant details by ID */
   const fetchTenantDetails = useCallback(
@@ -243,6 +245,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         currentTenant,
         isLoading,
         error,
+        isSuspended,
         selectTenant,
         refreshTenants,
         refreshCurrentTenant,
