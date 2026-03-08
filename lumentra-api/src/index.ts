@@ -2,6 +2,7 @@ import "dotenv/config";
 import { serve } from "@hono/node-server";
 import { initTenantCache } from "./services/database/tenant-cache.js";
 import { initDatabase, closePool } from "./services/database/client.js";
+import { closeRedis } from "./services/redis/client.js";
 import { startScheduler } from "./jobs/scheduler.js";
 import app from "./app.js";
 
@@ -76,7 +77,8 @@ async function start() {
   const shutdown = async (signal: string) => {
     console.log(`[SHUTDOWN] Received ${signal}, closing connections...`);
     await closePool();
-    console.log("[SHUTDOWN] Database pool closed");
+    await closeRedis();
+    console.log("[SHUTDOWN] Database pool and Redis closed");
     process.exit(0);
   };
 

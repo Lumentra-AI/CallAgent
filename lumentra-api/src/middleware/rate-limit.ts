@@ -1,42 +1,91 @@
 /**
  * Rate Limiting Middleware
- * Protects against brute force and DDoS attacks
+ * Uses Redis when REDIS_URL is set, falls back to in-memory.
+ * Redis keys: ratelimit:{prefix}:{clientKey} with auto-expiry.
  */
 
 import { Context, Next } from "hono";
+import { getRedisClient } from "../services/redis/client.js";
 
 interface RateLimitEntry {
   count: number;
   resetAt: number;
 }
 
-// In-memory store (use Redis in production for multi-instance)
-const store = new Map<string, RateLimitEntry>();
+// In-memory fallback store
+const memoryStore = new Map<string, RateLimitEntry>();
 
-// Clean up expired entries periodically without keeping short-lived processes alive
+// Clean up expired in-memory entries periodically
 const cleanupInterval = setInterval(() => {
   const now = Date.now();
-  for (const [key, entry] of store.entries()) {
+  for (const [key, entry] of memoryStore.entries()) {
     if (entry.resetAt <= now) {
-      store.delete(key);
+      memoryStore.delete(key);
     }
   }
-}, 60000); // Clean every minute
+}, 60000);
 
 cleanupInterval.unref?.();
 
+/**
+ * Try Redis increment, return null if unavailable.
+ */
+async function redisIncrement(
+  key: string,
+  windowMs: number,
+): Promise<{ count: number; resetAt: number } | null> {
+  try {
+    const redis = await getRedisClient();
+    if (!redis) return null;
+
+    const redisKey = `ratelimit:${key}`;
+    const count = await redis.incr(redisKey);
+
+    if (count === 1) {
+      await redis.pExpire(redisKey, windowMs);
+    }
+
+    const ttl = await redis.pTTL(redisKey);
+    const resetAt = Date.now() + Math.max(ttl, 0);
+
+    return { count, resetAt };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * In-memory increment (fallback).
+ */
+function memoryIncrement(
+  key: string,
+  windowMs: number,
+): { count: number; resetAt: number } {
+  const now = Date.now();
+  let entry = memoryStore.get(key);
+
+  if (!entry || entry.resetAt <= now) {
+    entry = { count: 0, resetAt: now + windowMs };
+  }
+
+  entry.count++;
+  memoryStore.set(key, entry);
+
+  return { count: entry.count, resetAt: entry.resetAt };
+}
+
 interface RateLimitConfig {
-  windowMs: number; // Time window in milliseconds
-  max: number; // Max requests per window
-  prefix?: string; // Namespace for this limiter's buckets
-  keyGenerator?: (c: Context) => string; // Custom key generator
-  skip?: (c: Context) => boolean; // Skip rate limiting for certain requests
-  message?: string; // Custom error message
+  windowMs: number;
+  max: number;
+  prefix?: string;
+  keyGenerator?: (c: Context) => string;
+  skip?: (c: Context) => boolean;
+  message?: string;
 }
 
 const defaultConfig: RateLimitConfig = {
-  windowMs: 60000, // 1 minute
-  max: 60, // 60 requests per minute
+  windowMs: 60000,
+  max: 60,
   message: "Too many requests, please try again later",
 };
 
@@ -50,43 +99,29 @@ export function rateLimit(config: Partial<RateLimitConfig> = {}) {
   const prefix = options.prefix || `rl_${++rateLimitPrefixCounter}`;
 
   return async (c: Context, next: Next) => {
-    // Check if we should skip
     if (options.skip?.(c)) {
       return next();
     }
 
-    // Generate key for this client
     const clientKey = options.keyGenerator
       ? options.keyGenerator(c)
       : getClientKey(c);
     const key = `${prefix}:${clientKey}`;
 
+    // Try Redis first, fall back to in-memory
+    const result =
+      (await redisIncrement(key, options.windowMs)) ||
+      memoryIncrement(key, options.windowMs);
+
     const now = Date.now();
-    let entry = store.get(key);
+    const remaining = Math.max(0, options.max - result.count);
+    const resetInSeconds = Math.ceil((result.resetAt - now) / 1000);
 
-    // Create or reset entry if expired
-    if (!entry || entry.resetAt <= now) {
-      entry = {
-        count: 0,
-        resetAt: now + options.windowMs,
-      };
-    }
-
-    // Increment count
-    entry.count++;
-    store.set(key, entry);
-
-    // Calculate remaining
-    const remaining = Math.max(0, options.max - entry.count);
-    const resetInSeconds = Math.ceil((entry.resetAt - now) / 1000);
-
-    // Set rate limit headers
     c.header("X-RateLimit-Limit", options.max.toString());
     c.header("X-RateLimit-Remaining", remaining.toString());
     c.header("X-RateLimit-Reset", resetInSeconds.toString());
 
-    // Check if over limit
-    if (entry.count > options.max) {
+    if (result.count > options.max) {
       c.header("Retry-After", resetInSeconds.toString());
       return c.json(
         {
@@ -104,49 +139,46 @@ export function rateLimit(config: Partial<RateLimitConfig> = {}) {
 
 /**
  * Get client key for rate limiting
- * Uses IP address, with auth user ID if available
+ * Uses authenticated user ID if available, otherwise IP
  */
 function getClientKey(c: Context): string {
-  // Try to get real IP from proxy headers
-  const forwardedFor = c.req.header("X-Forwarded-For");
-  const realIp = c.req.header("X-Real-IP");
-
-  let ip = "unknown";
-  if (forwardedFor) {
-    ip = forwardedFor.split(",")[0].trim();
-  } else if (realIp) {
-    ip = realIp;
-  }
-
-  // If authenticated, include user ID for more granular limiting
   const auth = c.get("auth");
   if (auth?.userId) {
     return `user:${auth.userId}`;
   }
 
-  return `ip:${ip}`;
+  const forwardedFor = c.req.header("X-Forwarded-For");
+  const realIp = c.req.header("X-Real-IP");
+
+  if (forwardedFor) {
+    return `ip:${forwardedFor.split(",")[0].trim()}`;
+  }
+  if (realIp) {
+    return `ip:${realIp}`;
+  }
+  return `ip:unknown`;
 }
 
 /**
- * Stricter rate limit for sensitive endpoints (login, signup)
+ * Stricter rate limit for sensitive endpoints
  */
 export function strictRateLimit(prefix?: string) {
   return rateLimit({
     prefix,
-    windowMs: 60000, // 1 minute
-    max: 10, // 10 attempts per minute
+    windowMs: 60000,
+    max: 10,
     message: "Too many attempts, please try again later",
   });
 }
 
 /**
- * Very strict rate limit for critical operations (password reset)
+ * Very strict rate limit for critical operations
  */
 export function criticalRateLimit(prefix?: string) {
   return rateLimit({
     prefix,
-    windowMs: 3600000, // 1 hour
-    max: 5, // 5 attempts per hour
+    windowMs: 3600000,
+    max: 5,
     message: "Rate limit exceeded. Please try again in an hour.",
   });
 }
@@ -157,8 +189,8 @@ export function criticalRateLimit(prefix?: string) {
 export function readRateLimit(prefix?: string) {
   return rateLimit({
     prefix,
-    windowMs: 60000, // 1 minute
-    max: 120, // 120 requests per minute
+    windowMs: 60000,
+    max: 120,
   });
 }
 
