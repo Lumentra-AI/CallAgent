@@ -7,8 +7,10 @@ import {
 } from "../services/database/query-helpers.js";
 import {
   getAuthUserId,
+  getAuthTenantId,
   criticalRateLimit,
   strictRateLimit,
+  requireRole,
 } from "../middleware/index.js";
 import { encryptIfNeeded } from "../services/crypto/encryption.js";
 import {
@@ -39,11 +41,6 @@ function withWebhookSecret(url: string): string {
 }
 
 /** Type definitions for database rows */
-interface MembershipRow {
-  tenant_id: string;
-  role: string;
-}
-
 interface PhoneConfigRow {
   id: string;
   tenant_id: string;
@@ -220,35 +217,17 @@ phoneConfigRoutes.get("/config", async (c) => {
  */
 phoneConfigRoutes.post(
   "/provision",
+  requireRole("owner", "admin"),
   criticalRateLimit("phone-provision"),
   async (c) => {
     const body = await c.req.json();
-    const userId = getAuthUserId(c);
 
     if (!body.phoneNumber) {
       return c.json({ error: "phoneNumber is required" }, 400);
     }
 
     try {
-      // Get tenant
-      const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-      const membership = await queryOne<MembershipRow>(membershipSql, [
-        userId,
-        ["owner", "admin"],
-      ]);
-
-      if (!membership) {
-        return c.json({ error: "Forbidden" }, 403);
-      }
-
-      const tenantId = membership.tenant_id;
+      const tenantId = getAuthTenantId(c);
 
       // Daily provisioning limit
       if (await checkDailyProvisionLimit(tenantId)) {
@@ -368,151 +347,139 @@ phoneConfigRoutes.post(
  * POST /api/phone/port
  * Submit a number port request
  */
-phoneConfigRoutes.post("/port", criticalRateLimit("phone-port"), async (c) => {
-  const body = await c.req.json();
-  const userId = getAuthUserId(c);
+phoneConfigRoutes.post(
+  "/port",
+  requireRole("owner", "admin"),
+  criticalRateLimit("phone-port"),
+  async (c) => {
+    const body = await c.req.json();
 
-  // Validate required fields
-  if (!body.phone_number || !body.current_carrier || !body.authorized_name) {
-    return c.json(
-      {
-        error:
-          "phone_number, current_carrier, and authorized_name are required",
-      },
-      400,
-    );
-  }
-
-  try {
-    // Get tenant
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
-      return c.json({ error: "Forbidden" }, 403);
-    }
-
-    const tenantId = membership.tenant_id;
-
-    // Daily provisioning limit (only applies when requesting a temp number)
-    if (body.use_temp_number && (await checkDailyProvisionLimit(tenantId))) {
+    // Validate required fields
+    if (!body.phone_number || !body.current_carrier || !body.authorized_name) {
       return c.json(
         {
-          error: "Daily provisioning limit reached. Please try again tomorrow.",
+          error:
+            "phone_number, current_carrier, and authorized_name are required",
         },
-        429,
+        400,
       );
     }
 
-    // Release any existing number before provisioning a temp number
-    if (body.use_temp_number) {
-      const existingPort = await queryOne<PhoneConfigRow>(
-        "SELECT * FROM phone_configurations WHERE tenant_id = $1 LIMIT 1",
-        [tenantId],
-      );
-      if (existingPort?.provider_sid) {
-        await releaseExistingPhoneConfig(tenantId);
-        await logProvisionAction(
-          tenantId,
-          existingPort.phone_number || "unknown",
-          existingPort.provider_sid,
-          "release",
+    try {
+      const tenantId = getAuthTenantId(c);
+
+      // Daily provisioning limit (only applies when requesting a temp number)
+      if (body.use_temp_number && (await checkDailyProvisionLimit(tenantId))) {
+        return c.json(
+          {
+            error:
+              "Daily provisioning limit reached. Please try again tomorrow.",
+          },
+          429,
         );
       }
-    }
 
-    // Create port request
-    const portRequest = await insertOne<PortRequestRow>("port_requests", {
-      tenant_id: tenantId,
-      phone_number: body.phone_number,
-      current_carrier: body.current_carrier,
-      account_number: encryptIfNeeded(body.account_number),
-      pin: encryptIfNeeded(body.pin),
-      authorized_name: body.authorized_name,
-      status: "draft",
-    });
+      // Release any existing number before provisioning a temp number
+      if (body.use_temp_number) {
+        const existingPort = await queryOne<PhoneConfigRow>(
+          "SELECT * FROM phone_configurations WHERE tenant_id = $1 LIMIT 1",
+          [tenantId],
+        );
+        if (existingPort?.provider_sid) {
+          await releaseExistingPhoneConfig(tenantId);
+          await logProvisionAction(
+            tenantId,
+            existingPort.phone_number || "unknown",
+            existingPort.provider_sid,
+            "release",
+          );
+        }
+      }
 
-    // If user wants a temporary number while porting
-    let temporaryNumber = null;
-    let tempSid = null;
-    if (body.use_temp_number) {
-      const areaCode = body.phone_number.substring(2, 5);
-      const { numbers } = await searchAvailableNumbers(areaCode);
-      if (numbers.length > 0) {
-        const { sid } = await provisionNumber(numbers[0]);
-        if (sid) {
-          // Configure webhooks - rollback on failure
-          const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-          const webhookUrl = `${backendUrl}/sip/forward`;
-          const { success: webhookConfigured, error: webhookError } =
-            await configureNumberWebhooks(sid, webhookUrl);
+      // Create port request
+      const portRequest = await insertOne<PortRequestRow>("port_requests", {
+        tenant_id: tenantId,
+        phone_number: body.phone_number,
+        current_carrier: body.current_carrier,
+        account_number: encryptIfNeeded(body.account_number),
+        pin: encryptIfNeeded(body.pin),
+        authorized_name: body.authorized_name,
+        status: "draft",
+      });
 
-          if (!webhookConfigured) {
-            console.error(
-              "[PHONE] Port temp webhook config failed, releasing number:",
-              webhookError,
-            );
-            await releaseNumber(sid);
-            // Continue without temp number - port request is still valid
-          } else {
-            temporaryNumber = numbers[0];
-            tempSid = sid;
-            await logProvisionAction(tenantId, numbers[0], sid, "port");
+      // If user wants a temporary number while porting
+      let temporaryNumber = null;
+      let tempSid = null;
+      if (body.use_temp_number) {
+        const areaCode = body.phone_number.substring(2, 5);
+        const { numbers } = await searchAvailableNumbers(areaCode);
+        if (numbers.length > 0) {
+          const { sid } = await provisionNumber(numbers[0]);
+          if (sid) {
+            // Configure webhooks - rollback on failure
+            const backendUrl =
+              process.env.BACKEND_URL || "http://localhost:3100";
+            const webhookUrl = `${backendUrl}/sip/forward`;
+            const { success: webhookConfigured, error: webhookError } =
+              await configureNumberWebhooks(sid, webhookUrl);
+
+            if (!webhookConfigured) {
+              console.error(
+                "[PHONE] Port temp webhook config failed, releasing number:",
+                webhookError,
+              );
+              await releaseNumber(sid);
+              // Continue without temp number - port request is still valid
+            } else {
+              temporaryNumber = numbers[0];
+              tempSid = sid;
+              await logProvisionAction(tenantId, numbers[0], sid, "port");
+            }
           }
         }
       }
-    }
 
-    // Create phone configuration
-    const status = temporaryNumber ? "porting_with_temp" : "porting";
-    const config = await upsert<PhoneConfigRow>(
-      "phone_configurations",
-      {
-        tenant_id: tenantId,
-        phone_number: temporaryNumber || null,
-        setup_type: "port",
-        provider: "signalwire",
-        provider_sid: tempSid,
-        status,
-        port_request_id: portRequest.id,
-      },
-      ["tenant_id"],
-    );
-
-    // Update tenant phone number if we have a temp number
-    if (temporaryNumber) {
-      await updateOne(
-        "tenants",
+      // Create phone configuration
+      const status = temporaryNumber ? "porting_with_temp" : "porting";
+      const config = await upsert<PhoneConfigRow>(
+        "phone_configurations",
         {
-          phone_number: temporaryNumber,
-          updated_at: new Date().toISOString(),
+          tenant_id: tenantId,
+          phone_number: temporaryNumber || null,
+          setup_type: "port",
+          provider: "signalwire",
+          provider_sid: tempSid,
+          status,
+          port_request_id: portRequest.id,
         },
-        { id: tenantId },
+        ["tenant_id"],
       );
-    }
 
-    return c.json({
-      success: true,
-      portRequestId: portRequest.id,
-      estimatedCompletion: null, // Would come from carrier
-      temporaryNumber,
-      configId: config.id,
-    });
-  } catch (error) {
-    console.error("[PHONE] Error submitting port request:", error);
-    return c.json({ error: "Failed to submit port request" }, 500);
-  }
-});
+      // Update tenant phone number if we have a temp number
+      if (temporaryNumber) {
+        await updateOne(
+          "tenants",
+          {
+            phone_number: temporaryNumber,
+            updated_at: new Date().toISOString(),
+          },
+          { id: tenantId },
+        );
+      }
+
+      return c.json({
+        success: true,
+        portRequestId: portRequest.id,
+        estimatedCompletion: null, // Would come from carrier
+        temporaryNumber,
+        configId: config.id,
+      });
+    } catch (error) {
+      console.error("[PHONE] Error submitting port request:", error);
+      return c.json({ error: "Failed to submit port request" }, 500);
+    }
+  },
+);
 
 /**
  * GET /api/phone/port/:id/status
@@ -573,35 +540,17 @@ phoneConfigRoutes.get("/port/:id/status", async (c) => {
  */
 phoneConfigRoutes.post(
   "/forward",
+  requireRole("owner", "admin"),
   criticalRateLimit("phone-forward"),
   async (c) => {
     const body = await c.req.json();
-    const userId = getAuthUserId(c);
 
     if (!body.business_number) {
       return c.json({ error: "business_number is required" }, 400);
     }
 
     try {
-      // Get tenant
-      const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-      const membership = await queryOne<MembershipRow>(membershipSql, [
-        userId,
-        ["owner", "admin"],
-      ]);
-
-      if (!membership) {
-        return c.json({ error: "Forbidden" }, 403);
-      }
-
-      const tenantId = membership.tenant_id;
+      const tenantId = getAuthTenantId(c);
 
       // Daily provisioning limit
       if (await checkDailyProvisionLimit(tenantId)) {
@@ -750,193 +699,168 @@ Note: This only forwards calls you miss -- your phone still rings first.`;
  * POST /api/phone/verify-forward
  * Mark forwarding as verified/active
  */
-phoneConfigRoutes.post("/verify-forward", async (c) => {
-  const userId = getAuthUserId(c);
+phoneConfigRoutes.post(
+  "/verify-forward",
+  requireRole("owner", "admin"),
+  async (c) => {
+    try {
+      const tenantId = getAuthTenantId(c);
 
-  try {
-    // Get tenant
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
-      return c.json({ error: "Forbidden" }, 403);
-    }
-
-    const updateSql = `
+      const updateSql = `
       UPDATE phone_configurations
       SET status = $1, verified_at = $2
       WHERE tenant_id = $3 AND setup_type = 'forward'
       RETURNING id
     `;
-    const result = await queryOne<{ id: string }>(updateSql, [
-      "active",
-      new Date().toISOString(),
-      membership.tenant_id,
-    ]);
+      const result = await queryOne<{ id: string }>(updateSql, [
+        "active",
+        new Date().toISOString(),
+        tenantId,
+      ]);
 
-    if (!result) {
-      return c.json({ error: "No forwarding configuration found" }, 404);
+      if (!result) {
+        return c.json({ error: "No forwarding configuration found" }, 404);
+      }
+
+      return c.json({ success: true });
+    } catch (error) {
+      console.error("[PHONE] Error verifying forward:", error);
+      return c.json({ error: "Failed to verify forwarding" }, 500);
     }
-
-    return c.json({ success: true });
-  } catch (error) {
-    console.error("[PHONE] Error verifying forward:", error);
-    return c.json({ error: "Failed to verify forwarding" }, 500);
-  }
-});
+  },
+);
 
 /**
  * POST /api/phone/sip
  * Create a SIP trunk endpoint
  */
-phoneConfigRoutes.post("/sip", criticalRateLimit("phone-sip"), async (c) => {
-  const userId = getAuthUserId(c);
+phoneConfigRoutes.post(
+  "/sip",
+  requireRole("owner", "admin"),
+  criticalRateLimit("phone-sip"),
+  async (c) => {
+    try {
+      const tenantId = getAuthTenantId(c);
 
-  try {
-    // Get tenant
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
-      return c.json({ error: "Forbidden" }, 403);
-    }
-
-    const tenantId = membership.tenant_id;
-
-    // Daily provisioning limit
-    if (await checkDailyProvisionLimit(tenantId)) {
-      return c.json(
-        {
-          error: "Daily provisioning limit reached. Please try again tomorrow.",
-        },
-        429,
-      );
-    }
-
-    // Confirmation required if tenant already has an active config
-    const existingSip = await queryOne<PhoneConfigRow>(
-      "SELECT * FROM phone_configurations WHERE tenant_id = $1 AND status = 'active' LIMIT 1",
-      [tenantId],
-    );
-    if (existingSip) {
-      const sipBody = await c.req
-        .json()
-        .catch(() => ({}) as Record<string, unknown>);
-      if (sipBody.confirm !== true) {
+      // Daily provisioning limit
+      if (await checkDailyProvisionLimit(tenantId)) {
         return c.json(
           {
-            error: `You already have an active configuration (${existingSip.setup_type}: ${existingSip.phone_number || existingSip.provider_sid}). Send confirm: true to replace it.`,
+            error:
+              "Daily provisioning limit reached. Please try again tomorrow.",
           },
-          409,
+          429,
         );
       }
-    }
 
-    // Release any existing phone config before creating new SIP endpoint
-    if (existingSip) {
-      await releaseExistingPhoneConfig(tenantId);
-      await logProvisionAction(
-        tenantId,
-        existingSip.phone_number || "sip-endpoint",
-        existingSip.provider_sid,
-        "release",
+      // Confirmation required if tenant already has an active config
+      const existingSip = await queryOne<PhoneConfigRow>(
+        "SELECT * FROM phone_configurations WHERE tenant_id = $1 AND status = 'active' LIMIT 1",
+        [tenantId],
       );
-    }
+      if (existingSip) {
+        const sipBody = await c.req
+          .json()
+          .catch(() => ({}) as Record<string, unknown>);
+        if (sipBody.confirm !== true) {
+          return c.json(
+            {
+              error: `You already have an active configuration (${existingSip.setup_type}: ${existingSip.phone_number || existingSip.provider_sid}). Send confirm: true to replace it.`,
+            },
+            409,
+          );
+        }
+      }
 
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-    const webhookUrl = withWebhookSecret(`${backendUrl}/sip/forward`);
+      // Release any existing phone config before creating new SIP endpoint
+      if (existingSip) {
+        await releaseExistingPhoneConfig(tenantId);
+        await logProvisionAction(
+          tenantId,
+          existingSip.phone_number || "sip-endpoint",
+          existingSip.provider_sid,
+          "release",
+        );
+      }
 
-    // Create SIP endpoint on SignalWire
-    const { endpoint, error: sipError } = await createSipEndpoint(tenantId);
+      const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
+      const webhookUrl = withWebhookSecret(`${backendUrl}/sip/forward`);
 
-    if (sipError || !endpoint) {
-      return c.json(
-        { error: sipError || "Failed to create SIP endpoint" },
-        500,
-      );
-    }
+      // Create SIP endpoint on SignalWire
+      const { endpoint, error: sipError } = await createSipEndpoint(tenantId);
 
-    // Configure routing - rollback on failure
-    const { error: routingError } = await configureSipRouting(
-      endpoint.endpointId,
-      webhookUrl,
-    );
+      if (sipError || !endpoint) {
+        return c.json(
+          { error: sipError || "Failed to create SIP endpoint" },
+          500,
+        );
+      }
 
-    if (routingError) {
-      console.error(
-        "[PHONE] SIP routing config failed, deleting endpoint:",
-        routingError,
-      );
-      await deleteSipEndpoint(endpoint.endpointId);
-      return c.json(
-        { error: "Failed to configure SIP routing. Please try again." },
-        500,
-      );
-    }
-
-    // Save to DB - rollback on failure
-    try {
-      const config = await upsert<PhoneConfigRow>(
-        "phone_configurations",
-        {
-          tenant_id: tenantId,
-          setup_type: "sip",
-          provider: "signalwire",
-          provider_sid: endpoint.endpointId,
-          sip_uri: endpoint.sipUri,
-          sip_username: endpoint.username,
-          status: "pending",
-        },
-        ["tenant_id"],
-      );
-
-      await logProvisionAction(
-        tenantId,
-        endpoint.sipUri,
+      // Configure routing - rollback on failure
+      const { error: routingError } = await configureSipRouting(
         endpoint.endpointId,
-        "sip",
+        webhookUrl,
       );
 
-      return c.json({
-        success: true,
-        sipUri: endpoint.sipUri,
-        username: endpoint.username,
-        password: endpoint.password,
-        configId: config.id,
-      });
-    } catch (dbError) {
-      console.error("[PHONE] SIP DB save failed, deleting endpoint:", dbError);
-      await deleteSipEndpoint(endpoint.endpointId);
-      return c.json(
-        { error: "Failed to save SIP configuration. Please try again." },
-        500,
-      );
+      if (routingError) {
+        console.error(
+          "[PHONE] SIP routing config failed, deleting endpoint:",
+          routingError,
+        );
+        await deleteSipEndpoint(endpoint.endpointId);
+        return c.json(
+          { error: "Failed to configure SIP routing. Please try again." },
+          500,
+        );
+      }
+
+      // Save to DB - rollback on failure
+      try {
+        const config = await upsert<PhoneConfigRow>(
+          "phone_configurations",
+          {
+            tenant_id: tenantId,
+            setup_type: "sip",
+            provider: "signalwire",
+            provider_sid: endpoint.endpointId,
+            sip_uri: endpoint.sipUri,
+            sip_username: endpoint.username,
+            status: "pending",
+          },
+          ["tenant_id"],
+        );
+
+        await logProvisionAction(
+          tenantId,
+          endpoint.sipUri,
+          endpoint.endpointId,
+          "sip",
+        );
+
+        return c.json({
+          success: true,
+          sipUri: endpoint.sipUri,
+          username: endpoint.username,
+          password: endpoint.password,
+          configId: config.id,
+        });
+      } catch (dbError) {
+        console.error(
+          "[PHONE] SIP DB save failed, deleting endpoint:",
+          dbError,
+        );
+        await deleteSipEndpoint(endpoint.endpointId);
+        return c.json(
+          { error: "Failed to save SIP configuration. Please try again." },
+          500,
+        );
+      }
+    } catch (error) {
+      console.error("[PHONE] Error creating SIP endpoint:", error);
+      return c.json({ error: "Failed to create SIP endpoint" }, 500);
     }
-  } catch (error) {
-    console.error("[PHONE] Error creating SIP endpoint:", error);
-    return c.json({ error: "Failed to create SIP endpoint" }, 500);
-  }
-});
+  },
+);
 
 /**
  * GET /api/phone/sip/status

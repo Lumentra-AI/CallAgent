@@ -5,7 +5,7 @@ import {
   upsert,
   deleteRows,
 } from "../services/database/query-helpers.js";
-import { getAuthUserId } from "../middleware/index.js";
+import { getAuthUserId, requireRole } from "../middleware/index.js";
 import type { IntegrationProvider } from "../types/database.js";
 
 export const integrationsRoutes = new Hono();
@@ -234,28 +234,31 @@ integrationsRoutes.get("/providers", async (c) => {
  * GET /api/integrations/:provider/authorize
  * Initiates OAuth flow - returns authorization URL
  */
-integrationsRoutes.get("/:provider/authorize", async (c) => {
-  const provider = c.req.param("provider") as IntegrationProvider;
-  const userId = getAuthUserId(c);
+integrationsRoutes.get(
+  "/:provider/authorize",
+  requireRole("owner"),
+  async (c) => {
+    const provider = c.req.param("provider") as IntegrationProvider;
+    const userId = getAuthUserId(c);
 
-  // Validate provider
-  const config = OAUTH_CONFIGS[provider];
-  if (!config) {
-    return c.json({ error: "Unsupported provider" }, 400);
-  }
+    // Validate provider
+    const config = OAUTH_CONFIGS[provider];
+    if (!config) {
+      return c.json({ error: "Unsupported provider" }, 400);
+    }
 
-  // Check if OAuth is configured
-  const clientId = process.env[config.clientIdEnv];
-  if (!clientId) {
-    return c.json(
-      { error: `${provider} integration not configured on server` },
-      400,
-    );
-  }
+    // Check if OAuth is configured
+    const clientId = process.env[config.clientIdEnv];
+    if (!clientId) {
+      return c.json(
+        { error: `${provider} integration not configured on server` },
+        400,
+      );
+    }
 
-  try {
-    // Get tenant
-    const membershipSql = `
+    try {
+      // Get tenant
+      const membershipSql = `
       SELECT tenant_id, role
       FROM tenant_members
       WHERE user_id = $1
@@ -263,48 +266,49 @@ integrationsRoutes.get("/:provider/authorize", async (c) => {
         AND role = ANY($2)
       LIMIT 1
     `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
+      const membership = await queryOne<MembershipRow>(membershipSql, [
+        userId,
+        ["owner", "admin"],
+      ]);
 
-    if (!membership) {
-      return c.json({ error: "Forbidden" }, 403);
+      if (!membership) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+
+      // Generate state parameter
+      const state = generateState();
+
+      // Store state with tenant ID (expires in 10 minutes)
+      oauthStates.set(state, {
+        tenantId: membership.tenant_id,
+        provider,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+      });
+
+      // Build redirect URI
+      const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
+      const redirectUri = `${backendUrl}/api/integrations/${provider}/callback`;
+
+      // Build authorization URL
+      const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: "code",
+        scope: config.scopes,
+        state,
+        access_type: "offline", // For refresh token (Google)
+        prompt: "consent", // Force consent to get refresh token
+      });
+
+      const authUrl = `${config.authUrl}?${params.toString()}`;
+
+      return c.json({ authUrl });
+    } catch (error) {
+      console.error("[INTEGRATIONS] Error initiating OAuth:", error);
+      return c.json({ error: "Failed to initiate OAuth flow" }, 500);
     }
-
-    // Generate state parameter
-    const state = generateState();
-
-    // Store state with tenant ID (expires in 10 minutes)
-    oauthStates.set(state, {
-      tenantId: membership.tenant_id,
-      provider,
-      expiresAt: Date.now() + 10 * 60 * 1000,
-    });
-
-    // Build redirect URI
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
-    const redirectUri = `${backendUrl}/api/integrations/${provider}/callback`;
-
-    // Build authorization URL
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: "code",
-      scope: config.scopes,
-      state,
-      access_type: "offline", // For refresh token (Google)
-      prompt: "consent", // Force consent to get refresh token
-    });
-
-    const authUrl = `${config.authUrl}?${params.toString()}`;
-
-    return c.json({ authUrl });
-  } catch (error) {
-    console.error("[INTEGRATIONS] Error initiating OAuth:", error);
-    return c.json({ error: "Failed to initiate OAuth flow" }, 500);
-  }
-});
+  },
+);
 
 /**
  * GET /api/integrations/:provider/callback
@@ -503,7 +507,7 @@ integrationsRoutes.get("/:provider/callback", async (c) => {
  * DELETE /api/integrations/:id
  * Disconnects an integration
  */
-integrationsRoutes.delete("/:id", async (c) => {
+integrationsRoutes.delete("/:id", requireRole("owner"), async (c) => {
   const id = c.req.param("id");
   const userId = getAuthUserId(c);
 
@@ -552,7 +556,7 @@ integrationsRoutes.delete("/:id", async (c) => {
  * POST /api/integrations/:id/refresh
  * Refreshes an integration's access token
  */
-integrationsRoutes.post("/:id/refresh", async (c) => {
+integrationsRoutes.post("/:id/refresh", requireRole("owner"), async (c) => {
   const id = c.req.param("id");
   const userId = getAuthUserId(c);
 

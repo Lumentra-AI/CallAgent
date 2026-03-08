@@ -30,6 +30,7 @@ import {
   getAuthTenantId,
   getAuthUserId,
   strictRateLimit,
+  requireRole,
 } from "../middleware/index.js";
 
 export const contactsRoutes = new Hono();
@@ -362,7 +363,7 @@ contactsRoutes.put("/:id", async (c) => {
  * DELETE /api/contacts/:id
  * Soft delete contact
  */
-contactsRoutes.delete("/:id", async (c) => {
+contactsRoutes.delete("/:id", requireRole("owner", "admin"), async (c) => {
   try {
     const tenantId = getTenantId(c);
     const id = c.req.param("id");
@@ -715,7 +716,7 @@ contactsRoutes.get("/:id/calls", async (c) => {
  * POST /api/contacts/import
  * Bulk import contacts
  */
-contactsRoutes.post("/import", async (c) => {
+contactsRoutes.post("/import", requireRole("owner", "admin"), async (c) => {
   try {
     const tenantId = getTenantId(c);
     const contentType = c.req.header("Content-Type") || "";
@@ -790,7 +791,7 @@ contactsRoutes.post("/import", async (c) => {
  * POST /api/contacts/export
  * Export contacts
  */
-contactsRoutes.post("/export", async (c) => {
+contactsRoutes.post("/export", requireRole("owner", "admin"), async (c) => {
   try {
     const tenantId = getTenantId(c);
     const body = await c.req.json();
@@ -873,7 +874,7 @@ contactsRoutes.post("/export", async (c) => {
  * POST /api/contacts/merge
  * Merge duplicate contacts
  */
-contactsRoutes.post("/merge", async (c) => {
+contactsRoutes.post("/merge", requireRole("owner", "admin"), async (c) => {
   try {
     const tenantId = getTenantId(c);
     const body = await c.req.json();
@@ -915,19 +916,23 @@ contactsRoutes.post("/merge", async (c) => {
  * POST /api/contacts/:id/recalculate-score
  * Recalculate engagement score
  */
-contactsRoutes.post("/:id/recalculate-score", async (c) => {
-  try {
-    const tenantId = getTenantId(c);
-    const id = c.req.param("id");
+contactsRoutes.post(
+  "/:id/recalculate-score",
+  requireRole("owner", "admin"),
+  async (c) => {
+    try {
+      const tenantId = getTenantId(c);
+      const id = c.req.param("id");
 
-    const score = await recalculateEngagementScore(tenantId, id);
+      const score = await recalculateEngagementScore(tenantId, id);
 
-    return c.json({ engagement_score: score });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return c.json({ error: message }, 500);
-  }
-});
+      return c.json({ engagement_score: score });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return c.json({ error: message }, 500);
+    }
+  },
+);
 
 /**
  * GET /api/contacts/:id/engagement

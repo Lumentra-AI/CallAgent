@@ -16,7 +16,11 @@ import {
   getUpcomingBookings,
 } from "../services/bookings/booking-service.js";
 import { BookingFilters, PaginationParams } from "../types/crm.js";
-import { getAuthTenantId, strictRateLimit } from "../middleware/index.js";
+import {
+  getAuthTenantId,
+  strictRateLimit,
+  requireRole,
+} from "../middleware/index.js";
 
 export const bookingsRoutes = new Hono();
 
@@ -314,23 +318,28 @@ bookingsRoutes.patch("/:id", async (c) => {
  * DELETE /api/bookings/:id
  * Cancel a booking
  */
-bookingsRoutes.delete("/:id", strictRateLimit("bookings-delete"), async (c) => {
-  try {
-    const tenantId = getTenantId(c);
-    const id = c.req.param("id");
-    const body = await c.req.json().catch(() => ({}));
+bookingsRoutes.delete(
+  "/:id",
+  requireRole("owner", "admin"),
+  strictRateLimit("bookings-delete"),
+  async (c) => {
+    try {
+      const tenantId = getTenantId(c);
+      const id = c.req.param("id");
+      const body = await c.req.json().catch(() => ({}));
 
-    await cancelBooking(tenantId, id, body.reason);
+      await cancelBooking(tenantId, id, body.reason);
 
-    return c.json({ success: true });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    if (message.includes("not found")) {
-      return c.json({ error: message }, 404);
+      return c.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      if (message.includes("not found")) {
+        return c.json({ error: message }, 404);
+      }
+      return c.json({ error: message }, 500);
     }
-    return c.json({ error: message }, 500);
-  }
-});
+  },
+);
 
 // ============================================================================
 // STATUS TRANSITIONS

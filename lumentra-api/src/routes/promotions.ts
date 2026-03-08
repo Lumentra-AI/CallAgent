@@ -5,16 +5,15 @@ import {
   updateOne,
   deleteRows,
 } from "../services/database/query-helpers.js";
-import { getAuthUserId } from "../middleware/index.js";
+import {
+  getAuthUserId,
+  getAuthTenantId,
+  requireRole,
+} from "../middleware/index.js";
 
 export const promotionsRoutes = new Hono();
 
 /** Type definitions for database rows */
-interface MembershipRow {
-  tenant_id: string;
-  role: string;
-}
-
 interface PromotionRow {
   id: string;
   tenant_id: string;
@@ -85,35 +84,17 @@ promotionsRoutes.get("/", async (c) => {
  * POST /api/promotions
  * Create a promotion
  */
-promotionsRoutes.post("/", async (c) => {
+promotionsRoutes.post("/", requireRole("owner", "admin"), async (c) => {
   const body = await c.req.json();
-  const userId = getAuthUserId(c);
+  const tenantId = getAuthTenantId(c);
 
   if (!body.offer_text) {
     return c.json({ error: "offer_text is required" }, 400);
   }
 
   try {
-    // Get tenant
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
-      return c.json({ error: "Forbidden" }, 403);
-    }
-
     const promotion = await insertOne<PromotionRow>("tenant_promotions", {
-      tenant_id: membership.tenant_id,
+      tenant_id: tenantId,
       offer_text: body.offer_text,
       mention_behavior: body.mention_behavior || "relevant",
       is_active: body.is_active !== undefined ? body.is_active : true,
@@ -177,30 +158,12 @@ promotionsRoutes.get("/:id", async (c) => {
  * PUT /api/promotions/:id
  * Update a promotion
  */
-promotionsRoutes.put("/:id", async (c) => {
+promotionsRoutes.put("/:id", requireRole("owner", "admin"), async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
-  const userId = getAuthUserId(c);
+  const tenantId = getAuthTenantId(c);
 
   try {
-    // Get tenant
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
-      return c.json({ error: "Forbidden" }, 403);
-    }
-
     // Verify promotion belongs to tenant
     const existingSql = `
       SELECT tenant_id
@@ -209,7 +172,7 @@ promotionsRoutes.put("/:id", async (c) => {
     `;
     const existing = await queryOne<{ tenant_id: string }>(existingSql, [id]);
 
-    if (!existing || existing.tenant_id !== membership.tenant_id) {
+    if (!existing || existing.tenant_id !== tenantId) {
       return c.json({ error: "Promotion not found" }, 404);
     }
 
@@ -238,29 +201,11 @@ promotionsRoutes.put("/:id", async (c) => {
  * DELETE /api/promotions/:id
  * Delete a promotion
  */
-promotionsRoutes.delete("/:id", async (c) => {
+promotionsRoutes.delete("/:id", requireRole("owner", "admin"), async (c) => {
   const id = c.req.param("id");
-  const userId = getAuthUserId(c);
+  const tenantId = getAuthTenantId(c);
 
   try {
-    // Get tenant
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
-      return c.json({ error: "Forbidden" }, 403);
-    }
-
     // Verify promotion belongs to tenant
     const existingSql = `
       SELECT tenant_id
@@ -269,7 +214,7 @@ promotionsRoutes.delete("/:id", async (c) => {
     `;
     const existing = await queryOne<{ tenant_id: string }>(existingSql, [id]);
 
-    if (!existing || existing.tenant_id !== membership.tenant_id) {
+    if (!existing || existing.tenant_id !== tenantId) {
       return c.json({ error: "Promotion not found" }, 404);
     }
 
@@ -286,53 +231,39 @@ promotionsRoutes.delete("/:id", async (c) => {
  * POST /api/promotions/:id/toggle
  * Toggle promotion active state
  */
-promotionsRoutes.post("/:id/toggle", async (c) => {
-  const id = c.req.param("id");
-  const userId = getAuthUserId(c);
+promotionsRoutes.post(
+  "/:id/toggle",
+  requireRole("owner", "admin"),
+  async (c) => {
+    const id = c.req.param("id");
+    const tenantId = getAuthTenantId(c);
 
-  try {
-    // Get tenant
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
-      return c.json({ error: "Forbidden" }, 403);
-    }
-
-    // Get current state
-    const existingSql = `
+    try {
+      // Get current state
+      const existingSql = `
       SELECT tenant_id, is_active
       FROM tenant_promotions
       WHERE id = $1
     `;
-    const existing = await queryOne<{ tenant_id: string; is_active: boolean }>(
-      existingSql,
-      [id],
-    );
+      const existing = await queryOne<{
+        tenant_id: string;
+        is_active: boolean;
+      }>(existingSql, [id]);
 
-    if (!existing || existing.tenant_id !== membership.tenant_id) {
-      return c.json({ error: "Promotion not found" }, 404);
+      if (!existing || existing.tenant_id !== tenantId) {
+        return c.json({ error: "Promotion not found" }, 404);
+      }
+
+      const promotion = await updateOne<PromotionRow>(
+        "tenant_promotions",
+        { is_active: !existing.is_active },
+        { id },
+      );
+
+      return c.json(promotion);
+    } catch (error) {
+      console.error("[PROMOTIONS] Error toggling promotion:", error);
+      return c.json({ error: "Failed to toggle promotion" }, 500);
     }
-
-    const promotion = await updateOne<PromotionRow>(
-      "tenant_promotions",
-      { is_active: !existing.is_active },
-      { id },
-    );
-
-    return c.json(promotion);
-  } catch (error) {
-    console.error("[PROMOTIONS] Error toggling promotion:", error);
-    return c.json({ error: "Failed to toggle promotion" }, 500);
-  }
-});
+  },
+);

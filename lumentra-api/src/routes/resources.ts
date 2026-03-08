@@ -16,7 +16,11 @@ import {
 } from "../services/resources/resource-service.js";
 import { PaginationParams } from "../types/crm.js";
 
-import { getAuthTenantId, strictRateLimit } from "../middleware/index.js";
+import {
+  getAuthTenantId,
+  strictRateLimit,
+  requireRole,
+} from "../middleware/index.js";
 
 export const resourcesRoutes = new Hono();
 
@@ -204,36 +208,41 @@ resourcesRoutes.get("/:id", async (c) => {
  * POST /api/resources
  * Create a new resource
  */
-resourcesRoutes.post("/", strictRateLimit("resources-create"), async (c) => {
-  try {
-    const tenantId = getTenantId(c);
-    const body = await c.req.json();
+resourcesRoutes.post(
+  "/",
+  requireRole("owner", "admin"),
+  strictRateLimit("resources-create"),
+  async (c) => {
+    try {
+      const tenantId = getTenantId(c);
+      const body = await c.req.json();
 
-    const parsed = createResourceSchema.safeParse(body);
-    if (!parsed.success) {
-      return c.json(
-        {
-          error: "Validation failed",
-          details: parsed.error.issues,
-        },
-        400,
-      );
+      const parsed = createResourceSchema.safeParse(body);
+      if (!parsed.success) {
+        return c.json(
+          {
+            error: "Validation failed",
+            details: parsed.error.issues,
+          },
+          400,
+        );
+      }
+
+      const resource = await createResource(tenantId, parsed.data);
+
+      return c.json(resource, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return c.json({ error: message }, 500);
     }
-
-    const resource = await createResource(tenantId, parsed.data);
-
-    return c.json(resource, 201);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return c.json({ error: message }, 500);
-  }
-});
+  },
+);
 
 /**
  * PUT /api/resources/:id
  * Update a resource
  */
-resourcesRoutes.put("/:id", async (c) => {
+resourcesRoutes.put("/:id", requireRole("owner", "admin"), async (c) => {
   try {
     const tenantId = getTenantId(c);
     const id = c.req.param("id");
@@ -266,7 +275,7 @@ resourcesRoutes.put("/:id", async (c) => {
  * PATCH /api/resources/:id
  * Partial update a resource
  */
-resourcesRoutes.patch("/:id", async (c) => {
+resourcesRoutes.patch("/:id", requireRole("owner", "admin"), async (c) => {
   try {
     const tenantId = getTenantId(c);
     const id = c.req.param("id");
@@ -299,7 +308,7 @@ resourcesRoutes.patch("/:id", async (c) => {
  * DELETE /api/resources/:id
  * Soft delete (deactivate) a resource
  */
-resourcesRoutes.delete("/:id", async (c) => {
+resourcesRoutes.delete("/:id", requireRole("owner", "admin"), async (c) => {
   try {
     const tenantId = getTenantId(c);
     const id = c.req.param("id");
@@ -356,7 +365,7 @@ resourcesRoutes.get("/:id/availability", async (c) => {
  * POST /api/resources/reorder
  * Reorder resources (for drag-and-drop UI)
  */
-resourcesRoutes.post("/reorder", async (c) => {
+resourcesRoutes.post("/reorder", requireRole("owner", "admin"), async (c) => {
   try {
     const tenantId = getTenantId(c);
     const body = await c.req.json();

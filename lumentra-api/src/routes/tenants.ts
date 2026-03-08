@@ -10,6 +10,7 @@ import {
   getAuthTenantId,
   getAuthUserId,
   strictRateLimit,
+  requireRole,
 } from "../middleware/index.js";
 
 export const tenantsRoutes = new Hono();
@@ -302,68 +303,76 @@ tenantsRoutes.post("/", async (c) => {
  * PUT /api/tenants/:id
  * Update tenant configuration (owner/admin only)
  */
-tenantsRoutes.put("/:id", strictRateLimit("tenants-update"), async (c) => {
-  const id = c.req.param("id");
-  const body = await c.req.json();
-  const userId = getAuthUserId(c);
+tenantsRoutes.put(
+  "/:id",
+  requireRole("owner"),
+  strictRateLimit("tenants-update"),
+  async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const userId = getAuthUserId(c);
 
-  try {
-    // Verify user is owner or admin
-    const membership = await queryOne<{ role: string }>(
-      `SELECT role FROM tenant_members
+    try {
+      // Verify user is owner or admin
+      const membership = await queryOne<{ role: string }>(
+        `SELECT role FROM tenant_members
        WHERE user_id = $1 AND tenant_id = $2 AND is_active = true`,
-      [userId, id],
-    );
+        [userId, id],
+      );
 
-    if (!membership || !["owner", "admin"].includes(membership.role)) {
-      return c.json({ error: "Forbidden - owner or admin role required" }, 403);
+      if (!membership || !["owner", "admin"].includes(membership.role)) {
+        return c.json(
+          { error: "Forbidden - owner or admin role required" },
+          403,
+        );
+      }
+
+      // Remove fields that shouldn't be updated directly
+      delete body.id;
+      delete body.created_at;
+      delete body.phone_number; // Phone number changes need special handling
+
+      // Validate industry if provided
+      const VALID_INDUSTRIES = [
+        "hotel",
+        "motel",
+        "restaurant",
+        "medical",
+        "dental",
+        "salon",
+        "auto_service",
+      ];
+      if (body.industry && !VALID_INDUSTRIES.includes(body.industry)) {
+        return c.json({ error: "Invalid industry type" }, 400);
+      }
+
+      body.updated_at = new Date().toISOString();
+
+      const data = await updateOne<TenantRow>("tenants", body, { id });
+
+      if (!data) {
+        return c.json({ error: "Tenant not found" }, 404);
+      }
+
+      // Invalidate cache so changes take effect immediately
+      await invalidateTenant(id);
+
+      return c.json(data);
+    } catch (err) {
+      console.error("[tenants] PUT /:id error:", err);
+      return c.json(
+        { error: err instanceof Error ? err.message : "Database error" },
+        500,
+      );
     }
-
-    // Remove fields that shouldn't be updated directly
-    delete body.id;
-    delete body.created_at;
-    delete body.phone_number; // Phone number changes need special handling
-
-    // Validate industry if provided
-    const VALID_INDUSTRIES = [
-      "hotel",
-      "motel",
-      "restaurant",
-      "medical",
-      "dental",
-      "salon",
-      "auto_service",
-    ];
-    if (body.industry && !VALID_INDUSTRIES.includes(body.industry)) {
-      return c.json({ error: "Invalid industry type" }, 400);
-    }
-
-    body.updated_at = new Date().toISOString();
-
-    const data = await updateOne<TenantRow>("tenants", body, { id });
-
-    if (!data) {
-      return c.json({ error: "Tenant not found" }, 404);
-    }
-
-    // Invalidate cache so changes take effect immediately
-    await invalidateTenant(id);
-
-    return c.json(data);
-  } catch (err) {
-    console.error("[tenants] PUT /:id error:", err);
-    return c.json(
-      { error: err instanceof Error ? err.message : "Database error" },
-      500,
-    );
-  }
-});
+  },
+);
 
 /**
  * DELETE /api/tenants/:id
  * Deactivate a tenant (owner only)
  */
-tenantsRoutes.delete("/:id", async (c) => {
+tenantsRoutes.delete("/:id", requireRole("owner"), async (c) => {
   const id = c.req.param("id");
   const userId = getAuthUserId(c);
 
@@ -406,7 +415,7 @@ tenantsRoutes.delete("/:id", async (c) => {
  * Update tenant phone number (owner only)
  * This requires special handling since phone numbers map to tenant lookups
  */
-tenantsRoutes.put("/:id/phone", async (c) => {
+tenantsRoutes.put("/:id/phone", requireRole("owner"), async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
   const userId = getAuthUserId(c);
