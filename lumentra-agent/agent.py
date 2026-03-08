@@ -87,8 +87,19 @@ async def entrypoint(ctx: JobContext):
     # Connect to the room first, then wait for the SIP participant
     await ctx.connect()
     participant = await ctx.wait_for_participant()
+
+    # Log all SIP attributes for debugging trunk/number issues
+    sip_attrs = {k: v for k, v in participant.attributes.items() if k.startswith("sip.")}
+    logger.info("SIP participant attributes: %s", sip_attrs)
+
     dialed_number = participant.attributes.get("sip.trunkPhoneNumber", "")
     caller_phone = participant.attributes.get("sip.phoneNumber", "")
+
+    # Fallback: try sip.calledPhoneNumber if trunkPhoneNumber is empty
+    if not dialed_number:
+        dialed_number = participant.attributes.get("sip.calledPhoneNumber", "")
+    if not dialed_number:
+        dialed_number = participant.attributes.get("sip.uri.to.user", "")
 
     logger.info(
         "Call started: dialed=%s caller=%s room=%s",
