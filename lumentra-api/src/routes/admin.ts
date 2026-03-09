@@ -4,8 +4,24 @@ import { updateOne } from "../services/database/query-helpers.js";
 import { releaseNumber } from "../services/signalwire/phone.js";
 import { invalidateTenant } from "../services/database/tenant-cache.js";
 import { notifyAdmin } from "../services/notifications/admin-notify.js";
+import { getPlatformAdminContext } from "../middleware/auth.js";
 
 export const adminRoutes = new Hono();
+
+adminRoutes.get("/me", async (c) => {
+  const admin = getPlatformAdminContext(c);
+
+  return c.json({
+    isPlatformAdmin: admin.isPlatformAdmin,
+    authMethod: admin.authMethod,
+    user: admin.user
+      ? {
+          id: admin.user.id,
+          email: admin.email,
+        }
+      : null,
+  });
+});
 
 interface PortRequestRow {
   id: string;

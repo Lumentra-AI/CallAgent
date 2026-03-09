@@ -1355,7 +1355,7 @@ export const DEFAULT_RESPONSES: CustomResponses = {
 
 export function createDefaultConfig(
   industry: IndustryType,
-  userRole: "developer" | "admin" | "staff" = "developer",
+  userRole: "admin" | "staff" = "staff",
 ): AppConfig {
   const preset = INDUSTRY_PRESETS[industry];
   const themeColor = getDefaultThemeForIndustry(industry);

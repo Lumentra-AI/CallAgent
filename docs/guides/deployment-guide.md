@@ -1003,7 +1003,7 @@ File: `/lumentra-agent/livekit/livekit.yaml`
 port: 7880
 
 keys:
-  APIc4ecf671a4b0eab56ceb2cd4: 7b284f366c10a9f0319a29352402a300a01362e960a84c492baaaeedfc970386
+  replace-with-livekit-api-key: replace-with-livekit-api-secret
 
 rtc:
   tcp_port: 7881
@@ -1065,8 +1065,8 @@ File: `/lumentra-agent/livekit/sip.yaml`
 ```yaml
 log_level: info
 
-api_key: APIc4ecf671a4b0eab56ceb2cd4
-api_secret: 7b284f366c10a9f0319a29352402a300a01362e960a84c492baaaeedfc970386
+api_key: replace-with-livekit-api-key
+api_secret: replace-with-livekit-api-secret
 ws_url: ws://localhost:7880
 
 redis:
@@ -1119,13 +1119,13 @@ Resource details:
 ```bash
 # SSH to server, then:
 lk --url http://localhost:7880 \
-   --api-key APIc4ecf671a4b0eab56ceb2cd4 \
-   --api-secret 7b284f366c10a9f0319a29352402a300a01362e960a84c492baaaeedfc970386 \
+   --api-key replace-with-livekit-api-key \
+   --api-secret replace-with-livekit-api-secret \
    sip inbound list
 
 lk --url http://localhost:7880 \
-   --api-key APIc4ecf671a4b0eab56ceb2cd4 \
-   --api-secret 7b284f366c10a9f0319a29352402a300a01362e960a84c492baaaeedfc970386 \
+   --api-key replace-with-livekit-api-key \
+   --api-secret replace-with-livekit-api-secret \
    sip dispatch list
 ```
 
@@ -2805,20 +2805,20 @@ cd /opt/livekit && docker compose build agent && docker compose up -d agent
 ```bash
 # List SIP trunks
 lk --url http://localhost:7880 \
-   --api-key APIc4ecf671a4b0eab56ceb2cd4 \
-   --api-secret 7b284f366c10a9f0319a29352402a300a01362e960a84c492baaaeedfc970386 \
+   --api-key replace-with-livekit-api-key \
+   --api-secret replace-with-livekit-api-secret \
    sip inbound list
 
 # List SIP dispatch rules
 lk --url http://localhost:7880 \
-   --api-key APIc4ecf671a4b0eab56ceb2cd4 \
-   --api-secret 7b284f366c10a9f0319a29352402a300a01362e960a84c492baaaeedfc970386 \
+   --api-key replace-with-livekit-api-key \
+   --api-secret replace-with-livekit-api-secret \
    sip dispatch list
 
 # List active rooms
 lk --url http://localhost:7880 \
-   --api-key APIc4ecf671a4b0eab56ceb2cd4 \
-   --api-secret 7b284f366c10a9f0319a29352402a300a01362e960a84c492baaaeedfc970386 \
+   --api-key replace-with-livekit-api-key \
+   --api-secret replace-with-livekit-api-secret \
    room list
 ```
 

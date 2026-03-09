@@ -18,6 +18,8 @@ export {
   type ApiError,
 } from "./client";
 
+export { fetchAdminMe, type AdminMeResponse } from "./admin";
+
 // Dashboard API
 export {
   // Main functions (transformed to frontend format)

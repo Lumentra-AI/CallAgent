@@ -107,7 +107,7 @@ ssh -i ~/.ssh/id_ed25519 root@178.156.205.145 "cd /opt/livekit && docker compose
 
 **LiveKit IDs (needed if recreating SIP config):**
 
-- API key: `APIc4ecf671a4b0eab56ceb2cd4`
+- API key: `replace-with-livekit-api-key`
 - SIP trunk ID: `ST_SUJtKjT9TEgv` (+19458001233)
 - Dispatch rule ID: `SDR_2bZEobprwRXq` (routes to `lumentra-voice-agent`, room prefix `call-`)
 

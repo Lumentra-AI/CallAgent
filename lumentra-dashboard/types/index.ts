@@ -4,12 +4,11 @@
 // ============================================================================
 // ACCESS CONTROL
 // ============================================================================
-// Three-tier access system:
-// - developer: Platform developers with full system access
+// Customer-facing access system:
 // - admin: Business owners who configure their agent and workflow
 // - staff: Business employees who monitor and can take over calls
 
-export type UserRole = "developer" | "admin" | "staff";
+export type UserRole = "admin" | "staff";
 
 export interface UserSession {
   id: string;
@@ -68,10 +67,12 @@ export const ADMIN_PERMISSIONS: Permission[] = [
   "manage_responses",
   "manage_billing",
   "manage_staff",
+  "view_integrations",
+  "manage_integrations",
 ];
 
-// Developer: Full platform access
-export const DEVELOPER_PERMISSIONS: Permission[] = [
+// Platform admin: Internal team only
+export const PLATFORM_ADMIN_PERMISSIONS: Permission[] = [
   ...ADMIN_PERMISSIONS,
   "view_pricing",
   "manage_pricing",
@@ -83,9 +84,6 @@ export const DEVELOPER_PERMISSIONS: Permission[] = [
   "manage_infrastructure",
   "view_system_logs",
 ];
-
-// Legacy export for backward compatibility during migration
-export const CUSTOMER_PERMISSIONS = STAFF_PERMISSIONS;
 
 // ============================================================================
 // SUBSCRIPTION & BILLING
@@ -588,7 +586,7 @@ export type SettingsTab =
   | "capabilities"
   | "promotions"
   | "chatbot"
-  // Admin only tabs
+  // Platform admin tabs (not shown in the customer dashboard)
   | "pricing"
   | "integrations"
   | "advanced";
@@ -603,14 +601,16 @@ export const CUSTOMER_SETTINGS_TABS: SettingsTab[] = [
   "hours",
   "escalation",
   "billing",
+  "integrations",
 ];
 
-export const ADMIN_SETTINGS_TABS: SettingsTab[] = [
+export const PLATFORM_ADMIN_SETTINGS_TABS: SettingsTab[] = [
   ...CUSTOMER_SETTINGS_TABS,
   "pricing",
-  "integrations",
   "advanced",
 ];
+
+export const ADMIN_SETTINGS_TABS = PLATFORM_ADMIN_SETTINGS_TABS;
 
 export interface UIState {
   currentView: ViewType;

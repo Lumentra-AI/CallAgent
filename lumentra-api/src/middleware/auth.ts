@@ -5,6 +5,8 @@
 
 import { Context, Next } from "hono";
 import { createClient, SupabaseClient, User } from "@supabase/supabase-js";
+import { isValidInternalApiKeyToken } from "./internal-auth.js";
+import { isPlatformAdminEmail } from "../utils/platform-admin.js";
 
 // Auth context stored on request
 export interface AuthContext {
@@ -14,10 +16,19 @@ export interface AuthContext {
   role: string;
 }
 
+export interface PlatformAdminContext {
+  authMethod: "jwt" | "internal_api_key";
+  isPlatformAdmin: true;
+  user: User | null;
+  userId: string | null;
+  email: string | null;
+}
+
 // Extend Hono context with auth
 declare module "hono" {
   interface ContextVariableMap {
     auth: AuthContext;
+    platformAdmin: PlatformAdminContext;
   }
 }
 
@@ -239,6 +250,78 @@ export function authMiddleware() {
 }
 
 /**
+ * Platform admin authentication middleware
+ * Accepts either a Supabase JWT from an allowlisted email or the INTERNAL_API_KEY.
+ */
+export function platformAdminAuth() {
+  return async (c: Context, next: Next) => {
+    const authHeader = c.req.header("Authorization");
+    const token = extractToken(authHeader);
+
+    if (!token) {
+      return c.json(
+        {
+          error: "Unauthorized",
+          message: "Missing or invalid Authorization header",
+        },
+        401,
+      );
+    }
+
+    if (isValidInternalApiKeyToken(token)) {
+      c.set("platformAdmin", {
+        authMethod: "internal_api_key",
+        isPlatformAdmin: true,
+        user: null,
+        userId: null,
+        email: null,
+      });
+
+      await next();
+      return;
+    }
+
+    const supabase = getAuthClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      return c.json(
+        {
+          error: "Unauthorized",
+          message: "Invalid or expired token",
+        },
+        401,
+      );
+    }
+
+    const email = user.email?.trim().toLowerCase() || null;
+
+    if (!isPlatformAdminEmail(email)) {
+      return c.json(
+        {
+          error: "Forbidden",
+          message: "Not a platform admin",
+        },
+        403,
+      );
+    }
+
+    c.set("platformAdmin", {
+      authMethod: "jwt",
+      isPlatformAdmin: true,
+      user,
+      userId: user.id,
+      email,
+    });
+
+    await next();
+  };
+}
+
+/**
  * Optional auth middleware
  * Adds auth context if token is present, but doesn't require it
  * Useful for endpoints that work differently for authenticated vs anonymous users
@@ -343,4 +426,17 @@ export function getAuthContext(c: Context): AuthContext {
     throw new Error("Auth context not set - is authMiddleware applied?");
   }
   return auth;
+}
+
+/**
+ * Get authenticated platform admin context
+ */
+export function getPlatformAdminContext(c: Context): PlatformAdminContext {
+  const platformAdmin = c.get("platformAdmin");
+  if (!platformAdmin) {
+    throw new Error(
+      "Platform admin context not set - is platformAdminAuth() applied?",
+    );
+  }
+  return platformAdmin;
 }

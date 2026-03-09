@@ -104,6 +104,17 @@ const TenantContext = createContext<TenantContextType | undefined>(undefined);
 
 const TENANT_STORAGE_KEY = "lumentra_current_tenant_id";
 
+function normalizeTenantDetails(
+  tenant: TenantListItem | TenantDetails,
+): TenantDetails {
+  return {
+    ...tenant,
+    userRole:
+      ("userRole" in tenant && tenant.userRole) ||
+      ("role" in tenant ? tenant.role : undefined),
+  };
+}
+
 export function TenantProvider({ children }: { children: ReactNode }) {
   const { user, isLoading: authLoading } = useAuth();
   const [tenants, setTenants] = useState<TenantListItem[]>([]);
@@ -121,7 +132,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         const data = await get<TenantDetails & { userRole?: string }>(
           `/api/tenants/${tenantId}`,
         );
-        return data;
+        return normalizeTenantDetails(data);
       } catch (err) {
         console.error("[TenantContext] Failed to fetch tenant details:", err);
         return null;
@@ -173,7 +184,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
           setCurrentTenant(details);
         } else {
           // Fallback: use list data if detail fetch fails
-          setCurrentTenant(selectedItem as TenantDetails);
+          setCurrentTenant(normalizeTenantDetails(selectedItem));
         }
       } else {
         setCurrentTenant(null);
@@ -208,7 +219,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         if (details) {
           setCurrentTenant(details);
         } else {
-          setCurrentTenant(item as TenantDetails);
+          setCurrentTenant(normalizeTenantDetails(item));
         }
       }
     },

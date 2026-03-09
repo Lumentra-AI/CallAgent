@@ -23,11 +23,7 @@ import type {
   Permission,
   UserRole,
 } from "@/types";
-import {
-  STAFF_PERMISSIONS,
-  ADMIN_PERMISSIONS,
-  DEVELOPER_PERMISSIONS,
-} from "@/types";
+import { STAFF_PERMISSIONS, ADMIN_PERMISSIONS } from "@/types";
 import {
   createDefaultConfig,
   getPreset,
@@ -41,12 +37,14 @@ import {
   generateIndustryMetrics,
   generateCallSession,
 } from "@/lib/mockData";
+import { mapTenantRoleToUserRole } from "@/lib/auth/roles";
 import {
   fetchDashboardMetrics,
   fetchActivityLog,
   checkApiHealth,
   getTenantId,
 } from "@/lib/api";
+import { useTenant } from "./TenantContext";
 
 // ============================================================================
 // STORAGE KEYS
@@ -128,6 +126,7 @@ const DEFAULT_UI_STATE: UIState = {
 // ============================================================================
 
 export function ConfigProvider({ children }: { children: ReactNode }) {
+  const { currentTenant } = useTenant();
   // Core State
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -173,7 +172,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
         } else {
           // Initialize demo config when none exists
           activeConfig = {
-            ...createDefaultConfig("hotel", "developer"),
+            ...createDefaultConfig("hotel", "staff"),
             isConfigured: true,
             businessName: "Demo Hotel",
             agentName: "Lumentra",
@@ -232,6 +231,44 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
     loadState();
   }, []);
+
+  useEffect(() => {
+    if (!currentTenant) return;
+
+    const tenantIndustry = (currentTenant.industry || "hotel") as IndustryType;
+    const mappedRole = mapTenantRoleToUserRole(
+      currentTenant.userRole || currentTenant.role,
+    );
+
+    setConfig((prev) => {
+      const base = prev || createDefaultConfig(tenantIndustry, mappedRole);
+
+      return {
+        ...base,
+        industry: tenantIndustry,
+        businessName: currentTenant.business_name || base.businessName,
+        agentName: currentTenant.agent_name || base.agentName,
+        userRole: mappedRole,
+        isConfigured:
+          base.isConfigured || Boolean(currentTenant.setup_completed_at),
+      };
+    });
+
+    setIndustryMetrics(generateIndustryMetrics(tenantIndustry));
+
+    if (!apiEnabled) {
+      setMetrics(generateDashboardMetrics(tenantIndustry));
+    }
+  }, [
+    apiEnabled,
+    currentTenant,
+    currentTenant?.agent_name,
+    currentTenant?.business_name,
+    currentTenant?.industry,
+    currentTenant?.role,
+    currentTenant?.setup_completed_at,
+    currentTenant?.userRole,
+  ]);
 
   // ============================================================================
   // PERSISTENCE
@@ -317,32 +354,42 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   // CONFIG ACTIONS
   // ============================================================================
 
-  const saveConfig = useCallback((newConfig: Partial<AppConfig>) => {
-    setConfig((prev) => {
-      if (!prev) {
-        // Creating new config
-        const industry = (newConfig.industry || "hotel") as IndustryType;
-        const base = createDefaultConfig(industry);
-        const merged = {
-          ...base,
+  const saveConfig = useCallback(
+    (newConfig: Partial<AppConfig>) => {
+      setConfig((prev) => {
+        if (!prev) {
+          // Creating new config
+          const industry = (newConfig.industry || "hotel") as IndustryType;
+          const base = createDefaultConfig(
+            industry,
+            currentTenant
+              ? mapTenantRoleToUserRole(
+                  currentTenant.userRole || currentTenant.role,
+                )
+              : "staff",
+          );
+          const merged = {
+            ...base,
+            ...newConfig,
+            isConfigured: true,
+            configuredAt: new Date().toISOString(),
+            lastModified: new Date().toISOString(),
+          };
+          // Initialize metrics
+          setMetrics(generateDashboardMetrics(merged.industry));
+          setIndustryMetrics(generateIndustryMetrics(merged.industry));
+          return merged;
+        }
+        // Updating existing config
+        return {
+          ...prev,
           ...newConfig,
-          isConfigured: true,
-          configuredAt: new Date().toISOString(),
           lastModified: new Date().toISOString(),
         };
-        // Initialize metrics
-        setMetrics(generateDashboardMetrics(merged.industry));
-        setIndustryMetrics(generateIndustryMetrics(merged.industry));
-        return merged;
-      }
-      // Updating existing config
-      return {
-        ...prev,
-        ...newConfig,
-        lastModified: new Date().toISOString(),
-      };
-    });
-  }, []);
+      });
+    },
+    [currentTenant],
+  );
 
   const updateConfig = useCallback(
     <K extends keyof AppConfig>(key: K, value: AppConfig[K]) => {
@@ -369,7 +416,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
   const switchIndustry = useCallback((industry: IndustryType) => {
     setConfig((prev) => {
-      const base = createDefaultConfig(industry);
+      const base = createDefaultConfig(industry, prev?.userRole || "staff");
       if (!prev) return base;
       return {
         ...prev,
@@ -533,8 +580,6 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const getUserPermissions = useCallback((): Permission[] => {
     if (!config) return [];
     switch (config.userRole) {
-      case "developer":
-        return DEVELOPER_PERMISSIONS;
       case "admin":
         return ADMIN_PERMISSIONS;
       case "staff":

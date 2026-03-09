@@ -20,8 +20,8 @@ import { VoicePreview, SampleTextSelector } from "./VoicePreview";
 // ============================================================================
 // VOICE OPTIONS
 // ============================================================================
-// Developer-controlled: Provider selection determines available voices
-// Admin-controlled: Voice selection, speaking rate, pitch within provider
+// Platform admin-controlled: Provider selection determines available voices
+// Business admin-controlled: Voice selection, speaking rate, pitch within provider
 
 const VOICE_PROVIDERS = [
   {
@@ -274,8 +274,8 @@ export default function VoiceTab() {
       </div>
 
       {/* ================================================================== */}
-      {/* DEVELOPER SECTION: Voice Provider Infrastructure                   */}
-      {/* Only visible to developers - controls backend voice API            */}
+      {/* PLATFORM ADMIN SECTION: Voice Provider Infrastructure              */}
+      {/* Only visible to platform admins - controls backend voice API       */}
       {/* ================================================================== */}
       {canManageVoiceProviders && (
         <section className="space-y-4">

@@ -143,7 +143,7 @@ Caller -> SignalWire -> SIP (port 5060) -> LiveKit SIP Bridge -> LiveKit Room ->
 
 ### LiveKit IDs
 
-- **API key:** APIc4ecf671a4b0eab56ceb2cd4
+- **API key:** replace-with-livekit-api-key
 - **SIP trunk ID:** ST_SUJtKjT9TEgv (+19458001233)
 - **Dispatch rule ID:** SDR_2bZEobprwRXq (routes to lumentra-voice-agent, room prefix `call-`)
 

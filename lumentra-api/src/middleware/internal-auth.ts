@@ -12,6 +12,18 @@ function keysMatch(providedToken: string, expectedKey: string): boolean {
   return timingSafeEqual(providedBuffer, expectedBuffer);
 }
 
+export function isValidInternalApiKeyToken(
+  providedToken: string | undefined,
+): boolean {
+  const expectedKey = process.env.INTERNAL_API_KEY;
+
+  if (!expectedKey || !providedToken) {
+    return false;
+  }
+
+  return keysMatch(providedToken, expectedKey);
+}
+
 export function internalAuth() {
   return async (c: Context, next: Next) => {
     const apiKey = process.env.INTERNAL_API_KEY;
@@ -26,7 +38,7 @@ export function internalAuth() {
     }
 
     const token = authHeader.slice(7);
-    if (!keysMatch(token, apiKey)) {
+    if (!isValidInternalApiKeyToken(token)) {
       return c.json({ error: "Invalid API key" }, 403);
     }
 
