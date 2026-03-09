@@ -1,8 +1,10 @@
 "use client";
 
 import { useTenantConfig } from "@/hooks/useTenantConfig";
+import { useIndustry } from "@/context/IndustryContext";
 import { Label } from "@/components/ui/label";
 import type { LucideIcon } from "lucide-react";
+import type { IndustryPreset } from "@/types";
 import {
   MessageSquare,
   Moon,
@@ -10,6 +12,7 @@ import {
   Loader2,
   Check,
   AlertCircle,
+  Wand2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -59,12 +62,44 @@ const DB_FIELD_MAP = {
 } as const;
 
 // ============================================================================
+// INDUSTRY-AWARE PLACEHOLDER HELPER
+// ============================================================================
+
+function getIndustryPlaceholder(
+  fieldId: GreetingField["id"],
+  preset: IndustryPreset,
+): string {
+  const templates = preset?.greetingTemplates;
+  if (fieldId === "standard" && templates?.[0]) {
+    return templates[0];
+  }
+  if (fieldId === "afterHours") {
+    const term = preset?.terminology?.transaction?.toLowerCase() || "booking";
+    return `Thank you for calling {businessName}. We are currently closed. Please leave your name and number, and we'll call you back to schedule your ${term}.`;
+  }
+  if (fieldId === "returning" && templates?.[1]) {
+    return templates[1];
+  }
+  // Fallback to default placeholders
+  const defaults: Record<string, string> = {
+    standard:
+      "Thank you for calling {businessName}. This is {agentName}, how may I assist you today?",
+    afterHours:
+      "Thank you for calling {businessName}. We are currently closed...",
+    returning: "Welcome back! Thank you for calling {businessName} again...",
+  };
+  return defaults[fieldId] || "";
+}
+
+// ============================================================================
 // GREETINGS TAB COMPONENT
 // ============================================================================
 
 export default function GreetingsTab() {
   const { tenant, saveStatus, error, clearError, updateSettings } =
     useTenantConfig();
+
+  const { preset } = useIndustry();
 
   if (!tenant) return null;
 
@@ -149,23 +184,35 @@ export default function GreetingsTab() {
           const Icon = field.icon;
           const value = greetingValues[field.id];
 
+          const industryPlaceholder = getIndustryPlaceholder(field.id, preset);
+
           return (
             <section key={field.id} className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
-                  <Icon className="h-4 w-4 text-zinc-400" />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
+                    <Icon className="h-4 w-4 text-zinc-400" />
+                  </div>
+                  <div>
+                    <Label className="text-white">{field.label}</Label>
+                    <p className="text-xs text-zinc-600">{field.description}</p>
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-white">{field.label}</Label>
-                  <p className="text-xs text-zinc-600">{field.description}</p>
-                </div>
+                <button
+                  onClick={() => updateGreeting(field.id, industryPlaceholder)}
+                  className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300"
+                  title="Fill with industry template"
+                >
+                  <Wand2 className="h-3 w-3" />
+                  Use Template
+                </button>
               </div>
 
               <div className="relative">
                 <textarea
                   value={value}
                   onChange={(e) => updateGreeting(field.id, e.target.value)}
-                  placeholder={field.placeholder}
+                  placeholder={industryPlaceholder}
                   rows={3}
                   className={cn(
                     "w-full resize-none rounded-lg border bg-zinc-950 px-4 py-3 text-sm text-white",

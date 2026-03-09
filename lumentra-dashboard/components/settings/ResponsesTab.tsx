@@ -2,6 +2,7 @@
 
 import React, { useEffect } from "react";
 import { useTenantConfig } from "@/hooks/useTenantConfig";
+import { useIndustry } from "@/context/IndustryContext";
 import { Label } from "@/components/ui/label";
 import {
   XCircle,
@@ -104,9 +105,31 @@ export default function ResponsesTab() {
     }
   }, [error, clearError]);
 
+  const { transactionLabel } = useIndustry();
+
   if (!tenant) return null;
 
   const responses: Record<string, string> = tenant.responses || {};
+
+  const dynamicFields = RESPONSE_FIELDS.map((field) => {
+    if (field.id === "bookingConfirmed") {
+      return {
+        ...field,
+        label: `${transactionLabel} Confirmed`,
+        description: `After successfully completing a ${transactionLabel.toLowerCase()}`,
+        placeholder: `Great! Your ${transactionLabel.toLowerCase()} has been confirmed...`,
+      };
+    }
+    if (field.id === "bookingFailed") {
+      return {
+        ...field,
+        label: `${transactionLabel} Failed`,
+        description: `When a ${transactionLabel.toLowerCase()} cannot be completed`,
+        placeholder: `I apologize, but I was unable to complete that ${transactionLabel.toLowerCase()}...`,
+      };
+    }
+    return field;
+  });
 
   const updateResponse = (field: string, value: string) => {
     updateSettings({ responses: { ...responses, [field]: value } });
@@ -171,7 +194,7 @@ export default function ResponsesTab() {
 
       {/* Response Fields */}
       <div className="space-y-6">
-        {RESPONSE_FIELDS.map((field) => {
+        {dynamicFields.map((field) => {
           const Icon = field.icon;
           const value = responses[field.id] || "";
 

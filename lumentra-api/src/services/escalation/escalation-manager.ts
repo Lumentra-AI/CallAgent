@@ -22,7 +22,11 @@ export interface EscalationDecision {
 const IMMEDIATE_TRIGGERS = [
   /\b(complaint|complain|refund|money back)\b/i,
   /\b(emergency|urgent|crisis|medical)\b/i,
-  /\b(manager|supervisor|owner|boss)\b/i,
+  // Authority request - only match when caller is ASKING to speak to authority
+  // "I want to speak to the manager" -> escalate
+  // "The property manager handles that" -> don't escalate
+  /\b(speak|talk|get|see|need|want)\s+(to|with)\s+(a\s+|the\s+)?(manager|supervisor|owner|boss)\b/i,
+  /\b(put|transfer|connect)\s+(me\s+)?(to|with)\s+(a\s+|the\s+)?(manager|supervisor|owner|boss)\b/i,
   /\b(harassment|discrimination|safety|threat)\b/i,
   /\b(lawyer|lawsuit|sue|legal)\b/i,
   /\b(cancel\s*(all|everything)|close.*account)\b/i,

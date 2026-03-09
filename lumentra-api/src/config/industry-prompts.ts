@@ -1,14 +1,9 @@
 // Industry-specific prompt configurations
 // Core appointment/reservation-based industries
 
-export type IndustryType =
-  | "hotel"
-  | "motel"
-  | "restaurant"
-  | "medical"
-  | "dental"
-  | "salon"
-  | "auto_service";
+import type { IndustryType } from "./industries.js";
+
+export type { IndustryType };
 
 export interface IndustryTerminology {
   transaction: string;

@@ -20,10 +20,30 @@ const DAYS = [
 ];
 
 const TIMEZONES = [
-  { value: "America/New_York", label: "Eastern Time (ET)" },
-  { value: "America/Chicago", label: "Central Time (CT)" },
-  { value: "America/Denver", label: "Mountain Time (MT)" },
-  { value: "America/Los_Angeles", label: "Pacific Time (PT)" },
+  // US
+  { value: "America/New_York", label: "Eastern Time (ET, UTC-5)" },
+  { value: "America/Chicago", label: "Central Time (CT, UTC-6)" },
+  { value: "America/Denver", label: "Mountain Time (MT, UTC-7)" },
+  { value: "America/Los_Angeles", label: "Pacific Time (PT, UTC-8)" },
+  { value: "America/Anchorage", label: "Alaska Time (AKT, UTC-9)" },
+  { value: "Pacific/Honolulu", label: "Hawaii Time (HT, UTC-10)" },
+  // Canada
+  { value: "America/Halifax", label: "Atlantic Time (AT, UTC-4)" },
+  { value: "America/St_Johns", label: "Newfoundland (NT, UTC-3:30)" },
+  // Americas
+  { value: "America/Mexico_City", label: "Mexico City (CST, UTC-6)" },
+  { value: "America/Bogota", label: "Colombia (COT, UTC-5)" },
+  { value: "America/Sao_Paulo", label: "Brazil (BRT, UTC-3)" },
+  // Europe
+  { value: "Europe/London", label: "London (GMT/BST, UTC+0)" },
+  { value: "Europe/Paris", label: "Central Europe (CET, UTC+1)" },
+  { value: "Europe/Athens", label: "Eastern Europe (EET, UTC+2)" },
+  // Asia / Pacific
+  { value: "Asia/Dubai", label: "Dubai (GST, UTC+4)" },
+  { value: "Asia/Kolkata", label: "India (IST, UTC+5:30)" },
+  { value: "Asia/Tokyo", label: "Japan (JST, UTC+9)" },
+  { value: "Australia/Sydney", label: "Sydney (AEST, UTC+10)" },
+  { value: "Pacific/Auckland", label: "New Zealand (NZST, UTC+12)" },
 ];
 
 const DEFAULT_SCHEDULE = DAYS.map((d) => ({
@@ -109,11 +129,41 @@ export default function HoursTab() {
           onChange={(e) => updateTimezone(e.target.value)}
           className="h-10 w-full max-w-xs rounded-md border border-zinc-800 bg-zinc-950 px-3 text-sm text-white focus:border-indigo-500 focus:outline-none"
         >
-          {TIMEZONES.map((tz) => (
-            <option key={tz.value} value={tz.value}>
-              {tz.label}
-            </option>
-          ))}
+          <optgroup label="United States">
+            {TIMEZONES.slice(0, 6).map((tz) => (
+              <option key={tz.value} value={tz.value}>
+                {tz.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Canada">
+            {TIMEZONES.slice(6, 8).map((tz) => (
+              <option key={tz.value} value={tz.value}>
+                {tz.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Americas">
+            {TIMEZONES.slice(8, 11).map((tz) => (
+              <option key={tz.value} value={tz.value}>
+                {tz.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Europe">
+            {TIMEZONES.slice(11, 14).map((tz) => (
+              <option key={tz.value} value={tz.value}>
+                {tz.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Asia / Pacific">
+            {TIMEZONES.slice(14).map((tz) => (
+              <option key={tz.value} value={tz.value}>
+                {tz.label}
+              </option>
+            ))}
+          </optgroup>
         </select>
       </section>
 
