@@ -6,7 +6,6 @@ import {
   Plus,
   ArrowLeftRight,
   PhoneForwarded,
-  Server,
   Check,
   ArrowLeft,
   Search,
@@ -99,38 +98,34 @@ interface PhoneOption {
   type: PhoneSetupType;
   title: string;
   description: string;
-  timeline: string;
+  badge: string;
   icon: React.ElementType;
 }
 
 const PHONE_OPTIONS: PhoneOption[] = [
   {
     type: "new",
-    title: "Get a new number",
-    description: "We'll provision a dedicated phone number for your assistant",
-    timeline: "Ready in minutes",
+    title: "Get a new phone number",
+    description:
+      "We'll set you up with a local phone number instantly. Share it with customers and start receiving AI-answered calls.",
+    badge: "Recommended",
     icon: Plus,
   },
   {
     type: "port",
-    title: "Port my existing number",
-    description: "Transfer your current business number to our service",
-    timeline: "Takes 5-15 business days",
+    title: "Use my existing phone number",
+    description:
+      "Want to keep your current business number? We'll transfer it over. This takes 5-15 business days. We'll give you a temporary number in the meantime.",
+    badge: "5-15 business days",
     icon: ArrowLeftRight,
   },
   {
     type: "forward",
-    title: "Forward calls to us",
-    description: "Keep your number and forward calls to your assistant",
-    timeline: "Ready in minutes",
+    title: "Forward my calls",
+    description:
+      "Keep your current number and set up call forwarding. You'll configure forwarding on your phone provider's website.",
+    badge: "Ready in minutes",
     icon: PhoneForwarded,
-  },
-  {
-    type: "sip",
-    title: "SIP Trunk",
-    description: "Connect your existing phone system via SIP",
-    timeline: "Ready after PBX config",
-    icon: Server,
   },
 ];
 
@@ -417,18 +412,6 @@ export function PhoneStep() {
     };
   }, [setupType]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // SIP state
-  const [creatingSip, setCreatingSip] = useState(false);
-  const [sipCredentials, setSipCredentials] = useState<{
-    sipUri: string;
-    username: string;
-    password: string;
-  } | null>(null);
-  const [sipStatus, setSipStatus] = useState<
-    "idle" | "creating" | "created" | "connected" | "error"
-  >("idle");
-  const [sipError, setSipError] = useState<string | null>(null);
-
   const canContinue = setupType !== null;
 
   const handleSetupTypeSelect = (type: PhoneSetupType) => {
@@ -445,9 +428,6 @@ export function PhoneStep() {
     setForwardError(null);
     setPortSubmitted(false);
     setPortError(null);
-    setSipStatus("idle");
-    setSipCredentials(null);
-    setSipError(null);
   };
 
   // ---- New Number Flow ----
@@ -597,39 +577,6 @@ export function PhoneStep() {
       }
     } catch {
       // Non-fatal: still allow continue
-    }
-  };
-
-  // ---- SIP Flow ----
-
-  const handleCreateSip = async () => {
-    setCreatingSip(true);
-    setSipStatus("creating");
-    setSipError(null);
-    try {
-      const data = await post<{
-        success: boolean;
-        sipUri: string;
-        username: string;
-        password: string;
-      }>("/api/phone/sip");
-
-      if (data.success) {
-        setSipCredentials({
-          sipUri: data.sipUri,
-          username: data.username,
-          password: data.password,
-        });
-        setSipStatus("created");
-      } else {
-        setSipStatus("error");
-        setSipError("Failed to create SIP endpoint.");
-      }
-    } catch {
-      setSipStatus("error");
-      setSipError("Failed to create SIP endpoint. Please try again.");
-    } finally {
-      setCreatingSip(false);
     }
   };
 
@@ -1098,132 +1045,15 @@ export function PhoneStep() {
     </div>
   );
 
-  // ---- Render: SIP ----
-
-  const renderSipFlow = () => (
-    <div className="space-y-6">
-      {sipStatus === "idle" && (
-        <div className="space-y-4">
-          <div className="rounded-lg border bg-muted/30 p-4">
-            <p className="text-sm text-muted-foreground">
-              SIP trunking lets your existing phone system (PBX/VOIP) route
-              calls directly to your AI assistant. Ideal for multi-line
-              businesses like medical offices, hotels, and restaurants.
-            </p>
-          </div>
-          {sipError && <p className="text-sm text-destructive">{sipError}</p>}
-          <Button onClick={handleCreateSip} disabled={creatingSip}>
-            {creatingSip ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating endpoint...
-              </>
-            ) : (
-              "Create SIP Endpoint"
-            )}
-          </Button>
-        </div>
-      )}
-
-      {sipStatus === "creating" && (
-        <div className="flex items-center gap-3 rounded-lg border p-4">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          <span className="text-sm">Provisioning SIP endpoint...</span>
-        </div>
-      )}
-
-      {sipStatus === "created" && sipCredentials && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 rounded-lg border border-green-500/50 bg-green-50 p-3 dark:bg-green-950/20">
-            <CheckCircle className="h-5 w-5 text-green-600" />
-            <span className="text-sm font-medium text-green-800 dark:text-green-200">
-              SIP endpoint created
-            </span>
-          </div>
-
-          <div className="space-y-3 rounded-lg border p-4">
-            <p className="text-sm font-medium">
-              Configure these in your PBX / VOIP system:
-            </p>
-            <div className="space-y-2">
-              <div>
-                <Label className="text-xs text-muted-foreground">SIP URI</Label>
-                <div className="flex items-center gap-2">
-                  <p className="font-mono text-sm">{sipCredentials.sipUri}</p>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(sipCredentials.sipUri)}
-                    className="rounded p-1 hover:bg-muted"
-                  >
-                    <Copy className="h-3 w-3 text-muted-foreground" />
-                  </button>
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">
-                  Username
-                </Label>
-                <div className="flex items-center gap-2">
-                  <p className="font-mono text-sm">{sipCredentials.username}</p>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(sipCredentials.username)}
-                    className="rounded p-1 hover:bg-muted"
-                  >
-                    <Copy className="h-3 w-3 text-muted-foreground" />
-                  </button>
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">
-                  Password
-                </Label>
-                <div className="flex items-center gap-2">
-                  <p className="font-mono text-sm">{sipCredentials.password}</p>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(sipCredentials.password)}
-                    className="rounded p-1 hover:bg-muted"
-                  >
-                    <Copy className="h-3 w-3 text-muted-foreground" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-amber-500/50 bg-amber-50 p-4 dark:bg-amber-950/20">
-            <p className="text-sm text-amber-800 dark:text-amber-200">
-              After configuring your PBX, route incoming calls to the SIP URI
-              above. Your AI assistant will answer calls routed through this
-              trunk.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {sipStatus === "error" && (
-        <div className="space-y-3">
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-            {sipError || "Failed to create SIP endpoint. Please try again."}
-          </div>
-          <Button variant="outline" onClick={handleCreateSip}>
-            Retry
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-
   return (
     <div className="space-y-8">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">
-          How will customers reach your assistant?
+          How would you like to receive calls?
         </h1>
         <p className="mt-2 text-muted-foreground">
-          Choose how callers will connect to your AI assistant
+          Set up how your phone number connects to your assistant
         </p>
       </div>
 
@@ -1237,7 +1067,7 @@ export function PhoneStep() {
             icon={option.icon}
             title={option.title}
             description={option.description}
-            badge={option.timeline}
+            badge={option.badge}
           />
         ))}
       </div>
@@ -1247,7 +1077,6 @@ export function PhoneStep() {
         {setupType === "new" && renderNewNumberFlow()}
         {setupType === "port" && renderPortNumberFlow()}
         {setupType === "forward" && renderForwardFlow()}
-        {setupType === "sip" && renderSipFlow()}
       </div>
 
       {/* Navigation buttons */}

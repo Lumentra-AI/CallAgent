@@ -36,17 +36,45 @@ interface SummaryCardProps {
   items: { label: string; value: string }[];
   step: SetupStep;
   onEdit: () => void;
+  configured?: boolean;
 }
 
-function SummaryCard({ title, icon: Icon, items, onEdit }: SummaryCardProps) {
+function SummaryCard({
+  title,
+  icon: Icon,
+  items,
+  onEdit,
+  configured = true,
+}: SummaryCardProps) {
   return (
-    <div className="rounded-xl border bg-card">
+    <div
+      className={cn(
+        "rounded-xl border bg-card",
+        configured ? "border-green-500/20" : "border-amber-500/20",
+      )}
+    >
       <div className="flex items-center justify-between border-b bg-muted/30 px-4 py-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-            <Icon className="h-4 w-4 text-primary" />
+          <div
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-lg",
+              configured ? "bg-green-500/10" : "bg-amber-500/10",
+            )}
+          >
+            {configured ? (
+              <CheckCircle className="h-4 w-4 text-green-600" />
+            ) : (
+              <Icon className="h-4 w-4 text-amber-500" />
+            )}
           </div>
-          <span className="font-semibold">{title}</span>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold">{title}</span>
+            {!configured && (
+              <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600">
+                Using defaults
+              </span>
+            )}
+          </div>
         </div>
         <button
           type="button"
@@ -92,8 +120,9 @@ export function ReviewStep() {
       complete: !!state.phoneData.setupType,
     },
     {
-      label: "Escalation contact added",
+      label: "Emergency contact added",
       complete: state.escalationData.contacts.length > 0,
+      optional: true,
     },
     {
       label: "Operating hours set",
@@ -101,7 +130,12 @@ export function ReviewStep() {
     },
   ];
 
-  const allComplete = checklistItems.every((item) => item.complete);
+  const requiredItems = checklistItems.filter(
+    (item) => !("optional" in item && item.optional),
+  );
+  const allRequiredComplete = requiredItems.every((item) => item.complete);
+
+  const allComplete = allRequiredComplete;
   const completedCount = checklistItems.filter((item) => item.complete).length;
 
   const handleEditStep = (step: SetupStep) => {
@@ -172,7 +206,7 @@ export function ReviewStep() {
           Your assistant is ready!
         </h1>
         <p className="mt-2 text-muted-foreground">
-          Review your configuration and launch when you&apos;re ready
+          Review your setup and go live when you&apos;re ready
         </p>
       </div>
 
@@ -183,6 +217,9 @@ export function ReviewStep() {
           icon={Building2}
           step="business"
           onEdit={() => handleEditStep("business")}
+          configured={
+            !!state.businessData.name && !!state.businessData.industry
+          }
           items={[
             { label: "Name", value: state.businessData.name || "-" },
             { label: "Industry", value: industry?.label || "-" },
@@ -191,23 +228,24 @@ export function ReviewStep() {
         />
 
         <SummaryCard
-          title="Capabilities"
+          title="Features"
           icon={Sparkles}
           step="capabilities"
           onEdit={() => handleEditStep("capabilities")}
+          configured={state.capabilities.length > 0}
           items={[
             {
               label: "Active features",
               value: `${state.capabilities.length} selected`,
             },
             {
-              label: "Integration mode",
+              label: "Scheduling",
               value:
                 state.integrationMode === "external"
                   ? "External system"
                   : state.integrationMode === "builtin"
                     ? "Lumentra"
-                    : "Manual",
+                    : "Messages only",
             },
           ]}
         />
@@ -217,6 +255,7 @@ export function ReviewStep() {
           icon={User}
           step="assistant"
           onEdit={() => handleEditStep("assistant")}
+          configured={!!state.assistantData.name}
           items={[
             { label: "Name", value: state.assistantData.name || "-" },
             {
@@ -233,6 +272,7 @@ export function ReviewStep() {
           icon={Phone}
           step="phone"
           onEdit={() => handleEditStep("phone")}
+          configured={!!state.phoneData.setupType}
           items={[
             {
               label: "Setup type",
@@ -240,10 +280,8 @@ export function ReviewStep() {
                 state.phoneData.setupType === "new"
                   ? "New number"
                   : state.phoneData.setupType === "port"
-                    ? "Porting"
-                    : state.phoneData.setupType === "sip"
-                      ? "SIP Trunk"
-                      : "Forwarding",
+                    ? "Transferring"
+                    : "Forwarding",
             },
             { label: "Number", value: state.phoneData.number || "Pending" },
           ]}
@@ -254,6 +292,7 @@ export function ReviewStep() {
           icon={Clock}
           step="hours"
           onEdit={() => handleEditStep("hours")}
+          configured={!!state.hoursData.timezone}
           items={[
             { label: "Timezone", value: state.hoursData.timezone || "-" },
             { label: "Schedule", value: getHoursSummary() },
@@ -268,14 +307,18 @@ export function ReviewStep() {
         />
 
         <SummaryCard
-          title="Escalation"
+          title="Emergency Contacts"
           icon={Users}
           step="escalation"
           onEdit={() => handleEditStep("escalation")}
+          configured={state.escalationData.contacts.length > 0}
           items={[
             {
               label: "Contacts",
-              value: `${state.escalationData.contacts.length} configured`,
+              value:
+                state.escalationData.contacts.length > 0
+                  ? `${state.escalationData.contacts.length} configured`
+                  : "None (optional)",
             },
             {
               label: "Primary",
@@ -330,6 +373,11 @@ export function ReviewStep() {
                   )}
                 >
                   {item.label}
+                  {"optional" in item && item.optional && (
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                      (optional)
+                    </span>
+                  )}
                 </span>
               </div>
             ))}
@@ -372,7 +420,7 @@ export function ReviewStep() {
           ) : (
             <span className="flex items-center gap-2">
               <Rocket className="h-5 w-5" />
-              Launch Your Assistant
+              Go Live
             </span>
           )}
         </Button>

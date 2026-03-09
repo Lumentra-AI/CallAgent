@@ -1,104 +1,26 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Play, Pause, Check, ArrowLeft, User, Volume2 } from "lucide-react";
+import { Check, ArrowLeft, User, Volume2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
 import { SelectionCard } from "../SelectionCard";
+import {
+  PERSONALITY_TEMPLATES,
+  VOICE_OPTIONS,
+  getRecommendedTemplate,
+  getIndustryDefaults,
+} from "@/lib/onboarding-defaults";
+import type { PersonalityTemplate } from "@/lib/onboarding-defaults";
 
 type Personality = "professional" | "friendly" | "efficient";
 
-interface VoiceOption {
-  id: string;
-  name: string;
-  type: "female" | "male";
-  tone: string;
-  previewUrl: string;
-}
-
-const VOICES: VoiceOption[] = [
-  {
-    id: "female_professional",
-    name: "Sarah",
-    type: "female",
-    tone: "Clear",
-    previewUrl: "/audio/sarah.mp3",
-  },
-  {
-    id: "female_friendly",
-    name: "Emma",
-    type: "female",
-    tone: "Bright",
-    previewUrl: "/audio/emma.mp3",
-  },
-  {
-    id: "female_warm",
-    name: "Maya",
-    type: "female",
-    tone: "Smooth",
-    previewUrl: "/audio/maya.mp3",
-  },
-  {
-    id: "male_professional",
-    name: "James",
-    type: "male",
-    tone: "Crisp",
-    previewUrl: "/audio/james.mp3",
-  },
-  {
-    id: "male_friendly",
-    name: "Alex",
-    type: "male",
-    tone: "Upbeat",
-    previewUrl: "/audio/alex.mp3",
-  },
-  {
-    id: "male_calm",
-    name: "David",
-    type: "male",
-    tone: "Mellow",
-    previewUrl: "/audio/david.mp3",
-  },
-];
-
-const PERSONALITIES: {
-  id: Personality;
-  label: string;
-  description: string;
-  example: string;
-  color: string;
-}[] = [
-  {
-    id: "professional",
-    label: "Professional",
-    description: "Formal and business-like",
-    example:
-      '"Good afternoon, thank you for calling {business}. This is {name}, how may I assist you today?"',
-    color: "bg-slate-800",
-  },
-  {
-    id: "friendly",
-    label: "Friendly",
-    description: "Warm and conversational",
-    example:
-      '"Hey there! Thanks for calling {business}. I\'m {name} - what can I help you with?"',
-    color: "bg-amber-800",
-  },
-  {
-    id: "efficient",
-    label: "Efficient",
-    description: "Direct and to the point",
-    example: '"{business}, this is {name}. How can I help?"',
-    color: "bg-emerald-800",
-  },
-];
-
-const NAME_SUGGESTIONS: Record<string, string[]> = {
-  professional: ["Sarah", "James", "Emily", "Michael"],
+const NAME_SUGGESTIONS: Record<Personality, string[]> = {
+  professional: ["Sarah", "James", "Madison", "Michael"],
   friendly: ["Emma", "Alex", "Sophie", "Ben"],
   efficient: ["Kate", "Sam", "Anna", "Max"],
 };
@@ -108,36 +30,52 @@ export function AssistantStep() {
   const { state, dispatch, saveStep, goToNextStep, goToPreviousStep } =
     useSetup();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [playingVoice, setPlayingVoice] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
+    null,
+  );
+  const [showCustomize, setShowCustomize] = useState(false);
 
   const { name, voice, personality } = state.assistantData;
   const businessName = state.businessData.name || "your business";
+  const industry = state.businessData.industry;
+
+  const recommendedTemplateId = getRecommendedTemplate(industry);
+
+  // Auto-select recommended template on mount if no template is selected
+  useEffect(() => {
+    if (!selectedTemplateId) {
+      const defaults = getIndustryDefaults(industry);
+      const template = PERSONALITY_TEMPLATES.find(
+        (t) => t.id === defaults.templateId,
+      );
+
+      if (template) {
+        setSelectedTemplateId(template.id);
+
+        // Only set personality if it hasn't been set yet or matches default
+        if (!personality || personality === "professional") {
+          dispatch({
+            type: "SET_ASSISTANT_DATA",
+            payload: { personality: template.personality },
+          });
+        }
+      }
+    }
+    // Run only on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const canContinue =
     name.trim() !== "" && voice !== "" && personality !== null;
 
-  const playPreview = (voiceOption: VoiceOption) => {
-    if (audioRef.current) {
-      if (playingVoice === voiceOption.id) {
-        audioRef.current.pause();
-        setPlayingVoice(null);
-      } else {
-        audioRef.current.src = voiceOption.previewUrl;
-        audioRef.current
-          .play()
-          .then(() => {
-            setPlayingVoice(voiceOption.id);
-          })
-          .catch(() => {
-            setPlayingVoice(null);
-          });
-      }
-    }
-  };
-
-  const handleAudioEnded = () => {
-    setPlayingVoice(null);
+  const handleTemplateSelect = (template: PersonalityTemplate) => {
+    setSelectedTemplateId(template.id);
+    dispatch({
+      type: "SET_ASSISTANT_DATA",
+      payload: { personality: template.personality },
+    });
+    // Close customization when selecting a template
+    setShowCustomize(false);
   };
 
   const handleContinue = async () => {
@@ -157,8 +95,8 @@ export function AssistantStep() {
     router.push("/setup/integrations");
   };
 
-  const getGreetingExample = (p: (typeof PERSONALITIES)[0]) => {
-    return p.example
+  const interpolateGreeting = (greeting: string) => {
+    return greeting
       .replace("{business}", businessName)
       .replace("{name}", name || "{name}");
   };
@@ -174,9 +112,6 @@ export function AssistantStep() {
           This is how callers will experience your business
         </p>
       </div>
-
-      {/* Audio element for voice preview */}
-      <audio ref={audioRef} onEnded={handleAudioEnded} className="hidden" />
 
       {/* Assistant name */}
       <div className="space-y-3">
@@ -214,6 +149,108 @@ export function AssistantStep() {
         )}
       </div>
 
+      {/* Template selection */}
+      <div className="space-y-4">
+        <Label>Personality template</Label>
+        <div className="grid gap-4 md:grid-cols-3">
+          {PERSONALITY_TEMPLATES.map((template) => {
+            const isSelected = selectedTemplateId === template.id;
+            const isRecommended = template.id === recommendedTemplateId;
+
+            return (
+              <SelectionCard
+                key={template.id}
+                selected={isSelected}
+                onClick={() => handleTemplateSelect(template)}
+                title={template.label}
+                description={template.tagline}
+                badge={isRecommended ? "Recommended" : undefined}
+              >
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Best for: {template.bestFor}
+                </p>
+                <div className="mt-3 rounded-lg bg-muted/50 p-3 text-sm italic text-muted-foreground">
+                  &ldquo;{interpolateGreeting(template.greeting)}&rdquo;
+                </div>
+              </SelectionCard>
+            );
+          })}
+        </div>
+
+        {/* Customize link */}
+        <button
+          type="button"
+          onClick={() => setShowCustomize(!showCustomize)}
+          className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 transition-transform",
+              showCustomize && "rotate-180",
+            )}
+          />
+          Customize personality
+        </button>
+
+        {/* Expandable raw personality radio buttons */}
+        {showCustomize && (
+          <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
+            <p className="text-xs text-muted-foreground">
+              Override the template personality
+            </p>
+            <div className="flex flex-wrap gap-3">
+              {(
+                [
+                  {
+                    id: "professional" as Personality,
+                    label: "Professional",
+                    description: "Formal and business-like",
+                  },
+                  {
+                    id: "friendly" as Personality,
+                    label: "Friendly",
+                    description: "Warm and conversational",
+                  },
+                  {
+                    id: "efficient" as Personality,
+                    label: "Efficient",
+                    description: "Direct and to the point",
+                  },
+                ] as const
+              ).map((p) => {
+                const isActive = personality === p.id;
+
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      dispatch({
+                        type: "SET_ASSISTANT_DATA",
+                        payload: { personality: p.id },
+                      });
+                      // Clear template selection since user is customizing
+                      setSelectedTemplateId(null);
+                    }}
+                    className={cn(
+                      "rounded-lg border px-4 py-2 text-left transition-colors",
+                      isActive
+                        ? "border-primary bg-primary/10 text-foreground"
+                        : "border-border hover:border-muted-foreground/40",
+                    )}
+                  >
+                    <p className="text-sm font-medium">{p.label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {p.description}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Voice selection */}
       <div className="space-y-4">
         <Label className="flex items-center gap-2">
@@ -221,9 +258,8 @@ export function AssistantStep() {
           Voice
         </Label>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {VOICES.map((voiceOption) => {
-            const isSelected = voice === voiceOption.id;
-            const isPlaying = playingVoice === voiceOption.id;
+          {VOICE_OPTIONS.map((voiceOption) => {
+            const isSelected = voice === voiceOption.cartesiaId;
 
             return (
               <button
@@ -232,7 +268,7 @@ export function AssistantStep() {
                 onClick={() =>
                   dispatch({
                     type: "SET_ASSISTANT_DATA",
-                    payload: { voice: voiceOption.id },
+                    payload: { voice: voiceOption.cartesiaId },
                   })
                 }
                 className={cn(
@@ -254,68 +290,32 @@ export function AssistantStep() {
                     <User className="h-6 w-6 text-white" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold">{voiceOption.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold">
+                        {voiceOption.name}
+                      </p>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider",
+                          voiceOption.type === "female"
+                            ? "bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300"
+                            : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+                        )}
+                      >
+                        {voiceOption.type}
+                      </span>
+                    </div>
                     <p className="text-xs text-muted-foreground">
-                      {voiceOption.tone}
+                      {voiceOption.description}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        playPreview(voiceOption);
-                      }}
-                      className={cn(
-                        "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
-                        isPlaying
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted hover:bg-primary/20",
-                      )}
-                    >
-                      {isPlaying ? (
-                        <Pause className="h-4 w-4" />
-                      ) : (
-                        <Play className="h-4 w-4" />
-                      )}
-                    </button>
-                    {isSelected && (
-                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
-                        <Check className="h-3 w-3 text-primary-foreground" />
-                      </div>
-                    )}
-                  </div>
+                  {isSelected && (
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
+                      <Check className="h-3 w-3 text-primary-foreground" />
+                    </div>
+                  )}
                 </div>
               </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Personality selection */}
-      <div className="space-y-4">
-        <Label>Personality</Label>
-        <div className="grid gap-4 md:grid-cols-3">
-          {PERSONALITIES.map((p) => {
-            const isSelected = personality === p.id;
-
-            return (
-              <SelectionCard
-                key={p.id}
-                selected={isSelected}
-                onClick={() =>
-                  dispatch({
-                    type: "SET_ASSISTANT_DATA",
-                    payload: { personality: p.id },
-                  })
-                }
-                title={p.label}
-                description={p.description}
-              >
-                <div className="mt-3 rounded-lg bg-muted/50 p-3 text-sm italic text-muted-foreground">
-                  {getGreetingExample(p)}
-                </div>
-              </SelectionCard>
             );
           })}
         </div>

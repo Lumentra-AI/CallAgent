@@ -105,23 +105,26 @@ const MODE_OPTIONS: {
   title: string;
   description: string;
   icon: React.ElementType;
+  badge?: string;
 }[] = [
   {
     id: "external",
-    title: "Yes, I use something else",
-    description: "Connect your existing booking or calendar system",
+    title: "I use a calendar or booking app",
+    description:
+      "Connect your existing system so your assistant can check availability",
     icon: Link,
   },
   {
     id: "builtin",
-    title: "No, I'll use Lumentra",
-    description: "Use our built-in scheduling system",
+    title: "I'll manage bookings in Lumentra",
+    description: "Use our built-in scheduling to manage appointments",
     icon: Calendar,
+    badge: "(Recommended)",
   },
   {
     id: "assisted",
-    title: "Just take messages for now",
-    description: "Collect caller info and confirm bookings manually",
+    title: "I just need messages taken",
+    description: "Your assistant will collect caller info for you to follow up",
     icon: MessageSquare,
   },
 ];
@@ -317,12 +320,12 @@ export function IntegrationsStep() {
         <h1 className="text-2xl font-semibold tracking-tight">
           {showIntegrations
             ? "Connect your systems"
-            : "Do you use a booking or calendar system?"}
+            : "How do you manage your schedule today?"}
         </h1>
         <p className="mt-2 text-muted-foreground">
           {showIntegrations
             ? "Link your existing tools so your assistant can manage real bookings"
-            : "This helps us set up how your assistant handles appointments"}
+            : "This helps your assistant work with your existing workflow"}
         </p>
       </div>
 
@@ -341,6 +344,7 @@ export function IntegrationsStep() {
                 icon={Icon}
                 title={mode.title}
                 description={mode.description}
+                badge={mode.badge}
               />
             );
           })}

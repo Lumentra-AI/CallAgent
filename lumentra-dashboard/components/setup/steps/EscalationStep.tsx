@@ -88,7 +88,7 @@ export function EscalationStep() {
   const { contacts, triggers, customTriggers, transferBehavior } =
     state.escalationData;
 
-  const canContinue = contacts.length > 0;
+  const canContinue = true; // Escalation contacts are optional
 
   const addContact = () => {
     const newContact: EscalationContact = {
@@ -186,17 +186,18 @@ export function EscalationStep() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">
-          Sometimes callers need to speak with a person
+          Who should we contact if a caller needs help?
         </h1>
         <p className="mt-2 text-muted-foreground">
-          Set up who to contact when your assistant needs human help
+          Add an emergency contact so your assistant can transfer calls when
+          needed
         </p>
       </div>
 
       {/* Contacts */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <Label>Escalation contacts</Label>
+          <Label>Emergency contacts</Label>
           {contacts.length > 0 && (
             <Button variant="outline" size="sm" onClick={addContact}>
               <Plus className="mr-1 h-4 w-4" />
@@ -215,7 +216,10 @@ export function EscalationStep() {
               <Plus className="h-6 w-6" />
             </div>
             <span className="font-medium">Add your first contact</span>
-            <span className="text-sm">Someone to call when help is needed</span>
+            <span className="text-sm">
+              Someone your assistant can transfer calls to when a person is
+              needed
+            </span>
           </button>
         ) : (
           <div className="space-y-4">
@@ -324,7 +328,7 @@ export function EscalationStep() {
 
       {/* Escalation triggers */}
       <div className="space-y-4">
-        <Label>When to escalate</Label>
+        <Label>When should we transfer the call to a person?</Label>
         <div className="grid gap-2 sm:grid-cols-2">
           {DEFAULT_TRIGGERS.map((trigger) => {
             const isSelected = triggers.includes(trigger.id);
@@ -350,7 +354,7 @@ export function EscalationStep() {
           <Label className="text-xs">Custom triggers</Label>
           <div className="flex gap-2">
             <Input
-              placeholder="Add a custom escalation phrase..."
+              placeholder="Add a custom transfer trigger..."
               value={customTriggerInput}
               onChange={(e) => setCustomTriggerInput(e.target.value)}
               onKeyDown={(e) => {

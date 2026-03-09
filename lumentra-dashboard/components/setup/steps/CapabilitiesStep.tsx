@@ -36,64 +36,64 @@ const CAPABILITY_ICONS: Record<string, React.ElementType> = {
 const CAPABILITY_OPTIONS: CapabilityOption[] = [
   {
     id: "appointments",
-    label: "Appointments",
-    description: "Schedule, reschedule, and cancel appointments",
+    label: "Book appointments",
+    description: "Schedule, reschedule, and cancel appointments for callers",
     icon: "CalendarCheck",
     category: "core",
   },
   {
     id: "reservations",
-    label: "Reservations",
-    description: "Book tables, rooms, or services",
+    label: "Take reservations",
+    description: "Book tables, rooms, or services for callers",
     icon: "CalendarCheck",
     category: "core",
   },
   {
     id: "patient_intake",
-    label: "Patient Intake",
-    description: "Collect patient information before visits",
+    label: "Collect patient information",
+    description: "Gather patient details before their visit",
     icon: "Receipt",
     category: "core",
   },
   {
     id: "call_handling",
-    label: "Call Handling",
-    description: "Answer calls and route to the right person",
+    label: "Answer and route calls",
+    description: "Pick up calls and connect callers to the right person",
     icon: "Phone",
     category: "core",
   },
   {
     id: "message_taking",
-    label: "Message Taking",
-    description: "Record messages when you're unavailable",
+    label: "Take messages when you're unavailable",
+    description: "Record messages so you can return calls later",
     icon: "MessageSquare",
     category: "communication",
   },
   {
     id: "faq",
-    label: "FAQ & Information",
-    description: "Answer common questions about your business",
+    label: "Answer common questions",
+    description: "Share your hours, location, pricing, and other info",
     icon: "FileQuestion",
     category: "communication",
   },
   {
     id: "emergency_dispatch",
-    label: "Emergency Routing",
-    description: "Identify and escalate urgent situations",
+    label: "Handle urgent situations",
+    description: "Identify emergencies and route them to the right person",
     icon: "AlertTriangle",
     category: "advanced",
   },
   {
     id: "promotions",
-    label: "Promotions",
-    description: "Mention special offers to callers",
+    label: "Mention special offers",
+    description: "Let callers know about current deals and promotions",
     icon: "Megaphone",
     category: "advanced",
   },
   {
     id: "after_hours",
-    label: "After Hours",
-    description: "Handle calls outside business hours",
+    label: "Handle after-hours calls",
+    description: "Take care of callers even when you're closed",
     icon: "Clock",
     category: "advanced",
   },
@@ -242,7 +242,7 @@ export function CapabilitiesStep() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">
-          What should your assistant handle?
+          What should your assistant do?
         </h1>
         <p className="mt-2 text-muted-foreground">
           {industryPreset
@@ -297,8 +297,8 @@ export function CapabilitiesStep() {
             <span className="font-bold text-primary">
               {state.capabilities.length}
             </span>{" "}
-            {state.capabilities.length === 1 ? "capability" : "capabilities"}{" "}
-            selected - your assistant is ready to help with{" "}
+            {state.capabilities.length === 1 ? "feature" : "features"} selected
+            - your assistant is ready to help with{" "}
             {state.capabilities
               .map((c) =>
                 CAPABILITY_OPTIONS.find((o) => o.id === c)?.label.toLowerCase(),

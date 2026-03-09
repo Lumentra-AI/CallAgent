@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -185,10 +185,11 @@ export function HoursStep() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">
-          When are you open?
+          When should your assistant answer calls?
         </h1>
         <p className="mt-2 text-muted-foreground">
-          Set your operating hours so your assistant knows when to take calls
+          Set your business hours. Your assistant will know when to answer and
+          when you&apos;re closed.
         </p>
       </div>
 
@@ -214,6 +215,39 @@ export function HoursStep() {
           ))}
         </select>
       </div>
+
+      {/* 24/7 Quick Toggle */}
+      <button
+        type="button"
+        onClick={() => {
+          const newSchedule = { ...schedule };
+          Object.keys(newSchedule).forEach((day) => {
+            newSchedule[day] = { status: "24hours", open: "", close: "" };
+          });
+          dispatch({
+            type: "SET_HOURS_DATA",
+            payload: { schedule: newSchedule },
+          });
+        }}
+        className={cn(
+          "w-full rounded-lg border p-4 text-left transition-colors",
+          Object.values(schedule).every((s) => s.status === "24hours")
+            ? "border-primary bg-primary/5"
+            : "border-border hover:border-muted-foreground/40",
+        )}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="font-medium">Available 24/7</span>
+            <p className="text-sm text-muted-foreground">
+              Your assistant answers calls any time, day or night
+            </p>
+          </div>
+          {Object.values(schedule).every((s) => s.status === "24hours") && (
+            <Check className="h-5 w-5 text-primary" />
+          )}
+        </div>
+      </button>
 
       {/* Same hours toggle */}
       <div className="flex items-center justify-between rounded-lg border p-4">

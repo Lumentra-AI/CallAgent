@@ -38,13 +38,13 @@ export const SETUP_STEPS: SetupStep[] = [
 
 export const STEP_LABELS: Record<SetupStep, string> = {
   business: "Business",
-  capabilities: "Capabilities",
+  capabilities: "Features",
   details: "Details",
-  integrations: "Integrations",
+  integrations: "Scheduling",
   assistant: "Assistant",
   phone: "Phone",
   hours: "Hours",
-  escalation: "Escalation",
+  escalation: "Contacts",
   review: "Review",
 };
 
@@ -691,7 +691,7 @@ export function SetupProvider({ children }: { children: ReactNode }) {
       case "hours":
         return state.hoursData.timezone !== "";
       case "escalation":
-        return state.escalationData.contacts.length > 0;
+        return true; // Escalation contacts are optional
       case "review":
         return true;
       default:
