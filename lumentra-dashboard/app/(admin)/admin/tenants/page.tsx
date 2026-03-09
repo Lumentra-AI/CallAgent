@@ -1,13 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  Building2,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  RefreshCw,
-} from "lucide-react";
+import { Building2, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { TenantFilters } from "@/components/admin/TenantFilters";
 import { TenantTable } from "@/components/admin/TenantTable";
 import {
@@ -118,7 +112,7 @@ export default function AdminTenantsPage() {
               : t,
           ),
         );
-      } catch (err) {
+      } catch {
         // Reload on error to get correct state
         void loadTenants();
       } finally {

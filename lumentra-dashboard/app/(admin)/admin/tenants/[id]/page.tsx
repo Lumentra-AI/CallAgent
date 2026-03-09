@@ -20,7 +20,6 @@ import { StatusChangeDialog } from "@/components/admin/StatusChangeDialog";
 import { TierChangeDialog } from "@/components/admin/TierChangeDialog";
 import {
   fetchAdminTenant,
-  updateAdminTenant,
   updateTenantStatus,
   updateTenantTier,
   updateTenantFeatures,
