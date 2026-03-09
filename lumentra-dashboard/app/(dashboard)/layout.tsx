@@ -3,6 +3,7 @@
 import { ConfigProvider, useConfig } from "@/context/ConfigContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { AdminProvider } from "@/context/AdminContext";
 import { TenantProvider, useTenant } from "@/context/TenantContext";
 import { IndustryProvider } from "@/context/IndustryContext";
 import { EscalationProvider } from "@/context/EscalationContext";
@@ -199,15 +200,17 @@ export default function DashboardLayout({
   return (
     <ThemeProvider>
       <AuthProvider>
-        <TenantProvider>
-          <ConfigProvider>
-            <IndustryProvider>
-              <EscalationProvider>
-                <DashboardContent>{children}</DashboardContent>
-              </EscalationProvider>
-            </IndustryProvider>
-          </ConfigProvider>
-        </TenantProvider>
+        <AdminProvider>
+          <TenantProvider>
+            <ConfigProvider>
+              <IndustryProvider>
+                <EscalationProvider>
+                  <DashboardContent>{children}</DashboardContent>
+                </EscalationProvider>
+              </IndustryProvider>
+            </ConfigProvider>
+          </TenantProvider>
+        </AdminProvider>
       </AuthProvider>
     </ThemeProvider>
   );

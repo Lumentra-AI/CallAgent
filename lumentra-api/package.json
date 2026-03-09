@@ -15,7 +15,8 @@
     "test:sip-forward": "node --import tsx --test tests/sip-forward.test.ts",
     "test:security-hardening": "node --import tsx --test tests/security-hardening.test.ts",
     "test:rate-limit-application": "node --import tsx --test tests/rate-limit-application.test.ts",
-    "test:setup-email-verification": "node --import tsx --test tests/setup-email-verification.test.ts"
+    "test:setup-email-verification": "node --import tsx --test tests/setup-email-verification.test.ts",
+    "test:platform-admin-utils": "node --import tsx --test tests/platform-admin-utils.test.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",

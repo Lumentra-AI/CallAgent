@@ -1338,7 +1338,7 @@ curl http://localhost:7880/healthz
 docker logs agent 2>&1 | grep -i "livekit\|connect\|websocket"
 
 # Verify API key
-# LiveKit API key: APIc4ecf671a4b0eab56ceb2cd4
+# LiveKit API key: replace-with-livekit-api-key
 ```
 
 **Common causes:**

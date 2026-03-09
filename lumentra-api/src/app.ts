@@ -30,11 +30,11 @@ import { adminRoutes } from "./routes/admin.js";
 import {
   authMiddleware,
   userAuthMiddleware,
+  platformAdminAuth,
   rateLimit,
   tenantRateLimit,
   validateWebhookSecret,
   securityHeaders,
-  internalAuth,
 } from "./middleware/index.js";
 
 function isSipForwardRequest(c: Context): boolean {
@@ -122,7 +122,7 @@ export function createApp() {
   app.route("/health", healthRoutes);
   app.route("/api/chat", chatRoutes); // Chat widget is public
   app.route("/internal", internalRoutes); // LiveKit agent API (own auth via INTERNAL_API_KEY)
-  app.use("/admin/*", internalAuth()); // Admin routes use same INTERNAL_API_KEY
+  app.use("/admin/*", platformAdminAuth());
   app.route("/admin", adminRoutes);
 
   // User-only auth (no tenant required) for setup and tenant listing

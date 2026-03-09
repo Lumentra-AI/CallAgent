@@ -9,7 +9,7 @@ export default function SettingsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { config, hasPermission } = useConfig();
+  const { config } = useConfig();
   const userRole = config?.userRole;
   const isStaff = userRole === "staff";
 

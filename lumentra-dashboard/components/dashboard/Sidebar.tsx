@@ -3,6 +3,7 @@
 import React from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useConfig } from "@/context/ConfigContext";
+import { useAdmin } from "@/context/AdminContext";
 import type { ViewType } from "@/types";
 import {
   LayoutDashboard,
@@ -22,13 +23,14 @@ import {
   User,
   Target,
   CheckSquare,
+  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIndustry } from "@/context/IndustryContext";
 
 // Route mapping for navigation
 const VIEW_ROUTES: Record<
-  ViewType | "workstation" | "escalations" | "profile",
+  ViewType | "workstation" | "escalations" | "profile" | "admin",
   string
 > = {
   dashboard: "/dashboard",
@@ -44,6 +46,7 @@ const VIEW_ROUTES: Record<
   resources: "/resources",
   settings: "/settings",
   profile: "/profile",
+  admin: "/admin/overview",
 };
 
 // ============================================================================
@@ -51,7 +54,7 @@ const VIEW_ROUTES: Record<
 // ============================================================================
 
 interface NavItem {
-  id: ViewType | "workstation" | "escalations" | "profile";
+  id: ViewType | "workstation" | "escalations" | "profile" | "admin";
   label: string;
   icon: React.ElementType;
   badge?: number;
@@ -62,7 +65,10 @@ interface NavSection {
   items: NavItem[];
 }
 
-function buildNavSections(dealPluralLabel: string): NavSection[] {
+function buildNavSections(
+  dealPluralLabel: string,
+  isPlatformAdmin: boolean,
+): NavSection[] {
   return [
     {
       title: "Workspace",
@@ -95,6 +101,9 @@ function buildNavSections(dealPluralLabel: string): NavSection[] {
       items: [
         { id: "profile", label: "Profile", icon: User },
         { id: "settings", label: "Settings", icon: Settings },
+        ...(isPlatformAdmin
+          ? [{ id: "admin" as const, label: "Admin Panel", icon: Shield }]
+          : []),
       ],
     },
   ];
@@ -108,12 +117,13 @@ export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { config, uiState, setView, toggleSidebar, resetConfig } = useConfig();
+  const { isPlatformAdmin } = useAdmin();
   const { dealPluralLabel } = useIndustry();
   const { sidebarCollapsed } = uiState;
 
   const NAV_SECTIONS = React.useMemo(
-    () => buildNavSections(dealPluralLabel),
-    [dealPluralLabel],
+    () => buildNavSections(dealPluralLabel, isPlatformAdmin),
+    [dealPluralLabel, isPlatformAdmin],
   );
 
   // Determine active view from current pathname
@@ -180,7 +190,10 @@ export default function Sidebar() {
             )}
             <div className="space-y-1">
               {section.items.map((item) => {
-                const isActive = currentPath === item.id;
+                const isActive =
+                  item.id === "admin"
+                    ? Boolean(pathname?.startsWith("/admin"))
+                    : currentPath === item.id;
                 const Icon = item.icon;
 
                 return (

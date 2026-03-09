@@ -3,8 +3,7 @@
 
 port: 7880
 
-keys:
-  APIc4ecf671a4b0eab56ceb2cd4: 7b284f366c10a9f0319a29352402a300a01362e960a84c492baaaeedfc970386
+# API keys are injected at runtime via the LIVEKIT_KEYS environment variable.
 
 rtc:
   # WebRTC TCP fallback port

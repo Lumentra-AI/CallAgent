@@ -6,11 +6,14 @@ export {
   authMiddleware,
   userAuthMiddleware,
   optionalAuthMiddleware,
+  platformAdminAuth,
   requireRole,
   getAuthTenantId,
   getAuthUserId,
   getAuthContext,
+  getPlatformAdminContext,
   type AuthContext,
+  type PlatformAdminContext,
 } from "./auth.js";
 
 export {
