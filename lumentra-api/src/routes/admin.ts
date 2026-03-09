@@ -1,10 +1,64 @@
 import { Hono } from "hono";
 import { queryOne, queryAll } from "../services/database/client.js";
-import { updateOne } from "../services/database/query-helpers.js";
+import { insertOne, updateOne } from "../services/database/query-helpers.js";
 import { releaseNumber } from "../services/signalwire/phone.js";
 import { invalidateTenant } from "../services/database/tenant-cache.js";
 import { notifyAdmin } from "../services/notifications/admin-notify.js";
 import { getPlatformAdminContext } from "../middleware/auth.js";
+
+// Tier feature defaults for auto-adjustment on tier change
+const TIER_FEATURE_DEFAULTS: Record<string, Record<string, boolean>> = {
+  starter: {
+    sms_confirmations: false,
+    sentiment_analysis: false,
+    call_recording: true,
+    transcription: true,
+    live_transfer: false,
+    priority_support: false,
+  },
+  professional: {
+    sms_confirmations: true,
+    sentiment_analysis: true,
+    call_recording: true,
+    transcription: true,
+    live_transfer: false,
+    priority_support: false,
+  },
+  enterprise: {
+    sms_confirmations: true,
+    sentiment_analysis: true,
+    call_recording: true,
+    transcription: true,
+    live_transfer: true,
+    priority_support: true,
+  },
+};
+
+/** Write an audit log entry. Silently catches errors to avoid blocking the operation. */
+async function writeAuditLog(opts: {
+  tenantId: string;
+  adminId: string | null;
+  action: string;
+  resourceType: string;
+  resourceId: string;
+  oldValues: Record<string, unknown> | null;
+  newValues: Record<string, unknown> | null;
+}): Promise<void> {
+  try {
+    await insertOne("audit_logs", {
+      tenant_id: opts.tenantId,
+      user_id: opts.adminId,
+      action: opts.action,
+      resource_type: opts.resourceType,
+      resource_id: opts.resourceId,
+      old_values: opts.oldValues ? JSON.stringify(opts.oldValues) : null,
+      new_values: opts.newValues ? JSON.stringify(opts.newValues) : null,
+      created_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("[ADMIN] Failed to write audit log:", err);
+  }
+}
 
 export const adminRoutes = new Hono();
 
@@ -22,6 +76,647 @@ adminRoutes.get("/me", async (c) => {
       : null,
   });
 });
+
+// ============================================================================
+// TENANT MANAGEMENT ROUTES (P3)
+// ============================================================================
+
+interface AdminTenantRow {
+  id: string;
+  business_name: string;
+  industry: string;
+  phone_number: string;
+  contact_email: string | null;
+  status: string;
+  subscription_tier: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string | null;
+  agent_name: string | null;
+  agent_personality: object | null;
+  voice_config: object | null;
+  greeting_standard: string | null;
+  greeting_after_hours: string | null;
+  greeting_returning: string | null;
+  timezone: string | null;
+  operating_hours: object | null;
+  escalation_enabled: boolean;
+  escalation_phone: string | null;
+  escalation_triggers: string[] | null;
+  features: object | null;
+  metadata: object | null;
+  custom_instructions: string | null;
+  setup_completed: boolean;
+  setup_step: string | null;
+  location_city: string | null;
+  location_address: string | null;
+}
+
+/**
+ * GET /admin/tenants
+ * List all tenants with search, filter, sort, and pagination
+ */
+adminRoutes.get("/tenants", async (c) => {
+  const search = c.req.query("search")?.trim() || "";
+  const status = c.req.query("status") || "";
+  const tier = c.req.query("tier") || "";
+  const industry = c.req.query("industry") || "";
+  const sortBy = c.req.query("sortBy") || "created_at";
+  const sortOrder = c.req.query("sortOrder") === "asc" ? "ASC" : "DESC";
+  const limit = Math.min(parseInt(c.req.query("limit") || "25", 10), 100);
+  const offset = parseInt(c.req.query("offset") || "0", 10);
+
+  // Validate sort column to prevent SQL injection
+  const validSortColumns = [
+    "business_name",
+    "created_at",
+    "updated_at",
+    "status",
+    "subscription_tier",
+    "industry",
+  ];
+  const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : "created_at";
+
+  try {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    if (search) {
+      conditions.push(
+        `(t.business_name ILIKE $${paramIndex} OR t.contact_email ILIKE $${paramIndex} OR t.phone_number ILIKE $${paramIndex})`,
+      );
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
+
+    if (status) {
+      conditions.push(`t.status = $${paramIndex}`);
+      params.push(status);
+      paramIndex++;
+    }
+
+    if (tier) {
+      conditions.push(`t.subscription_tier = $${paramIndex}`);
+      params.push(tier);
+      paramIndex++;
+    }
+
+    if (industry) {
+      conditions.push(`t.industry = $${paramIndex}`);
+      params.push(industry);
+      paramIndex++;
+    }
+
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    // Get total count
+    const countSql = `SELECT COUNT(*) as count FROM tenants t ${whereClause}`;
+    const countResult = await queryOne<{ count: string }>(countSql, params);
+    const total = parseInt(countResult?.count || "0", 10);
+
+    // Get tenants with member count and call stats
+    const sql = `
+      SELECT
+        t.id,
+        t.business_name,
+        t.industry,
+        t.phone_number,
+        t.contact_email,
+        t.status,
+        t.subscription_tier,
+        t.is_active,
+        t.created_at,
+        t.updated_at,
+        (SELECT COUNT(*) FROM tenant_members tm WHERE tm.tenant_id = t.id AND tm.is_active = true) AS member_count,
+        (SELECT COUNT(*) FROM calls c WHERE c.tenant_id = t.id AND c.created_at > NOW() - INTERVAL '30 days') AS calls_30d,
+        (SELECT MAX(c.created_at) FROM calls c WHERE c.tenant_id = t.id) AS last_call_at
+      FROM tenants t
+      ${whereClause}
+      ORDER BY t.${safeSortBy} ${sortOrder}
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+
+    const tenants = await queryAll<
+      AdminTenantRow & {
+        member_count: string;
+        calls_30d: string;
+        last_call_at: string | null;
+      }
+    >(sql, [...params, limit, offset]);
+
+    return c.json({
+      tenants,
+      total,
+      limit,
+      offset,
+    });
+  } catch (error) {
+    console.error("[ADMIN] Error listing tenants:", error);
+    return c.json({ error: "Failed to list tenants" }, 500);
+  }
+});
+
+/**
+ * GET /admin/tenants/:id
+ * Get full tenant details including members, call stats, phone config, and port requests
+ */
+adminRoutes.get("/tenants/:id", async (c) => {
+  const id = c.req.param("id");
+
+  try {
+    const tenant = await queryOne<AdminTenantRow>(
+      `SELECT * FROM tenants WHERE id = $1`,
+      [id],
+    );
+
+    if (!tenant) {
+      return c.json({ error: "Tenant not found" }, 404);
+    }
+
+    // Get members with user emails
+    const members = await queryAll<{
+      id: string;
+      user_id: string;
+      role: string;
+      is_active: boolean;
+      created_at: string;
+      accepted_at: string | null;
+      email: string | null;
+    }>(
+      `SELECT tm.id, tm.user_id, tm.role, tm.is_active, tm.created_at, tm.accepted_at,
+              u.email
+       FROM tenant_members tm
+       LEFT JOIN auth.users u ON u.id = tm.user_id
+       WHERE tm.tenant_id = $1 AND tm.is_active = true
+       ORDER BY tm.created_at ASC`,
+      [id],
+    );
+
+    // Get call stats
+    const callStats = await queryOne<{
+      total_calls: string;
+      calls_this_week: string;
+      calls_this_month: string;
+      avg_duration: string;
+    }>(
+      `SELECT
+        COUNT(*) AS total_calls,
+        COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '7 days') AS calls_this_week,
+        COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '30 days') AS calls_this_month,
+        COALESCE(AVG(duration_seconds) FILTER (WHERE duration_seconds IS NOT NULL), 0) AS avg_duration
+       FROM calls
+       WHERE tenant_id = $1`,
+      [id],
+    );
+
+    // Get recent calls (last 10)
+    const recentCalls = await queryAll<{
+      id: string;
+      caller_phone: string | null;
+      caller_name: string | null;
+      status: string;
+      duration_seconds: number | null;
+      sentiment_score: number | null;
+      created_at: string;
+      outcome_type: string | null;
+    }>(
+      `SELECT id, caller_phone, caller_name, status, duration_seconds,
+              sentiment_score, created_at, outcome_type
+       FROM calls
+       WHERE tenant_id = $1
+       ORDER BY created_at DESC
+       LIMIT 10`,
+      [id],
+    );
+
+    // Get phone configuration
+    const phoneConfig = await queryOne<PhoneConfigRow>(
+      `SELECT * FROM phone_configurations WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [id],
+    );
+
+    // Get port request if exists
+    const portRequest = await queryOne<PortRequestRow>(
+      `SELECT * FROM port_requests WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [id],
+    );
+
+    return c.json({
+      tenant,
+      members,
+      callStats: callStats
+        ? {
+            total_calls: parseInt(callStats.total_calls, 10),
+            calls_this_week: parseInt(callStats.calls_this_week, 10),
+            calls_this_month: parseInt(callStats.calls_this_month, 10),
+            avg_duration: Math.round(parseFloat(callStats.avg_duration)),
+          }
+        : {
+            total_calls: 0,
+            calls_this_week: 0,
+            calls_this_month: 0,
+            avg_duration: 0,
+          },
+      recentCalls,
+      phoneConfig,
+      portRequest,
+    });
+  } catch (error) {
+    console.error("[ADMIN] Error fetching tenant:", error);
+    return c.json({ error: "Failed to fetch tenant" }, 500);
+  }
+});
+
+/**
+ * PUT /admin/tenants/:id
+ * Update tenant fields (admin override, no role check)
+ */
+adminRoutes.put("/tenants/:id", async (c) => {
+  const id = c.req.param("id");
+  const admin = getPlatformAdminContext(c);
+  const body = await c.req.json();
+
+  try {
+    const existing = await queryOne<AdminTenantRow>(
+      `SELECT * FROM tenants WHERE id = $1`,
+      [id],
+    );
+
+    if (!existing) {
+      return c.json({ error: "Tenant not found" }, 404);
+    }
+
+    // Remove fields that should not be directly updated
+    delete body.id;
+    delete body.created_at;
+
+    body.updated_at = new Date().toISOString();
+
+    // Capture old values for audit log
+    const oldValues: Record<string, unknown> = {};
+    for (const key of Object.keys(body)) {
+      if (key !== "updated_at") {
+        oldValues[key] = (existing as unknown as Record<string, unknown>)[key];
+      }
+    }
+
+    const updated = await updateOne<AdminTenantRow>("tenants", body, { id });
+
+    // Invalidate cache so voice agent picks up changes
+    await invalidateTenant(id);
+
+    // Audit log
+    await writeAuditLog({
+      tenantId: id,
+      adminId: admin.userId ?? null,
+      action: "update",
+      resourceType: "tenant",
+      resourceId: id,
+      oldValues,
+      newValues: body,
+    });
+
+    console.log(`[ADMIN] Tenant ${id} updated by platform admin`);
+
+    return c.json({ tenant: updated });
+  } catch (error) {
+    console.error("[ADMIN] Error updating tenant:", error);
+    return c.json({ error: "Failed to update tenant" }, 500);
+  }
+});
+
+/**
+ * PUT /admin/tenants/:id/status
+ * Change tenant status (active/suspended/draft/pending_verification)
+ */
+adminRoutes.put("/tenants/:id/status", async (c) => {
+  const id = c.req.param("id");
+  const admin = getPlatformAdminContext(c);
+  const body = await c.req.json();
+
+  const validStatuses = [
+    "draft",
+    "pending_verification",
+    "active",
+    "suspended",
+  ];
+
+  if (!body.status || !validStatuses.includes(body.status)) {
+    return c.json(
+      {
+        error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+      },
+      400,
+    );
+  }
+
+  try {
+    const existing = await queryOne<AdminTenantRow>(
+      `SELECT * FROM tenants WHERE id = $1`,
+      [id],
+    );
+
+    if (!existing) {
+      return c.json({ error: "Tenant not found" }, 404);
+    }
+
+    const previousStatus = existing.status;
+
+    const updates: Record<string, unknown> = {
+      status: body.status,
+      updated_at: new Date().toISOString(),
+    };
+
+    // Also set is_active based on status
+    if (body.status === "active") {
+      updates.is_active = true;
+    } else if (body.status === "suspended") {
+      updates.is_active = false;
+    }
+
+    await updateOne("tenants", updates, { id });
+
+    // Invalidate cache
+    await invalidateTenant(id);
+
+    // Audit log
+    await writeAuditLog({
+      tenantId: id,
+      adminId: admin.userId ?? null,
+      action: "update",
+      resourceType: "tenant",
+      resourceId: id,
+      oldValues: { status: previousStatus },
+      newValues: { status: body.status, reason: body.reason || null },
+    });
+
+    console.log(
+      `[ADMIN] Tenant ${id} status changed: ${previousStatus} -> ${body.status}${body.reason ? ` (reason: ${body.reason})` : ""}`,
+    );
+
+    return c.json({ success: true, previousStatus });
+  } catch (error) {
+    console.error("[ADMIN] Error updating tenant status:", error);
+    return c.json({ error: "Failed to update tenant status" }, 500);
+  }
+});
+
+/**
+ * PUT /admin/tenants/:id/tier
+ * Change tenant subscription tier
+ */
+adminRoutes.put("/tenants/:id/tier", async (c) => {
+  const id = c.req.param("id");
+  const admin = getPlatformAdminContext(c);
+  const body = await c.req.json();
+
+  const validTiers = ["starter", "professional", "enterprise"];
+
+  if (!body.tier || !validTiers.includes(body.tier)) {
+    return c.json(
+      {
+        error: `Invalid tier. Must be one of: ${validTiers.join(", ")}`,
+      },
+      400,
+    );
+  }
+
+  try {
+    const existing = await queryOne<AdminTenantRow>(
+      `SELECT * FROM tenants WHERE id = $1`,
+      [id],
+    );
+
+    if (!existing) {
+      return c.json({ error: "Tenant not found" }, 404);
+    }
+
+    const previousTier = existing.subscription_tier;
+    const previousFeatures = existing.features || {};
+
+    // Auto-adjust features to tier defaults (merge onto existing)
+    const tierDefaults = TIER_FEATURE_DEFAULTS[body.tier] || {};
+    const mergedFeatures = {
+      ...((existing.features as Record<string, unknown>) || {}),
+      ...tierDefaults,
+    };
+
+    await updateOne(
+      "tenants",
+      {
+        subscription_tier: body.tier,
+        features: JSON.stringify(mergedFeatures),
+        updated_at: new Date().toISOString(),
+      },
+      { id },
+    );
+
+    // Invalidate cache
+    await invalidateTenant(id);
+
+    // Audit log
+    await writeAuditLog({
+      tenantId: id,
+      adminId: admin.userId ?? null,
+      action: "update",
+      resourceType: "tenant",
+      resourceId: id,
+      oldValues: {
+        subscription_tier: previousTier,
+        features: previousFeatures,
+      },
+      newValues: { subscription_tier: body.tier, features: mergedFeatures },
+    });
+
+    console.log(
+      `[ADMIN] Tenant ${id} tier changed: ${previousTier} -> ${body.tier}`,
+    );
+
+    return c.json({ success: true, previousTier, features: mergedFeatures });
+  } catch (error) {
+    console.error("[ADMIN] Error updating tenant tier:", error);
+    return c.json({ error: "Failed to update tenant tier" }, 500);
+  }
+});
+
+/**
+ * POST /admin/tenants/:id/features
+ * Update tenant feature flags
+ */
+adminRoutes.post("/tenants/:id/features", async (c) => {
+  const id = c.req.param("id");
+  const admin = getPlatformAdminContext(c);
+  const body = await c.req.json();
+
+  // Accept either { feature, enabled } (single) or { features: {...} } (bulk)
+  let featureUpdates: Record<string, boolean>;
+  if (body.feature && typeof body.enabled === "boolean") {
+    featureUpdates = { [body.feature]: body.enabled };
+  } else if (body.features && typeof body.features === "object") {
+    featureUpdates = body.features;
+  } else {
+    return c.json(
+      { error: "Provide { feature, enabled } or { features: {...} }" },
+      400,
+    );
+  }
+
+  try {
+    const existing = await queryOne<AdminTenantRow>(
+      `SELECT * FROM tenants WHERE id = $1`,
+      [id],
+    );
+
+    if (!existing) {
+      return c.json({ error: "Tenant not found" }, 404);
+    }
+
+    const previousFeatures = existing.features || {};
+    // Merge new features onto existing (does not replace unmentioned features)
+    const mergedFeatures = {
+      ...((existing.features as Record<string, unknown>) || {}),
+      ...featureUpdates,
+    };
+
+    await updateOne(
+      "tenants",
+      {
+        features: JSON.stringify(mergedFeatures),
+        updated_at: new Date().toISOString(),
+      },
+      { id },
+    );
+
+    // Invalidate cache
+    await invalidateTenant(id);
+
+    // Audit log
+    await writeAuditLog({
+      tenantId: id,
+      adminId: admin.userId ?? null,
+      action: "update",
+      resourceType: "tenant",
+      resourceId: id,
+      oldValues: { features: previousFeatures },
+      newValues: { features: mergedFeatures },
+    });
+
+    console.log(`[ADMIN] Tenant ${id} features updated by platform admin`);
+
+    return c.json({ success: true, features: mergedFeatures });
+  } catch (error) {
+    console.error("[ADMIN] Error updating tenant features:", error);
+    return c.json({ error: "Failed to update tenant features" }, 500);
+  }
+});
+
+/**
+ * DELETE /admin/tenants/:id
+ * Soft-delete a tenant (sets is_active=false, status=suspended)
+ */
+adminRoutes.delete("/tenants/:id", async (c) => {
+  const id = c.req.param("id");
+  const admin = getPlatformAdminContext(c);
+
+  try {
+    const existing = await queryOne<AdminTenantRow>(
+      `SELECT * FROM tenants WHERE id = $1`,
+      [id],
+    );
+
+    if (!existing) {
+      return c.json({ error: "Tenant not found" }, 404);
+    }
+
+    // Only allow soft delete on suspended, draft, or test tenants
+    const metadata = existing.metadata as Record<string, unknown> | null;
+    const isTest = metadata?.is_test === true;
+    const canDelete =
+      existing.status === "suspended" || existing.status === "draft" || isTest;
+
+    if (!canDelete) {
+      return c.json(
+        {
+          error:
+            "Active tenants must be suspended before deletion. Only suspended, draft, or test tenants can be deleted.",
+        },
+        409,
+      );
+    }
+
+    await updateOne(
+      "tenants",
+      {
+        is_active: false,
+        status: "deleted",
+        updated_at: new Date().toISOString(),
+      },
+      { id },
+    );
+
+    // Invalidate cache
+    await invalidateTenant(id);
+
+    // Audit log
+    await writeAuditLog({
+      tenantId: id,
+      adminId: admin.userId ?? null,
+      action: "delete",
+      resourceType: "tenant",
+      resourceId: id,
+      oldValues: { status: existing.status, is_active: existing.is_active },
+      newValues: { status: "deleted", is_active: false },
+    });
+
+    console.log(`[ADMIN] Tenant ${id} soft-deleted by platform admin`);
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("[ADMIN] Error deleting tenant:", error);
+    return c.json({ error: "Failed to delete tenant" }, 500);
+  }
+});
+
+/**
+ * GET /admin/users
+ * List all users (from auth.users) with their tenant memberships
+ */
+adminRoutes.get("/users", async (c) => {
+  const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 200);
+  const offset = parseInt(c.req.query("offset") || "0", 10);
+
+  try {
+    const users = await queryAll<{
+      id: string;
+      email: string | null;
+      created_at: string;
+      last_sign_in_at: string | null;
+      tenant_count: string;
+    }>(
+      `SELECT
+        u.id,
+        u.email,
+        u.created_at,
+        u.last_sign_in_at,
+        (SELECT COUNT(*) FROM tenant_members tm WHERE tm.user_id = u.id AND tm.is_active = true) AS tenant_count
+       FROM auth.users u
+       ORDER BY u.created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset],
+    );
+
+    return c.json({ users });
+  } catch (error) {
+    console.error("[ADMIN] Error listing users:", error);
+    return c.json({ error: "Failed to list users" }, 500);
+  }
+});
+
+// ============================================================================
+// PORT REQUEST MANAGEMENT (existing)
+// ============================================================================
 
 interface PortRequestRow {
   id: string;
@@ -147,7 +842,9 @@ adminRoutes.put("/port-requests/:id/status", async (c) => {
 
   if (!body.status || !validStatuses.includes(body.status)) {
     return c.json(
-      { error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` },
+      {
+        error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+      },
       400,
     );
   }
