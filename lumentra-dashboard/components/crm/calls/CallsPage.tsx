@@ -14,7 +14,6 @@ import {
   ArrowUpRight,
   MessageSquare,
   User,
-  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -293,12 +292,6 @@ export default function CallsPage() {
             Call History
           </h1>
           <p className="text-sm text-muted-foreground">{total} total calls</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm">
-            <Download className="mr-2 h-4 w-4" />
-            Export
-          </Button>
         </div>
       </div>
 

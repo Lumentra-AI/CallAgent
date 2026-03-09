@@ -2,13 +2,10 @@
 
 import * as React from "react";
 import {
-  Send,
   Mail,
   MessageSquare,
   Bell,
-  Filter,
   RefreshCw,
-  FileText,
   CheckCircle,
   XCircle,
   Clock,
@@ -247,16 +244,10 @@ export default function NotificationsPage() {
             Manage notification queue and templates
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefresh}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
-          <Button>
-            <Send className="mr-2 h-4 w-4" />
-            Send Notification
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={handleRefresh}>
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Refresh
+        </Button>
       </div>
 
       {/* Tabs */}
@@ -275,26 +266,6 @@ export default function NotificationsPage() {
           value="queue"
           className="flex-1 flex flex-col overflow-hidden mt-0"
         >
-          {/* Filters */}
-          <div className="flex items-center gap-4 border-b border-zinc-800 px-6 py-3">
-            <Button variant="outline" size="sm">
-              <Filter className="mr-2 h-4 w-4" />
-              Filters
-            </Button>
-            <div className="flex gap-2">
-              {(["all", "pending", "sent", "failed"] as const).map((status) => (
-                <Button
-                  key={status}
-                  variant="ghost"
-                  size="sm"
-                  className="capitalize"
-                >
-                  {status}
-                </Button>
-              ))}
-            </div>
-          </div>
-
           {/* Table */}
           <div className="flex-1 overflow-auto">
             {notifications.length === 0 && !isLoading ? (
@@ -329,14 +300,13 @@ export default function NotificationsPage() {
           value="templates"
           className="flex-1 overflow-auto p-6 mt-0"
         >
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4">
             <h2 className="text-lg font-semibold text-white">
               Notification Templates
             </h2>
-            <Button>
-              <FileText className="mr-2 h-4 w-4" />
-              Create Template
-            </Button>
+            <p className="text-sm text-zinc-500">
+              Templates are managed automatically by the system
+            </p>
           </div>
 
           {templates.length === 0 ? (
@@ -374,15 +344,13 @@ export default function NotificationsPage() {
                   Send confirmation notifications when{" "}
                   {transactionPluralLabel.toLowerCase()} are created
                 </p>
-                <div className="mt-3 flex gap-4">
-                  <label className="flex items-center gap-2 text-sm text-zinc-300">
-                    <input type="checkbox" checked className="rounded" />
+                <div className="mt-3 flex gap-2">
+                  <Badge variant="outline" className="text-xs">
                     Email
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-zinc-300">
-                    <input type="checkbox" checked className="rounded" />
+                  </Badge>
+                  <Badge variant="outline" className="text-xs">
                     SMS
-                  </label>
+                  </Badge>
                 </div>
               </div>
 

@@ -98,6 +98,9 @@ interface ConfigContextType {
   setSpeakerState: (state: SpeakerState) => void;
   refreshMetrics: () => void;
 
+  // Demo mode
+  isDemoMode: boolean;
+
   // Simulation (for demo)
   simulateCall: () => void;
   simulateRevenue: (amount: number) => void;
@@ -657,6 +660,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       setSpeakerState,
       refreshMetrics,
 
+      // Demo mode
+      isDemoMode: !apiEnabled,
+
       // Simulation
       simulateCall,
       simulateRevenue,
@@ -670,6 +676,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       config,
       isLoading,
       isConfigured,
+      apiEnabled,
       saveConfig,
       updateConfig,
       resetConfig,
@@ -762,4 +769,9 @@ export function useCallSimulation() {
     simulateRevenue,
     activeCalls,
   };
+}
+
+export function useDemoMode() {
+  const { isDemoMode } = useConfig();
+  return isDemoMode;
 }

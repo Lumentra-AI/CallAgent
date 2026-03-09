@@ -287,7 +287,12 @@ export default function ChatsPage() {
           <div className="flex items-center gap-3">
             <MessageSquare className="h-5 w-5 text-primary" />
             <div>
-              <h1 className="text-xl font-semibold">Chat Sessions</h1>
+              <h1 className="text-xl font-semibold">
+                Chat Sessions{" "}
+                <span className="text-sm font-normal text-muted-foreground">
+                  (Read Only)
+                </span>
+              </h1>
               <p className="text-sm text-muted-foreground">
                 Review conversations from your website chat widget
               </p>

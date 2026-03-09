@@ -305,11 +305,45 @@ function SecurityTab() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   const passwordValidation = validatePassword(newPassword);
   const passwordsMatch = newPassword === confirmPassword;
   const canChangePassword =
-    currentPassword.length > 0 && passwordValidation.valid && passwordsMatch;
+    currentPassword.length > 0 &&
+    passwordValidation.valid &&
+    passwordsMatch &&
+    !isUpdating;
+
+  const handlePasswordChange = async () => {
+    if (!canChangePassword) return;
+    setIsUpdating(true);
+    setPasswordMessage(null);
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      if (!supabase) throw new Error("Auth not available");
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (error) throw error;
+      setPasswordMessage({ type: "success", text: "Password updated" });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      setPasswordMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "Failed to update password",
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -363,28 +397,26 @@ function SecurityTab() {
           </div>
         </div>
 
-        <Button disabled={!canChangePassword} className="mt-2">
-          Update Password
+        {passwordMessage && (
+          <p
+            className={cn(
+              "text-sm",
+              passwordMessage.type === "success"
+                ? "text-emerald-500"
+                : "text-destructive",
+            )}
+          >
+            {passwordMessage.text}
+          </p>
+        )}
+
+        <Button
+          disabled={!canChangePassword}
+          onClick={handlePasswordChange}
+          className="mt-2"
+        >
+          {isUpdating ? "Updating..." : "Update Password"}
         </Button>
-      </section>
-
-      {/* Two-Factor Authentication */}
-      <section className="space-y-4 rounded-2xl border border-border bg-card p-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <h3 className="text-sm font-medium text-foreground">
-              Two-Factor Authentication
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Add an extra layer of security to your account
-            </p>
-          </div>
-          <span className="rounded-full bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
-            Not enabled
-          </span>
-        </div>
-
-        <Button variant="outline">Enable 2FA</Button>
       </section>
 
       {/* Active Sessions */}
@@ -407,28 +439,6 @@ function SecurityTab() {
             <span className="text-xs text-muted-foreground">Active now</span>
           </div>
         </div>
-
-        <Button
-          variant="outline"
-          className="text-destructive hover:bg-destructive/10"
-        >
-          Sign Out All Devices
-        </Button>
-      </section>
-
-      {/* Danger Zone */}
-      <section className="space-y-4 rounded-2xl border border-destructive/30 bg-destructive/5 p-6">
-        <h3 className="text-sm font-medium text-destructive">Danger Zone</h3>
-        <p className="text-sm text-muted-foreground">
-          Permanently delete your account and all associated data. This action
-          cannot be undone.
-        </p>
-        <Button
-          variant="outline"
-          className="border-destructive/30 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-        >
-          Delete Account
-        </Button>
       </section>
     </div>
   );

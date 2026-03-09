@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus, Search, Filter, Download, Upload } from "lucide-react";
+import { Plus, Search, Download, Upload, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DataTable, Column } from "@/components/crm/shared/DataTable";
@@ -15,6 +15,8 @@ import { ContactForm } from "./ContactForm";
 import { ContactDetail } from "./ContactDetail";
 import { useContacts } from "@/hooks/useContacts";
 import { useIndustry } from "@/context/IndustryContext";
+import { apiClient, API_BASE } from "@/lib/api/client";
+import { createClient } from "@/lib/supabase/client";
 import type { Contact, ContactStatus } from "@/types/crm";
 import { cn } from "@/lib/utils";
 
@@ -182,6 +184,10 @@ export default function ContactsPage() {
   );
   const [isFormOpen, setIsFormOpen] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [isExporting, setIsExporting] = React.useState(false);
+  const [isImporting, setIsImporting] = React.useState(false);
+  const [importError, setImportError] = React.useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Create columns with industry terminology
   const columns = React.useMemo(
@@ -238,6 +244,68 @@ export default function ContactsPage() {
     refresh();
   };
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const supabase = createClient();
+      if (!supabase) throw new Error("Auth not available");
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const res = await fetch(`${API_BASE}/api/contacts/export`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ format: "csv", filters }),
+      });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `contacts-${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      console.error("Export failed");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsImporting(true);
+    setImportError(null);
+    try {
+      const text = await file.text();
+      const records = JSON.parse(text);
+      const result = await apiClient<{ imported: number; errors: unknown[] }>(
+        "/api/contacts/import",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            records: Array.isArray(records) ? records : records.records || [],
+            skip_duplicates: true,
+          }),
+        },
+      );
+      refresh();
+      if (result.errors?.length > 0) {
+        setImportError(`Imported with ${result.errors.length} errors`);
+      }
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -253,12 +321,37 @@ export default function ContactsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm">
-            <Upload className="mr-2 h-4 w-4" />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={handleImport}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isImporting}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {isImporting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mr-2 h-4 w-4" />
+            )}
             Import
           </Button>
-          <Button variant="outline" size="sm">
-            <Download className="mr-2 h-4 w-4" />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isExporting}
+            onClick={handleExport}
+          >
+            {isExporting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
             Export
           </Button>
           <Button onClick={() => setIsFormOpen(true)}>
@@ -279,10 +372,19 @@ export default function ContactsPage() {
             className="pl-9"
           />
         </div>
-        <Button variant="outline" size="sm">
-          <Filter className="mr-2 h-4 w-4" />
-          Filters
-        </Button>
+        {importError && (
+          <div className="flex items-center gap-2 rounded-md bg-red-500/10 px-3 py-1.5">
+            <span className="text-sm text-red-400">{importError}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-xs"
+              onClick={() => setImportError(null)}
+            >
+              Dismiss
+            </Button>
+          </div>
+        )}
         {selectedIds.size > 0 && (
           <div className="flex items-center gap-2 rounded-md bg-indigo-500/10 px-3 py-1.5">
             <span className="text-sm text-indigo-400">

@@ -343,13 +343,15 @@ export default function Waveform() {
               icon={UserPlus}
               onClick={() => {}}
               label="Transfer"
-              variant="primary"
+              variant="secondary"
+              disabled
             />
             <ControlButton
               icon={MoreHorizontal}
               onClick={() => {}}
               label="More"
               variant="secondary"
+              disabled
             />
             <div className="w-px h-8 bg-border mx-2" />
             <ControlButton
@@ -383,6 +385,7 @@ interface ControlButtonProps {
   onClick: () => void;
   label: string;
   active?: boolean;
+  disabled?: boolean;
   variant?: "primary" | "secondary" | "warning" | "danger";
   size?: "normal" | "large";
 }
@@ -392,6 +395,7 @@ function ControlButton({
   onClick,
   label,
   active = false,
+  disabled = false,
   variant = "secondary",
   size = "normal",
 }: ControlButtonProps) {
@@ -406,13 +410,15 @@ function ControlButton({
 
   return (
     <button
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       className={cn(
         "flex flex-col items-center gap-1 p-2 rounded-xl transition-all",
         variants[variant],
         size === "large" && "px-4 py-3",
+        disabled && "opacity-40 cursor-not-allowed",
       )}
-      title={label}
+      title={disabled ? `${label} (coming soon)` : label}
     >
       <Icon className={cn("h-5 w-5", size === "large" && "h-6 w-6")} />
       <span className="text-[10px] font-medium">{label}</span>
