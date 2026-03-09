@@ -27,6 +27,8 @@ import { dealsRoutes } from "./routes/deals.js";
 import { tasksRoutes } from "./routes/tasks.js";
 import { internalRoutes } from "./routes/internal.js";
 import { adminRoutes } from "./routes/admin.js";
+import { adminAnalyticsRoutes } from "./routes/admin-analytics.js";
+import { adminMonitoringRoutes } from "./routes/admin-monitoring.js";
 import {
   authMiddleware,
   userAuthMiddleware,
@@ -124,6 +126,8 @@ export function createApp() {
   app.route("/internal", internalRoutes); // LiveKit agent API (own auth via INTERNAL_API_KEY)
   app.use("/admin/*", platformAdminAuth());
   app.route("/admin", adminRoutes);
+  app.route("/admin", adminAnalyticsRoutes);
+  app.route("/admin", adminMonitoringRoutes);
 
   // User-only auth (no tenant required) for setup and tenant listing
   app.use("/api/setup/*", userAuthMiddleware());
