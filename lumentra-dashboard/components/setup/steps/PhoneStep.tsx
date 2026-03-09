@@ -410,7 +410,7 @@ export function PhoneStep() {
     return () => {
       cancelled = true;
     };
-  }, [setupType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [setupType]);
 
   const canContinue = setupType !== null;
 
