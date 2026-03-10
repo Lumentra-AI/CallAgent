@@ -310,3 +310,185 @@ export function deleteAdminTenant(id: string): Promise<{ success: boolean }> {
 export function fetchAdminUsers(): Promise<FetchUsersResponse> {
   return get<FetchUsersResponse>("/admin/users");
 }
+
+// ============================================================================
+// Analytics Types
+// ============================================================================
+
+export interface AnalyticsOverview {
+  total_tenants: number;
+  active_tenants: number;
+  suspended_tenants: number;
+  total_calls_today: number;
+  total_calls_week: number;
+  total_calls_month: number;
+  total_calls_all_time: number;
+  avg_calls_per_tenant_month: number;
+  total_users: number;
+  new_signups_this_week: number;
+  new_signups_this_month: number;
+  setup_completion_rate: number;
+  active_rate: number;
+  top_industries: Array<{ industry: string; count: number }>;
+  tier_distribution: Array<{ tier: string; count: number }>;
+}
+
+export interface GrowthDataPoint {
+  date: string;
+  count: number;
+}
+
+export interface GrowthData {
+  signups: GrowthDataPoint[];
+  calls: GrowthDataPoint[];
+  active_tenants: GrowthDataPoint[];
+}
+
+export interface CallAnalytics {
+  total: number;
+  by_outcome: Record<string, number>;
+  by_industry: Array<{
+    industry: string;
+    count: number;
+    success_rate: number;
+  }>;
+  by_hour: Array<{ hour: number; count: number }>;
+  avg_duration_seconds: number;
+  failure_rate: number;
+}
+
+export interface TopTenant {
+  tenant_id: string;
+  business_name: string;
+  industry: string;
+  metric_value: number;
+}
+
+export interface AtRiskTenant {
+  tenant_id: string;
+  business_name: string;
+  industry: string;
+  reason: string;
+  detail: string;
+}
+
+// ============================================================================
+// Monitoring Types
+// ============================================================================
+
+export interface SystemHealth {
+  api: { status: string; uptime_seconds: number; version: string };
+  database: { status: string; latency_ms: number | null };
+  background_jobs: {
+    scheduled: Array<{ name: string; interval: string }>;
+  };
+}
+
+export interface ActiveCall {
+  call_id: string;
+  tenant_id: string;
+  business_name: string;
+  caller_phone: string | null;
+  started_at: string;
+  duration_so_far: number;
+  status: string;
+}
+
+export interface ActiveCallsResponse {
+  active_calls: ActiveCall[];
+  count: number;
+}
+
+export interface PortRequestStats {
+  stats: {
+    total: number;
+    by_status: Record<string, number>;
+    avg_completion_days: number | null;
+    oldest_pending_days: number | null;
+  };
+  pending: Array<{
+    id: string;
+    tenant_id: string;
+    business_name: string;
+    phone_number: string;
+    current_carrier: string;
+    status: string;
+    days_pending: number;
+    submitted_at: string | null;
+    created_at: string;
+  }>;
+}
+
+export interface ErrorStats {
+  recent_failures: Array<{
+    call_id: string;
+    tenant_id: string;
+    business_name: string;
+    caller_phone: string | null;
+    status: string;
+    created_at: string;
+  }>;
+  failure_stats: {
+    last_24h: number;
+    last_7d: number;
+    failure_rate_24h: number;
+  };
+}
+
+// ============================================================================
+// Analytics API Functions
+// ============================================================================
+
+export function fetchAnalyticsOverview(): Promise<AnalyticsOverview> {
+  return get<AnalyticsOverview>("/admin/analytics/overview");
+}
+
+export function fetchAnalyticsGrowth(
+  period: "daily" | "weekly" | "monthly" = "daily",
+  range: number = 30,
+): Promise<GrowthData> {
+  return get<GrowthData>("/admin/analytics/growth", {
+    period,
+    range: String(range),
+  });
+}
+
+export function fetchCallAnalytics(days: number = 30): Promise<CallAnalytics> {
+  return get<CallAnalytics>("/admin/analytics/calls", {
+    days: String(days),
+  });
+}
+
+export function fetchTopTenants(
+  metric: "calls" | "bookings" | "duration" = "calls",
+  limit: number = 10,
+): Promise<TopTenant[]> {
+  return get<TopTenant[]>("/admin/analytics/tenants/top", {
+    metric,
+    limit: String(limit),
+  });
+}
+
+export function fetchAtRiskTenants(): Promise<AtRiskTenant[]> {
+  return get<AtRiskTenant[]>("/admin/analytics/tenants/at-risk");
+}
+
+// ============================================================================
+// Monitoring API Functions
+// ============================================================================
+
+export function fetchSystemHealth(): Promise<SystemHealth> {
+  return get<SystemHealth>("/admin/monitoring/health");
+}
+
+export function fetchActiveCalls(): Promise<ActiveCallsResponse> {
+  return get<ActiveCallsResponse>("/admin/monitoring/active-calls");
+}
+
+export function fetchPortRequestStats(): Promise<PortRequestStats> {
+  return get<PortRequestStats>("/admin/monitoring/port-requests");
+}
+
+export function fetchErrorStats(): Promise<ErrorStats> {
+  return get<ErrorStats>("/admin/monitoring/errors");
+}
