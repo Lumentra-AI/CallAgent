@@ -41,49 +41,6 @@ interface ProviderAvailabilityProps {
   className?: string;
 }
 
-// Mock provider data
-const MOCK_PROVIDERS: Provider[] = [
-  {
-    id: "p1",
-    name: "Dr. Williams",
-    title: "Primary Care",
-    specialty: "General Medicine",
-    status: "with-patient",
-    currentPatient: "Sarah Johnson",
-    nextAvailable: "11:30 AM",
-    appointmentsToday: 8,
-    appointmentsCompleted: 3,
-  },
-  {
-    id: "p2",
-    name: "Dr. Chen",
-    title: "Specialist",
-    specialty: "Internal Medicine",
-    status: "available",
-    nextAvailable: "Now",
-    appointmentsToday: 6,
-    appointmentsCompleted: 2,
-  },
-  {
-    id: "p3",
-    name: "Dr. Martinez",
-    title: "Primary Care",
-    specialty: "Family Medicine",
-    status: "break",
-    nextAvailable: "12:00 PM",
-    appointmentsToday: 7,
-    appointmentsCompleted: 4,
-  },
-  {
-    id: "p4",
-    name: "Dr. Thompson",
-    title: "Nurse Practitioner",
-    status: "unavailable",
-    appointmentsToday: 0,
-    appointmentsCompleted: 0,
-  },
-];
-
 const STATUS_CONFIG = {
   available: {
     icon: CheckCircle,
@@ -123,7 +80,7 @@ const STATUS_CONFIG = {
 };
 
 export function ProviderAvailability({
-  providers = MOCK_PROVIDERS,
+  providers = [],
   title = "Provider Availability",
   onProviderClick,
   onBookClick,

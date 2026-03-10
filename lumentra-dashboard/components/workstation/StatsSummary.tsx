@@ -37,44 +37,8 @@ const ICON_MAP = {
   dollar: DollarSign,
 };
 
-// Mock stats
-const MOCK_STATS: Stat[] = [
-  {
-    id: "bookings",
-    label: "Today's Bookings",
-    value: 12,
-    change: 20,
-    changeLabel: "vs yesterday",
-    icon: "calendar",
-  },
-  {
-    id: "calls",
-    label: "Calls Handled",
-    value: 28,
-    change: -5,
-    changeLabel: "vs yesterday",
-    icon: "phone",
-  },
-  {
-    id: "contacts",
-    label: "New Contacts",
-    value: 4,
-    change: 0,
-    changeLabel: "vs yesterday",
-    icon: "users",
-  },
-  {
-    id: "avgWait",
-    label: "Avg Wait Time",
-    value: "8 min",
-    change: -12,
-    changeLabel: "improved",
-    icon: "clock",
-  },
-];
-
 export function StatsSummary({
-  stats = MOCK_STATS,
+  stats = [],
   title = "Today's Stats",
   className,
 }: StatsSummaryProps) {
@@ -110,48 +74,57 @@ export function StatsSummary({
     <div className={cn("card-soft p-4", className)}>
       <h2 className="mb-4 text-lg font-semibold text-foreground">{title}</h2>
 
-      <div className="grid grid-cols-2 gap-3">
-        {stats.map((stat, index) => {
-          const Icon = stat.icon ? ICON_MAP[stat.icon] : null;
+      {stats.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-8 text-center">
+          <Calendar className="h-10 w-10 text-muted-foreground/50 mb-2" />
+          <p className="text-sm text-muted-foreground">No stats available</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          {stats.map((stat, index) => {
+            const Icon = stat.icon ? ICON_MAP[stat.icon] : null;
 
-          return (
-            <motion.div
-              key={stat.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              className="rounded-lg border border-border bg-muted/30 p-3"
-            >
-              <div className="flex items-start justify-between">
-                <span className="text-xs text-muted-foreground">
-                  {getLabel(stat)}
-                </span>
-                {Icon && <Icon className="h-4 w-4 text-muted-foreground/50" />}
-              </div>
-
-              <div className="mt-1">
-                <span className="text-2xl font-semibold tabular-nums text-foreground">
-                  {stat.value}
-                </span>
-              </div>
-
-              {stat.change !== undefined && (
-                <div className="mt-1 flex items-center gap-1">
-                  {getTrendIcon(stat.change)}
-                  <span className={cn("text-xs", getTrendColor(stat.change))}>
-                    {Math.abs(stat.change)}%
+            return (
+              <motion.div
+                key={stat.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+                className="rounded-lg border border-border bg-muted/30 p-3"
+              >
+                <div className="flex items-start justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    {getLabel(stat)}
                   </span>
-                  {stat.changeLabel && (
-                    <span className="text-xs text-muted-foreground">
-                      {stat.changeLabel}
-                    </span>
+                  {Icon && (
+                    <Icon className="h-4 w-4 text-muted-foreground/50" />
                   )}
                 </div>
-              )}
-            </motion.div>
-          );
-        })}
-      </div>
+
+                <div className="mt-1">
+                  <span className="text-2xl font-semibold tabular-nums text-foreground">
+                    {stat.value}
+                  </span>
+                </div>
+
+                {stat.change !== undefined && (
+                  <div className="mt-1 flex items-center gap-1">
+                    {getTrendIcon(stat.change)}
+                    <span className={cn("text-xs", getTrendColor(stat.change))}>
+                      {Math.abs(stat.change)}%
+                    </span>
+                    {stat.changeLabel && (
+                      <span className="text-xs text-muted-foreground">
+                        {stat.changeLabel}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

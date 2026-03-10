@@ -39,51 +39,6 @@ interface TodayPanelProps {
   emptyMessage?: string;
 }
 
-// Mock data for demonstration
-const MOCK_ITEMS: ScheduleItem[] = [
-  {
-    id: "1",
-    time: "09:00 AM",
-    entityName: "John Smith",
-    entityPhone: "+1 555-0123",
-    type: "Consultation",
-    status: "completed",
-  },
-  {
-    id: "2",
-    time: "10:30 AM",
-    entityName: "Sarah Johnson",
-    entityPhone: "+1 555-0124",
-    type: "Follow-up",
-    status: "in-progress",
-    isVip: true,
-  },
-  {
-    id: "3",
-    time: "11:00 AM",
-    entityName: "Michael Brown",
-    entityPhone: "+1 555-0125",
-    type: "New Patient",
-    status: "confirmed",
-  },
-  {
-    id: "4",
-    time: "02:00 PM",
-    entityName: "Emily Davis",
-    entityPhone: "+1 555-0126",
-    type: "Check-up",
-    status: "pending",
-  },
-  {
-    id: "5",
-    time: "03:30 PM",
-    entityName: "Robert Wilson",
-    entityPhone: "+1 555-0127",
-    type: "Consultation",
-    status: "pending",
-  },
-];
-
 const STATUS_CONFIG = {
   pending: {
     icon: Circle,
@@ -125,7 +80,7 @@ const STATUS_CONFIG = {
 
 export function TodayPanel({
   title,
-  items = MOCK_ITEMS,
+  items = [],
   onItemClick,
   onCallClick,
   className,
