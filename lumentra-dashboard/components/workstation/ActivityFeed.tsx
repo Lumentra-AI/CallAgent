@@ -124,59 +124,8 @@ const ACTIVITY_CONFIG: Record<
   },
 };
 
-// Mock activities
-const MOCK_ACTIVITIES: Activity[] = [
-  {
-    id: "1",
-    type: "call_incoming",
-    title: "Incoming call from John Smith",
-    description: "Duration: 3m 45s",
-    timestamp: new Date(Date.now() - 1000 * 60 * 5),
-    entityName: "John Smith",
-  },
-  {
-    id: "2",
-    type: "booking_confirmed",
-    title: "Appointment confirmed",
-    description: "Sarah Johnson - Tomorrow at 10:00 AM",
-    timestamp: new Date(Date.now() - 1000 * 60 * 15),
-    entityName: "Sarah Johnson",
-  },
-  {
-    id: "3",
-    type: "contact_created",
-    title: "New contact added",
-    description: "Michael Brown - Referral",
-    timestamp: new Date(Date.now() - 1000 * 60 * 30),
-    entityName: "Michael Brown",
-  },
-  {
-    id: "4",
-    type: "call_missed",
-    title: "Missed call",
-    description: "Unknown number: +1 555-0199",
-    timestamp: new Date(Date.now() - 1000 * 60 * 45),
-  },
-  {
-    id: "5",
-    type: "booking_created",
-    title: "New appointment scheduled",
-    description: "Emily Davis - Friday at 2:00 PM",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60),
-    entityName: "Emily Davis",
-  },
-  {
-    id: "6",
-    type: "check_in",
-    title: "Patient checked in",
-    description: "Robert Wilson - Waiting room",
-    timestamp: new Date(Date.now() - 1000 * 60 * 90),
-    entityName: "Robert Wilson",
-  },
-];
-
 export function ActivityFeed({
-  activities = MOCK_ACTIVITIES,
+  activities = [],
   title = "Recent Activity",
   maxItems = 10,
   onActivityClick,

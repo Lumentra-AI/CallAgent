@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useEffect, useState } from "react";
 import { useTenantConfig } from "@/hooks/useTenantConfig";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -139,10 +139,24 @@ const QUESTIONS: Question[] = [
 
 function generateCustomInstructions(
   answers: Record<string, string | string[]>,
-  _industry: string,
-  _businessName: string,
+  industry: string,
+  businessName: string,
 ): string {
   const lines: string[] = [];
+
+  // Industry-appropriate intro
+  const introMap: Record<string, string> = {
+    dental: `## Dental Practice Instructions\nAs the AI receptionist for ${businessName}, focus on patient care and scheduling dental appointments efficiently.`,
+    hotel: `## Hotel Front Desk Instructions\nAs the virtual concierge for ${businessName}, provide excellent guest service and help with reservations and hotel amenities.`,
+    restaurant: `## Restaurant Instructions\nAs the host for ${businessName}, help with reservations and dining inquiries.`,
+    medical: `## Medical Practice Instructions\nAs the AI receptionist for ${businessName}, prioritize patient privacy and care while scheduling appointments.`,
+    salon: `## Salon Instructions\nAs the receptionist for ${businessName}, help clients book styling services and answer questions about treatments.`,
+    auto_service: `## Auto Service Instructions\nAs the service advisor for ${businessName}, help customers schedule vehicle service and provide repair information.`,
+  };
+  lines.push(
+    introMap[industry] ||
+      `## Business Instructions\nAs the AI assistant for ${businessName}, help callers efficiently and professionally.`,
+  );
 
   // Primary goal
   if (answers.primary_goal) {
@@ -296,10 +310,19 @@ export default function InstructionsTab() {
     }, 500);
   }, [answers, tenant, updateSettings]);
 
-  // Save manual instructions on blur
-  const handleSaveInstructions = useCallback(() => {
-    updateSettings({ custom_instructions: customInstructions || undefined });
-  }, [customInstructions, updateSettings]);
+  // Debounced auto-save for manual instructions
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (customInstructions === tenant?.custom_instructions) return;
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      updateSettings({ custom_instructions: customInstructions || undefined });
+    }, 800);
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, [customInstructions, updateSettings, tenant?.custom_instructions]);
 
   if (isLoading || !tenant) return null;
 
@@ -514,7 +537,6 @@ export default function InstructionsTab() {
             <textarea
               value={customInstructions}
               onChange={(e) => setCustomInstructions(e.target.value)}
-              onBlur={handleSaveInstructions}
               placeholder="Enter custom instructions for your AI agent...
 
 Example:

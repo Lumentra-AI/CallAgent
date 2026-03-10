@@ -296,3 +296,106 @@ export function getVoiceByCartesiaId(
 export function getVoiceById(id: string): VoiceOption | undefined {
   return VOICE_OPTIONS.find((v) => v.id === id);
 }
+
+// ============================================================================
+// INDUSTRY HOURS DEFAULTS
+// ============================================================================
+
+export interface IndustryHoursDefaults {
+  schedule: Record<string, { status: string; open: string; close: string }>;
+  sameEveryDay: boolean;
+}
+
+const INDUSTRY_HOURS: Partial<Record<IndustryType, IndustryHoursDefaults>> = {
+  hotel: {
+    sameEveryDay: false,
+    schedule: {
+      monday: { status: "24hours", open: "", close: "" },
+      tuesday: { status: "24hours", open: "", close: "" },
+      wednesday: { status: "24hours", open: "", close: "" },
+      thursday: { status: "24hours", open: "", close: "" },
+      friday: { status: "24hours", open: "", close: "" },
+      saturday: { status: "24hours", open: "", close: "" },
+      sunday: { status: "24hours", open: "", close: "" },
+    },
+  },
+  motel: {
+    sameEveryDay: false,
+    schedule: {
+      monday: { status: "24hours", open: "", close: "" },
+      tuesday: { status: "24hours", open: "", close: "" },
+      wednesday: { status: "24hours", open: "", close: "" },
+      thursday: { status: "24hours", open: "", close: "" },
+      friday: { status: "24hours", open: "", close: "" },
+      saturday: { status: "24hours", open: "", close: "" },
+      sunday: { status: "24hours", open: "", close: "" },
+    },
+  },
+  restaurant: {
+    sameEveryDay: false,
+    schedule: {
+      monday: { status: "open", open: "11:00", close: "22:00" },
+      tuesday: { status: "open", open: "11:00", close: "22:00" },
+      wednesday: { status: "open", open: "11:00", close: "22:00" },
+      thursday: { status: "open", open: "11:00", close: "22:00" },
+      friday: { status: "open", open: "11:00", close: "23:00" },
+      saturday: { status: "open", open: "11:00", close: "23:00" },
+      sunday: { status: "open", open: "11:00", close: "22:00" },
+    },
+  },
+  dental: {
+    sameEveryDay: true,
+    schedule: {
+      monday: { status: "open", open: "08:00", close: "17:00" },
+      tuesday: { status: "open", open: "08:00", close: "17:00" },
+      wednesday: { status: "open", open: "08:00", close: "17:00" },
+      thursday: { status: "open", open: "08:00", close: "17:00" },
+      friday: { status: "open", open: "08:00", close: "17:00" },
+      saturday: { status: "closed", open: "", close: "" },
+      sunday: { status: "closed", open: "", close: "" },
+    },
+  },
+  medical: {
+    sameEveryDay: true,
+    schedule: {
+      monday: { status: "open", open: "08:00", close: "17:00" },
+      tuesday: { status: "open", open: "08:00", close: "17:00" },
+      wednesday: { status: "open", open: "08:00", close: "17:00" },
+      thursday: { status: "open", open: "08:00", close: "17:00" },
+      friday: { status: "open", open: "08:00", close: "17:00" },
+      saturday: { status: "closed", open: "", close: "" },
+      sunday: { status: "closed", open: "", close: "" },
+    },
+  },
+  salon: {
+    sameEveryDay: false,
+    schedule: {
+      monday: { status: "closed", open: "", close: "" },
+      tuesday: { status: "open", open: "10:00", close: "19:00" },
+      wednesday: { status: "open", open: "10:00", close: "19:00" },
+      thursday: { status: "open", open: "10:00", close: "19:00" },
+      friday: { status: "open", open: "10:00", close: "19:00" },
+      saturday: { status: "open", open: "10:00", close: "19:00" },
+      sunday: { status: "closed", open: "", close: "" },
+    },
+  },
+  auto_service: {
+    sameEveryDay: false,
+    schedule: {
+      monday: { status: "open", open: "08:00", close: "18:00" },
+      tuesday: { status: "open", open: "08:00", close: "18:00" },
+      wednesday: { status: "open", open: "08:00", close: "18:00" },
+      thursday: { status: "open", open: "08:00", close: "18:00" },
+      friday: { status: "open", open: "08:00", close: "18:00" },
+      saturday: { status: "open", open: "09:00", close: "14:00" },
+      sunday: { status: "closed", open: "", close: "" },
+    },
+  },
+};
+
+export function getIndustryHoursDefaults(
+  industry: IndustryType | null,
+): IndustryHoursDefaults | null {
+  if (!industry) return null;
+  return INDUSTRY_HOURS[industry] || null;
+}

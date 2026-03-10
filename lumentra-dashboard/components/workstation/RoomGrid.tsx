@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   BedDouble,
   CheckCircle,
-  XCircle,
   Clock,
   Sparkles,
   AlertTriangle,
@@ -42,94 +41,6 @@ interface RoomGridProps {
   className?: string;
   viewMode?: "grid" | "floor";
 }
-
-// Mock room data
-const MOCK_ROOMS: HotelRoom[] = [
-  { id: "101", number: "101", floor: 1, type: "Standard", status: "available" },
-  {
-    id: "102",
-    number: "102",
-    floor: 1,
-    type: "Standard",
-    status: "occupied",
-    guestName: "John Smith",
-  },
-  {
-    id: "103",
-    number: "103",
-    floor: 1,
-    type: "Deluxe",
-    status: "checkout",
-    checkoutTime: "11:00 AM",
-    guestName: "Sarah Johnson",
-  },
-  { id: "104", number: "104", floor: 1, type: "Standard", status: "cleaning" },
-  {
-    id: "105",
-    number: "105",
-    floor: 1,
-    type: "Suite",
-    status: "occupied",
-    guestName: "VIP Guest",
-    isVip: true,
-  },
-  {
-    id: "106",
-    number: "106",
-    floor: 1,
-    type: "Standard",
-    status: "maintenance",
-    notes: "AC repair",
-  },
-  { id: "201", number: "201", floor: 2, type: "Deluxe", status: "available" },
-  {
-    id: "202",
-    number: "202",
-    floor: 2,
-    type: "Deluxe",
-    status: "reserved",
-    guestName: "Michael Brown",
-  },
-  {
-    id: "203",
-    number: "203",
-    floor: 2,
-    type: "Suite",
-    status: "occupied",
-    guestName: "Emily Davis",
-  },
-  { id: "204", number: "204", floor: 2, type: "Deluxe", status: "available" },
-  { id: "205", number: "205", floor: 2, type: "Standard", status: "cleaning" },
-  {
-    id: "206",
-    number: "206",
-    floor: 2,
-    type: "Suite",
-    status: "occupied",
-    guestName: "Robert Wilson",
-    isVip: true,
-  },
-  { id: "301", number: "301", floor: 3, type: "Suite", status: "available" },
-  {
-    id: "302",
-    number: "302",
-    floor: 3,
-    type: "Penthouse",
-    status: "occupied",
-    guestName: "VIP Executive",
-    isVip: true,
-  },
-  {
-    id: "303",
-    number: "303",
-    floor: 3,
-    type: "Suite",
-    status: "checkout",
-    checkoutTime: "12:00 PM",
-    guestName: "Jennifer Martinez",
-  },
-  { id: "304", number: "304", floor: 3, type: "Deluxe", status: "available" },
-];
 
 const STATUS_CONFIG = {
   available: {
@@ -177,7 +88,7 @@ const STATUS_CONFIG = {
 };
 
 export function RoomGrid({
-  rooms = MOCK_ROOMS,
+  rooms = [],
   title = "Room Status",
   onRoomClick,
   className,

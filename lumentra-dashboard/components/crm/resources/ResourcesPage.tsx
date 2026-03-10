@@ -29,8 +29,65 @@ import {
   getResourceTypeColor,
   formatDuration,
 } from "@/lib/api";
+import { useIndustry } from "@/context/IndustryContext";
 import type { Resource, ResourceType, PaginationParams } from "@/types/crm";
 import { cn } from "@/lib/utils";
+
+// ============================================================================
+// INDUSTRY-SPECIFIC RESOURCE TYPE LABELS
+// ============================================================================
+
+const INDUSTRY_RESOURCE_LABELS: Record<string, Record<string, string>> = {
+  hotel: {
+    staff: "Staff",
+    room: "Room",
+    equipment: "Amenity",
+    service: "Service",
+    other: "Other",
+  },
+  motel: {
+    staff: "Staff",
+    room: "Room",
+    equipment: "Amenity",
+    service: "Service",
+    other: "Other",
+  },
+  restaurant: {
+    staff: "Staff",
+    room: "Table",
+    equipment: "Kitchen Equipment",
+    service: "Service",
+    other: "Other",
+  },
+  dental: {
+    staff: "Provider",
+    room: "Operatory",
+    equipment: "Equipment",
+    service: "Service",
+    other: "Other",
+  },
+  medical: {
+    staff: "Provider",
+    room: "Exam Room",
+    equipment: "Equipment",
+    service: "Service",
+    other: "Other",
+  },
+  salon: {
+    staff: "Stylist",
+    room: "Station",
+    equipment: "Equipment",
+    service: "Service",
+    other: "Other",
+  },
+  auto_service: {
+    staff: "Technician",
+    room: "Bay",
+    equipment: "Equipment",
+    service: "Service",
+    other: "Other",
+  },
+};
 
 // ============================================================================
 // TYPE ICON
@@ -154,6 +211,15 @@ function ResourceCard({
 // ============================================================================
 
 export default function ResourcesPage() {
+  const { industry } = useIndustry();
+
+  const getLabel = (type: ResourceType | "all"): string => {
+    if (type === "all") return "All";
+    return (
+      INDUSTRY_RESOURCE_LABELS[industry]?.[type] || getResourceTypeLabel(type)
+    );
+  };
+
   const [resources, setResources] = React.useState<Resource[]>([]);
   const [total, setTotal] = React.useState(0);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -271,7 +337,7 @@ export default function ResourcesPage() {
               className="capitalize"
               onClick={() => setSelectedType(type)}
             >
-              {type === "all" ? "All" : getResourceTypeLabel(type)}
+              {getLabel(type)}
             </Button>
           ))}
         </div>

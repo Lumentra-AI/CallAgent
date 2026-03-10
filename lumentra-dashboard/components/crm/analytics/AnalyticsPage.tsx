@@ -18,6 +18,7 @@ import {
   type TimeSeriesPoint,
   type OutcomeData,
 } from "@/hooks/useAnalytics";
+import { useIndustry } from "@/context/IndustryContext";
 import { cn } from "@/lib/utils";
 import {
   LineChart,
@@ -190,6 +191,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
 // ============================================================================
 
 export default function AnalyticsPage() {
+  const { transactionPluralLabel } = useIndustry();
   const [period, setPeriod] = React.useState(30);
   const {
     data: analytics,
@@ -222,6 +224,16 @@ export default function AnalyticsPage() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  // Industry-aware outcome labels
+  const outcomeLabels: Record<string, string> = {
+    booking: transactionPluralLabel.replace(/s$/, ""),
+    inquiry: "Inquiry",
+    support: "Support",
+    escalation: "Escalation",
+    hangup: "Hang Up",
+    unknown: "Unknown",
+  };
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
       {/* Header */}
@@ -229,7 +241,7 @@ export default function AnalyticsPage() {
         <div>
           <h1 className="text-xl font-semibold text-foreground">Analytics</h1>
           <p className="text-sm text-muted-foreground">
-            Call performance and booking insights
+            {`Call performance and ${transactionPluralLabel.toLowerCase()} insights`}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -268,13 +280,13 @@ export default function AnalyticsPage() {
             loading={loading}
           />
           <StatCard
-            title="Bookings Made"
+            title={`${transactionPluralLabel} Made`}
             value={analytics?.summary.totalBookings || 0}
             icon={Calendar}
             loading={loading}
           />
           <StatCard
-            title="Conversion Rate"
+            title={`${transactionPluralLabel.replace(/s$/, "")} Rate`}
             value={`${analytics?.summary.conversionRate || 0}%`}
             icon={TrendingUp}
             loading={loading}
@@ -358,8 +370,14 @@ export default function AnalyticsPage() {
                   paddingAngle={2}
                   dataKey="value"
                   nameKey="name"
-                  label={({ name, percent }) =>
-                    `${name} (${((percent || 0) * 100).toFixed(0)}%)`
+                  label={({
+                    name,
+                    percent,
+                  }: {
+                    name?: string;
+                    percent?: number;
+                  }) =>
+                    `${(name && outcomeLabels[name]) || name || "Unknown"} (${((percent || 0) * 100).toFixed(0)}%)`
                   }
                   labelLine={{ stroke: "#71717a" }}
                 >
@@ -382,7 +400,7 @@ export default function AnalyticsPage() {
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Bookings vs Calls */}
           <ChartCard
-            title="Calls vs Bookings"
+            title={`Calls vs ${transactionPluralLabel}`}
             description="Conversion over time"
             loading={loading}
           >
@@ -410,7 +428,7 @@ export default function AnalyticsPage() {
                 <Bar
                   dataKey="bookings"
                   fill={CHART_COLORS.secondary}
-                  name="Bookings"
+                  name={transactionPluralLabel}
                   radius={[4, 4, 0, 0]}
                 />
               </BarChart>
@@ -478,7 +496,7 @@ export default function AnalyticsPage() {
               </div>
               <div className="rounded-lg border border-border bg-card p-4">
                 <div className="text-sm text-muted-foreground">
-                  Bookings This Week
+                  {transactionPluralLabel} This Week
                 </div>
                 <div className="mt-1 text-xl font-semibold text-foreground">
                   {stats.bookings.week}

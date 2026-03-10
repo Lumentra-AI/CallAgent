@@ -4,7 +4,8 @@ import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useIndustry } from "@/context/IndustryContext";
-import { getTemplateConfig, getTemplateCategory } from "@/lib/templates";
+import { getTemplateConfig } from "@/lib/templates";
+import { useWorkstationData } from "@/hooks/useWorkstationData";
 import { TodayPanel, type ScheduleItem } from "./TodayPanel";
 import { QuickActions } from "./QuickActions";
 import { ActivityFeed, type Activity } from "./ActivityFeed";
@@ -14,9 +15,7 @@ import { WaitingRoom } from "./WaitingRoom";
 import { ProviderAvailability } from "./ProviderAvailability";
 import { RoomGrid } from "./RoomGrid";
 import { VIPAlerts } from "./VIPAlerts";
-import { ClinicWorkstation } from "@/components/templates/clinic";
-import { HotelWorkstation } from "@/components/templates/hotel";
-import { Phone, Calendar, FileText, Edit } from "lucide-react";
+import { Phone, Calendar, FileText, Edit, Loader2 } from "lucide-react";
 
 interface WorkstationViewProps {
   className?: string;
@@ -38,10 +37,21 @@ export function WorkstationView({ className }: WorkstationViewProps) {
 
   // Get template configuration based on industry
   const templateConfig = useMemo(() => getTemplateConfig(industry), [industry]);
-  const templateCategory = useMemo(
-    () => getTemplateCategory(industry),
-    [industry],
-  );
+
+  // Fetch real data from API
+  const {
+    todayBookings,
+    recentActivity,
+    stats,
+    rooms,
+    staffResources,
+    waitingPatients,
+    vipAlerts,
+    primaryMetricValue,
+    isLoading,
+    error,
+    refetch,
+  } = useWorkstationData(tenant?.timezone);
 
   // Handle item selection from schedule - must be declared before early returns
   const handleScheduleItemClick = useCallback((item: ScheduleItem) => {
@@ -68,18 +78,6 @@ export function WorkstationView({ className }: WorkstationViewProps) {
     setSelectedItem(null);
   }, []);
 
-  // Render specialized templates for supported industries
-  if (templateCategory === "healthcare") {
-    return <ClinicWorkstation className={className} />;
-  }
-
-  if (
-    templateCategory === "hospitality" &&
-    (industry === "hotel" || industry === "motel")
-  ) {
-    return <HotelWorkstation className={className} />;
-  }
-
   // Render widget based on type
   const renderWidget = (widgetConfig: {
     type: string;
@@ -104,6 +102,7 @@ export function WorkstationView({ className }: WorkstationViewProps) {
           <TodayPanel
             key={widgetConfig.type}
             title={widgetConfig.title}
+            items={todayBookings}
             onItemClick={handleScheduleItemClick}
             onCallClick={handleCallClick}
             className={sizeClass}
@@ -123,6 +122,7 @@ export function WorkstationView({ className }: WorkstationViewProps) {
           <ActivityFeed
             key={widgetConfig.type}
             title={widgetConfig.title}
+            activities={recentActivity}
             onActivityClick={handleActivityClick}
             className={sizeClass}
           />
@@ -132,6 +132,7 @@ export function WorkstationView({ className }: WorkstationViewProps) {
           <StatsSummary
             key={widgetConfig.type}
             title={widgetConfig.title}
+            stats={stats}
             className={sizeClass}
           />
         );
@@ -140,6 +141,7 @@ export function WorkstationView({ className }: WorkstationViewProps) {
           <ActivityFeed
             key={widgetConfig.type}
             title={widgetConfig.title}
+            activities={recentActivity}
             maxItems={5}
             className={sizeClass}
           />
@@ -150,6 +152,7 @@ export function WorkstationView({ className }: WorkstationViewProps) {
           <RoomGrid
             key={widgetConfig.type}
             title={widgetConfig.title}
+            rooms={rooms}
             className={sizeClass}
           />
         );
@@ -158,6 +161,7 @@ export function WorkstationView({ className }: WorkstationViewProps) {
           <WaitingRoom
             key={widgetConfig.type}
             title={widgetConfig.title}
+            patients={waitingPatients}
             className={sizeClass}
           />
         );
@@ -166,6 +170,7 @@ export function WorkstationView({ className }: WorkstationViewProps) {
           <ProviderAvailability
             key={widgetConfig.type}
             title={widgetConfig.title}
+            providers={staffResources}
             className={sizeClass}
           />
         );
@@ -174,6 +179,7 @@ export function WorkstationView({ className }: WorkstationViewProps) {
           <VIPAlerts
             key={widgetConfig.type}
             title={widgetConfig.title}
+            alerts={vipAlerts}
             className={sizeClass}
           />
         );
@@ -248,17 +254,52 @@ export function WorkstationView({ className }: WorkstationViewProps) {
           <p className="text-xs text-muted-foreground uppercase tracking-wider">
             {templateConfig.primaryMetric.label}
           </p>
-          <p className="text-3xl font-bold text-foreground tabular-nums">12</p>
+          <p className="text-3xl font-bold text-foreground tabular-nums">
+            {isLoading ? (
+              <Loader2 className="inline h-6 w-6 animate-spin text-muted-foreground" />
+            ) : (
+              primaryMetricValue
+            )}
+          </p>
         </div>
       </div>
 
-      {/* Widget Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {templateConfig.widgets
-          .filter((w) => w.enabled)
-          .sort((a, b) => a.order - b.order)
-          .map(renderWidget)}
-      </div>
+      {/* Error banner */}
+      {error && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3 flex items-center justify-between">
+          <p className="text-sm text-red-500">{error}</p>
+          <button
+            onClick={refetch}
+            className="text-xs font-medium text-red-500 hover:text-red-400 underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Loading state */}
+      {isLoading && !error && (
+        <div className="flex items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              Loading workstation data...
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Widget Grid -- render even while loading after first fetch for smooth updates */}
+      {(!isLoading ||
+        todayBookings.length > 0 ||
+        recentActivity.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {templateConfig.widgets
+            .filter((w) => w.enabled)
+            .sort((a, b) => a.order - b.order)
+            .map(renderWidget)}
+        </div>
+      )}
 
       {/* Context Panel */}
       <ContextPanel

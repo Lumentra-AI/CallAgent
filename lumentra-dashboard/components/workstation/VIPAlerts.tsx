@@ -50,60 +50,6 @@ interface VIPAlertsProps {
   maxAlerts?: number;
 }
 
-// Mock VIP alerts
-const MOCK_ALERTS: VIPAlert[] = [
-  {
-    id: "a1",
-    type: "arrival",
-    priority: "high",
-    guestName: "Mr. Robert Chen",
-    roomNumber: "302",
-    message: "VIP Executive arriving at 2:00 PM - Penthouse Suite",
-    time: new Date(Date.now() + 1000 * 60 * 60 * 2),
-    isRead: false,
-  },
-  {
-    id: "a2",
-    type: "birthday",
-    priority: "medium",
-    guestName: "Sarah Johnson",
-    roomNumber: "105",
-    message: "Birthday celebration - Complimentary cake ordered",
-    time: new Date(Date.now() - 1000 * 60 * 30),
-    isRead: false,
-  },
-  {
-    id: "a3",
-    type: "special_request",
-    priority: "high",
-    guestName: "Dr. Emily Davis",
-    roomNumber: "203",
-    message: "Requested late checkout at 3:00 PM - Suite Guest",
-    time: new Date(Date.now() - 1000 * 60 * 45),
-    isRead: false,
-  },
-  {
-    id: "a4",
-    type: "departure",
-    priority: "medium",
-    guestName: "James Wilson",
-    roomNumber: "206",
-    message: "VIP checkout at 11:00 AM - Ensure farewell amenities",
-    time: new Date(Date.now() - 1000 * 60 * 15),
-    isRead: true,
-  },
-  {
-    id: "a5",
-    type: "anniversary",
-    priority: "low",
-    guestName: "The Martinez Family",
-    roomNumber: "301",
-    message: "10th anniversary - Champagne and flowers delivered",
-    time: new Date(Date.now() - 1000 * 60 * 60),
-    isRead: true,
-  },
-];
-
 const ALERT_TYPE_CONFIG = {
   arrival: {
     icon: LogIn,
@@ -165,7 +111,7 @@ const PRIORITY_CONFIG = {
 };
 
 export function VIPAlerts({
-  alerts = MOCK_ALERTS,
+  alerts = [],
   title = "VIP Alerts",
   onAlertClick,
   onDismiss,

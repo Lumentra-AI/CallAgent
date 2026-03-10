@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
+import { getIndustryHoursDefaults } from "@/lib/onboarding-defaults";
+import type { IndustryType } from "@/types";
 
 const DAYS = [
   { key: "monday", label: "Monday", short: "Mon" },
@@ -125,6 +127,24 @@ export function HoursStep() {
       });
     }
   }, [timezone, dispatch]);
+
+  // Apply industry-specific hours defaults on first load
+  const industry = state.businessData.industry;
+  const hasAppliedDefaults = useRef(false);
+
+  useEffect(() => {
+    if (!industry || hasAppliedDefaults.current) return;
+    const defaults = getIndustryHoursDefaults(industry as IndustryType);
+    if (!defaults) return;
+    hasAppliedDefaults.current = true;
+    dispatch({
+      type: "SET_HOURS_DATA",
+      payload: {
+        schedule: defaults.schedule,
+        sameEveryDay: defaults.sameEveryDay,
+      },
+    });
+  }, [industry, dispatch]);
 
   const canContinue = timezone !== "";
 

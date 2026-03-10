@@ -27,41 +27,6 @@ interface WaitingRoomProps {
   className?: string;
 }
 
-// Mock waiting room data
-const MOCK_PATIENTS: WaitingPatient[] = [
-  {
-    id: "w1",
-    name: "Sarah Johnson",
-    appointmentTime: "10:30 AM",
-    checkedInAt: new Date(Date.now() - 1000 * 60 * 12),
-    provider: "Dr. Williams",
-    type: "Follow-up",
-    priority: "vip",
-    status: "waiting",
-  },
-  {
-    id: "w2",
-    name: "Michael Brown",
-    appointmentTime: "11:00 AM",
-    checkedInAt: new Date(Date.now() - 1000 * 60 * 5),
-    provider: "Dr. Chen",
-    type: "New Patient",
-    priority: "normal",
-    status: "ready",
-    room: "Room 3",
-  },
-  {
-    id: "w3",
-    name: "Emily Davis",
-    appointmentTime: "11:15 AM",
-    checkedInAt: new Date(Date.now() - 1000 * 60 * 2),
-    provider: "Dr. Williams",
-    type: "Check-up",
-    priority: "urgent",
-    status: "waiting",
-  },
-];
-
 const PRIORITY_CONFIG = {
   normal: {
     color: "text-muted-foreground",
@@ -105,7 +70,7 @@ const STATUS_CONFIG = {
 };
 
 export function WaitingRoom({
-  patients = MOCK_PATIENTS,
+  patients = [],
   title = "Waiting Room",
   onPatientClick,
   onReadyClick,
