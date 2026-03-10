@@ -19,6 +19,7 @@ import {
   Sparkles,
   Zap,
   Megaphone,
+  UsersRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -75,6 +76,15 @@ const ALL_TABS: TabConfig[] = [
     requiredPermission: "manage_integrations",
     category: "business",
     path: "/settings/integrations",
+  },
+  {
+    id: "team" as SettingsTab,
+    label: "Team",
+    icon: UsersRound,
+    description: "Manage team access and permissions",
+    requiredPermission: "manage_staff",
+    category: "business",
+    path: "/settings/team",
   },
   {
     id: "agent",
