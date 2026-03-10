@@ -51,7 +51,7 @@ export function WorkstationView({ className }: WorkstationViewProps) {
     isLoading,
     error,
     refetch,
-  } = useWorkstationData();
+  } = useWorkstationData(tenant?.timezone);
 
   // Handle item selection from schedule - must be declared before early returns
   const handleScheduleItemClick = useCallback((item: ScheduleItem) => {

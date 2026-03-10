@@ -11,6 +11,32 @@ import type { WaitingPatient } from "@/components/workstation/WaitingRoom";
 import type { VIPAlert } from "@/components/workstation/VIPAlerts";
 
 // ============================================================================
+// TIMEZONE HELPER
+// ============================================================================
+
+/**
+ * Get current hours and minutes in a given IANA timezone.
+ * Falls back to browser local time if timezone is invalid.
+ */
+function getNowMinutesInTz(timezone?: string): number {
+  const now = new Date();
+  if (!timezone) return now.getHours() * 60 + now.getMinutes();
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hour: "numeric",
+      minute: "numeric",
+      hour12: false,
+    }).formatToParts(now);
+    const h = parseInt(parts.find((p) => p.type === "hour")?.value || "0");
+    const m = parseInt(parts.find((p) => p.type === "minute")?.value || "0");
+    return h * 60 + m;
+  } catch {
+    return now.getHours() * 60 + now.getMinutes();
+  }
+}
+
+// ============================================================================
 // TRANSFORM FUNCTIONS
 // ============================================================================
 
@@ -124,9 +150,12 @@ function resourceToProvider(r: Resource): Provider {
  * - Past appointment time + not completed = "waiting"
  * - Within next 15 min = "ready" (arriving soon)
  */
-function deriveWaitingPatients(bookings: Booking[]): WaitingPatient[] {
+function deriveWaitingPatients(
+  bookings: Booking[],
+  timezone?: string,
+): WaitingPatient[] {
   const now = new Date();
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const nowMinutes = getNowMinutesInTz(timezone);
   const result: WaitingPatient[] = [];
 
   for (const b of bookings) {
@@ -176,10 +205,14 @@ function deriveWaitingPatients(bookings: Booking[]): WaitingPatient[] {
  * - Bookings with notes = special request alerts
  * - Missed calls = general alerts
  */
-function deriveVIPAlerts(bookings: Booking[], calls: RecentCall[]): VIPAlert[] {
+function deriveVIPAlerts(
+  bookings: Booking[],
+  calls: RecentCall[],
+  timezone?: string,
+): VIPAlert[] {
   const alerts: VIPAlert[] = [];
   const now = new Date();
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const nowMinutes = getNowMinutesInTz(timezone);
 
   // Upcoming bookings as arrival alerts
   for (const b of bookings) {
@@ -267,7 +300,7 @@ export interface WorkstationData {
 // HOOK
 // ============================================================================
 
-export function useWorkstationData(): WorkstationData {
+export function useWorkstationData(timezone?: string): WorkstationData {
   const [todayBookings, setTodayBookings] = useState<ScheduleItem[]>([]);
   const [recentActivity, setRecentActivity] = useState<Activity[]>([]);
   const [stats, setStats] = useState<WorkstationStat[]>([]);
@@ -362,10 +395,10 @@ export function useWorkstationData(): WorkstationData {
       }
 
       // Derive waiting patients from today's bookings
-      setWaitingPatients(deriveWaitingPatients(rawBookings));
+      setWaitingPatients(deriveWaitingPatients(rawBookings, timezone));
 
       // Derive VIP alerts from bookings + missed calls
-      setVipAlerts(deriveVIPAlerts(rawBookings, rawCalls));
+      setVipAlerts(deriveVIPAlerts(rawBookings, rawCalls, timezone));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load workstation data",
@@ -373,7 +406,7 @@ export function useWorkstationData(): WorkstationData {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [timezone]);
 
   useEffect(() => {
     fetchData();

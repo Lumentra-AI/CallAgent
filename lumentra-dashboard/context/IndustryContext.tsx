@@ -18,6 +18,7 @@ interface TenantInfo {
   industry: IndustryType;
   business_name: string;
   agent_name: string;
+  timezone: string;
 }
 
 interface IndustryContextValue {
@@ -84,6 +85,7 @@ export function IndustryProvider({ children }: IndustryProviderProps) {
         industry,
         business_name: currentTenant.business_name,
         agent_name: currentTenant.agent_name || "Assistant",
+        timezone: currentTenant.timezone || "America/New_York",
       }
     : null;
 
