@@ -289,6 +289,7 @@ export interface ToolExecutionContext {
   callSid: string;
   callerPhone?: string;
   escalationPhone?: string;
+  disabledFeatures?: string[];
 }
 
 export interface CheckAvailabilityArgs {

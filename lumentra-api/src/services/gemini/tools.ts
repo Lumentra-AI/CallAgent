@@ -722,12 +722,34 @@ export async function executeQueueCallback(
   }
 }
 
+// Maps tool names to their required feature key for gating
+const TOOL_FEATURE_MAP: Record<string, string> = {
+  check_availability: "calendar",
+  create_booking: "calendar",
+  create_order: "calendar",
+  transfer_to_human: "escalations",
+  prepare_transfer: "escalations",
+  queue_callback: "escalations",
+  update_transfer_status: "escalations",
+};
+
 // Tool executor - routes tool calls to the right function
 export async function executeTool(
   toolName: string,
   args: Record<string, unknown>,
   context: ToolExecutionContext,
 ): Promise<unknown> {
+  // Feature gate: refuse to execute tools for disabled features
+  if (context.disabledFeatures?.length) {
+    const requiredFeature = TOOL_FEATURE_MAP[toolName];
+    if (requiredFeature && context.disabledFeatures.includes(requiredFeature)) {
+      console.log(
+        `[TOOLS] Blocked ${toolName}: feature "${requiredFeature}" is disabled for tenant ${context.tenantId}`,
+      );
+      return { success: false, message: "This feature is not available." };
+    }
+  }
+
   switch (toolName) {
     case "check_availability":
       return executeCheckAvailability(

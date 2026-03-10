@@ -24,6 +24,10 @@ import { rateLimit } from "../middleware/rate-limit.js";
 import { logActivity } from "../services/audit/logger.js";
 import type { ToolExecutionContext } from "../types/voice.js";
 import {
+  resolveFeatures,
+  ALL_FEATURES,
+} from "../services/features/feature-resolver.js";
+import {
   chatWithFallback,
   sendToolResults,
   getProviderStatus,
@@ -172,6 +176,13 @@ chatRoutes.post("/", async (c) => {
       await updateVisitorInfo(session_id, visitor_info);
     }
 
+    // Resolve features and determine which are disabled
+    const tenantFeatures = await resolveFeatures(
+      tenant.subscription_tier || "starter",
+      tenant_id,
+    );
+    const disabledFeatures = ALL_FEATURES.filter((f) => !tenantFeatures.has(f));
+
     // Build system prompt - use Lumentra marketing prompt if in marketing mode
     const systemPrompt = marketing_mode
       ? LUMENTRA_MARKETING_PROMPT
@@ -184,7 +195,7 @@ chatRoutes.post("/", async (c) => {
             verbosity: "balanced",
             empathy: "medium",
           },
-          { timezone },
+          { timezone, disabledFeatures },
         );
 
     // Get conversation history
@@ -197,6 +208,7 @@ chatRoutes.post("/", async (c) => {
       callSid: session_id,
       callerPhone: visitor_info?.phone || currentVisitorInfo?.phone,
       sessionId: session_id,
+      disabledFeatures,
     };
 
     // Chat with multi-provider fallback

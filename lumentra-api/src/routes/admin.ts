@@ -686,6 +686,50 @@ adminRoutes.get("/tenants/:id/feature-overrides", async (c) => {
 });
 
 /**
+ * GET /admin/tenants/:id/activity
+ * View audit trail for a specific tenant (platform admin only)
+ */
+adminRoutes.get("/tenants/:id/activity", async (c) => {
+  const id = c.req.param("id");
+  const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 200);
+  const offset = parseInt(c.req.query("offset") || "0", 10);
+
+  try {
+    const countResult = await queryOne<{ count: string }>(
+      `SELECT COUNT(*) as count FROM audit_logs WHERE tenant_id = $1`,
+      [id],
+    );
+    const total = parseInt(countResult?.count || "0", 10);
+
+    const logs = await queryAll<{
+      id: string;
+      user_id: string | null;
+      action: string;
+      resource_type: string;
+      resource_id: string | null;
+      old_values: Record<string, unknown> | null;
+      new_values: Record<string, unknown> | null;
+      created_at: string;
+      email?: string | null;
+    }>(
+      `SELECT a.id, a.user_id, a.action, a.resource_type, a.resource_id,
+              a.old_values, a.new_values, a.created_at, u.email
+       FROM audit_logs a
+       LEFT JOIN auth.users u ON u.id::text = a.user_id
+       WHERE a.tenant_id = $1
+       ORDER BY a.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [id, limit, offset],
+    );
+
+    return c.json({ logs: logs || [], total, limit, offset });
+  } catch (error) {
+    console.error("[ADMIN] Error fetching tenant activity:", error);
+    return c.json({ error: "Failed to fetch activity" }, 500);
+  }
+});
+
+/**
  * DELETE /admin/tenants/:id
  * Soft-delete a tenant (sets is_active=false, status=suspended)
  */

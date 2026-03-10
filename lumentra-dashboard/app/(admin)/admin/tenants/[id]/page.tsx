@@ -5,12 +5,16 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Calendar,
+  ChevronDown,
+  ChevronRight,
   Globe,
+  History,
   Loader2,
   Mail,
   Mic,
   Phone,
   RefreshCw,
+  Shield,
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,9 +27,14 @@ import {
   updateTenantStatus,
   updateTenantTier,
   updateTenantFeatures,
+  fetchFeatureOverrides,
+  updateFeatureOverrides,
+  fetchTenantActivity,
   type AdminTenant,
   type AdminTenantMember,
+  type AuditLogEntry,
   type CallStats,
+  type FeatureOverride,
   type RecentCall,
   type PhoneConfig,
   type PortRequest,
@@ -42,9 +51,11 @@ const TABS = [
   { key: "overview", label: "Overview" },
   { key: "configuration", label: "Configuration" },
   { key: "features", label: "Features" },
+  { key: "page_access", label: "Page Access" },
   { key: "members", label: "Members" },
   { key: "calls", label: "Calls" },
   { key: "phone", label: "Phone" },
+  { key: "activity", label: "Activity" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -135,6 +146,80 @@ const FEATURE_LABELS: Record<string, string> = {
   transcription_enabled: "Transcription",
 };
 
+// Page access feature keys and labels
+const PAGE_FEATURE_KEYS = [
+  "dashboard",
+  "workstation",
+  "calls",
+  "analytics",
+  "calendar",
+  "contacts",
+  "deals",
+  "tasks",
+  "chats",
+  "escalations",
+  "pending",
+  "resources",
+  "notifications",
+] as const;
+
+const PAGE_FEATURE_LABELS: Record<string, string> = {
+  dashboard: "Dashboard",
+  workstation: "Workstation",
+  calls: "Calls",
+  analytics: "Analytics",
+  calendar: "Calendar",
+  contacts: "Contacts",
+  deals: "Deals",
+  tasks: "Tasks",
+  chats: "Chats",
+  escalations: "Escalations",
+  pending: "Pending Bookings",
+  resources: "Resources",
+  notifications: "Notifications",
+};
+
+const PAGE_TIER_DEFAULTS: Record<string, string[]> = {
+  starter: [
+    "dashboard",
+    "workstation",
+    "calls",
+    "contacts",
+    "calendar",
+    "escalations",
+  ],
+  professional: [
+    "dashboard",
+    "workstation",
+    "calls",
+    "contacts",
+    "calendar",
+    "escalations",
+    "analytics",
+    "deals",
+    "tasks",
+    "chats",
+    "resources",
+    "notifications",
+    "pending",
+  ],
+  enterprise: [
+    "dashboard",
+    "workstation",
+    "calls",
+    "contacts",
+    "calendar",
+    "escalations",
+    "analytics",
+    "deals",
+    "tasks",
+    "chats",
+    "resources",
+    "notifications",
+    "pending",
+  ],
+};
+
 // ============================================================================
 // Main Page Component
 // ============================================================================
@@ -161,6 +246,23 @@ export default function AdminTenantDetailPage() {
 
   // Feature toggle state
   const [savingFeatures, setSavingFeatures] = useState(false);
+
+  // Page access state
+  const [pageOverrides, setPageOverrides] = useState<FeatureOverride[]>([]);
+  const [pageOverridesLoading, setPageOverridesLoading] = useState(false);
+  const [pageOverridesError, setPageOverridesError] = useState<string | null>(
+    null,
+  );
+  const [savingPageOverrides, setSavingPageOverrides] = useState(false);
+
+  // Activity state
+  const [activityLogs, setActivityLogs] = useState<AuditLogEntry[]>([]);
+  const [activityTotal, setActivityTotal] = useState(0);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const [activityOffset, setActivityOffset] = useState(0);
+  const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
+  const ACTIVITY_PAGE_SIZE = 25;
 
   const loadTenant = useCallback(async () => {
     if (!tenantId) return;
@@ -252,6 +354,129 @@ export default function AdminTenantDetailPage() {
       setSavingFeatures(false);
     }
   }, [tenant, loadTenant]);
+
+  // Page access: load overrides when tab is selected
+  const loadPageOverrides = useCallback(async () => {
+    if (!tenantId) return;
+    setPageOverridesLoading(true);
+    setPageOverridesError(null);
+    try {
+      const result = await fetchFeatureOverrides(tenantId);
+      setPageOverrides(result.overrides);
+    } catch (err) {
+      setPageOverridesError(
+        err instanceof Error ? err.message : "Failed to load page overrides",
+      );
+    } finally {
+      setPageOverridesLoading(false);
+    }
+  }, [tenantId]);
+
+  // Page access: toggle a page feature
+  const handlePageOverrideToggle = useCallback(
+    async (featureKey: string, enabled: boolean) => {
+      if (!tenant) return;
+
+      // Build full overrides map from current state
+      const overridesMap: Record<string, boolean> = {};
+      for (const ov of pageOverrides) {
+        overridesMap[ov.feature_key] = ov.enabled;
+      }
+      overridesMap[featureKey] = enabled;
+
+      // Optimistic update
+      setPageOverrides((prev) => {
+        const existing = prev.find((o) => o.feature_key === featureKey);
+        if (existing) {
+          return prev.map((o) =>
+            o.feature_key === featureKey ? { ...o, enabled } : o,
+          );
+        }
+        return [...prev, { feature_key: featureKey, enabled }];
+      });
+
+      setSavingPageOverrides(true);
+      try {
+        const result = await updateFeatureOverrides(tenant.id, overridesMap);
+        setPageOverrides(result.overrides);
+      } catch {
+        // Revert on error
+        await loadPageOverrides();
+      } finally {
+        setSavingPageOverrides(false);
+      }
+    },
+    [tenant, pageOverrides, loadPageOverrides],
+  );
+
+  // Page access: clear all overrides (reset to tier defaults)
+  const handleClearPageOverrides = useCallback(async () => {
+    if (!tenant) return;
+    setSavingPageOverrides(true);
+    try {
+      const result = await updateFeatureOverrides(tenant.id, {});
+      setPageOverrides(result.overrides);
+    } catch {
+      await loadPageOverrides();
+    } finally {
+      setSavingPageOverrides(false);
+    }
+  }, [tenant, loadPageOverrides]);
+
+  // Activity: load logs
+  const loadActivityLogs = useCallback(
+    async (offset: number = 0) => {
+      if (!tenantId) return;
+      setActivityLoading(true);
+      setActivityError(null);
+      try {
+        const result = await fetchTenantActivity(tenantId, {
+          limit: ACTIVITY_PAGE_SIZE,
+          offset,
+        });
+        if (offset === 0) {
+          setActivityLogs(result.logs);
+        } else {
+          setActivityLogs((prev) => [...prev, ...result.logs]);
+        }
+        setActivityTotal(result.total);
+        setActivityOffset(offset);
+      } catch (err) {
+        setActivityError(
+          err instanceof Error ? err.message : "Failed to load activity",
+        );
+      } finally {
+        setActivityLoading(false);
+      }
+    },
+    [tenantId],
+  );
+
+  // Load tab-specific data when switching tabs
+  useEffect(() => {
+    if (
+      activeTab === "page_access" &&
+      pageOverrides.length === 0 &&
+      !pageOverridesLoading
+    ) {
+      void loadPageOverrides();
+    }
+    if (
+      activeTab === "activity" &&
+      activityLogs.length === 0 &&
+      !activityLoading
+    ) {
+      void loadActivityLogs(0);
+    }
+  }, [
+    activeTab,
+    pageOverrides.length,
+    pageOverridesLoading,
+    loadPageOverrides,
+    activityLogs.length,
+    activityLoading,
+    loadActivityLogs,
+  ]);
 
   // ============================================================================
   // Loading / Error states
@@ -818,6 +1043,273 @@ export default function AdminTenantDetailPage() {
     );
   }
 
+  function renderPageAccessTab() {
+    if (!tenant) return null;
+
+    const tierDefaults = PAGE_TIER_DEFAULTS[tenant.subscription_tier] || [];
+
+    // Build overrides lookup
+    const overridesMap = new Map<string, boolean>();
+    for (const ov of pageOverrides) {
+      overridesMap.set(ov.feature_key, ov.enabled);
+    }
+
+    if (pageOverridesLoading && pageOverrides.length === 0) {
+      return (
+        <div className="flex items-center justify-center py-16">
+          <div className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-5 py-4 text-sm text-zinc-600 shadow-sm">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Loading page access settings...</span>
+          </div>
+        </div>
+      );
+    }
+
+    if (pageOverridesError) {
+      return (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+          <p className="text-sm text-red-600">{pageOverridesError}</p>
+          <button
+            type="button"
+            onClick={() => void loadPageOverrides()}
+            className="mt-3 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-600 transition hover:bg-zinc-50"
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+
+    const hasOverrides = overridesMap.size > 0;
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-zinc-400" />
+              <h3 className="text-sm font-semibold text-zinc-900">
+                Page Access
+              </h3>
+            </div>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              Control which dashboard pages are visible for this tenant.
+              Overrides apply on top of the{" "}
+              <span className="font-medium text-zinc-700">
+                {tenant.subscription_tier}
+              </span>{" "}
+              tier defaults.
+            </p>
+          </div>
+          {hasOverrides && (
+            <button
+              type="button"
+              onClick={handleClearPageOverrides}
+              disabled={savingPageOverrides}
+              className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
+            >
+              {savingPageOverrides && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              )}
+              Clear All Overrides
+            </button>
+          )}
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {PAGE_FEATURE_KEYS.map((key) => {
+            const label = PAGE_FEATURE_LABELS[key];
+            const tierDefault = tierDefaults.includes(key);
+            const hasOverride = overridesMap.has(key);
+            const effectiveEnabled = hasOverride
+              ? overridesMap.get(key)!
+              : tierDefault;
+            const isOverride =
+              hasOverride && overridesMap.get(key) !== tierDefault;
+
+            return (
+              <div
+                key={key}
+                className={cn(
+                  "flex items-center justify-between rounded-2xl border p-4",
+                  isOverride
+                    ? "border-blue-200 bg-blue-50"
+                    : "border-zinc-200 bg-white",
+                )}
+              >
+                <div>
+                  <p className="text-sm font-medium text-zinc-900">{label}</p>
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <span className="text-xs text-zinc-500">
+                      Tier: {tierDefault ? "included" : "not included"}
+                    </span>
+                    {isOverride && (
+                      <span className="inline-flex items-center rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-blue-700">
+                        Override
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={effectiveEnabled}
+                  aria-label={`Toggle ${label}`}
+                  onClick={() =>
+                    handlePageOverrideToggle(key, !effectiveEnabled)
+                  }
+                  disabled={savingPageOverrides}
+                  className={cn(
+                    "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200",
+                    effectiveEnabled ? "bg-emerald-500" : "bg-zinc-300",
+                    savingPageOverrides && "opacity-50",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200",
+                      effectiveEnabled ? "translate-x-5" : "translate-x-0",
+                    )}
+                  />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderActivityTab() {
+    if (activityLoading && activityLogs.length === 0) {
+      return (
+        <div className="flex items-center justify-center py-16">
+          <div className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-5 py-4 text-sm text-zinc-600 shadow-sm">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Loading activity log...</span>
+          </div>
+        </div>
+      );
+    }
+
+    if (activityError) {
+      return (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+          <p className="text-sm text-red-600">{activityError}</p>
+          <button
+            type="button"
+            onClick={() => void loadActivityLogs(0)}
+            className="mt-3 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-600 transition hover:bg-zinc-50"
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+
+    const hasMore = activityLogs.length < activityTotal;
+
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-zinc-400" />
+            <h3 className="text-sm font-semibold text-zinc-900">
+              Activity Log
+            </h3>
+            {activityTotal > 0 && (
+              <span className="text-xs text-zinc-500">
+                ({activityTotal} total)
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadActivityLogs(0)}
+            disabled={activityLoading}
+            className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
+          >
+            {activityLoading && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            )}
+            Refresh
+          </button>
+        </div>
+
+        {activityLogs.length === 0 ? (
+          <div className="rounded-2xl border border-zinc-200 bg-white px-6 py-12 text-center">
+            <p className="text-sm text-zinc-500">No activity recorded yet.</p>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto rounded-2xl border border-zinc-200">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="bg-zinc-50 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                    <th className="w-8 px-3 py-3" />
+                    <th className="px-4 py-3">Date</th>
+                    <th className="px-4 py-3">User</th>
+                    <th className="px-4 py-3">Action</th>
+                    <th className="px-4 py-3">Resource</th>
+                    <th className="px-4 py-3">Resource ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activityLogs.map((log) => {
+                    const isExpanded = expandedLogIds.has(log.id);
+                    const hasDetails = !!(
+                      (log.old_values &&
+                        Object.keys(log.old_values).length > 0) ||
+                      (log.new_values && Object.keys(log.new_values).length > 0)
+                    );
+
+                    return (
+                      <ActivityLogRow
+                        key={log.id}
+                        log={log}
+                        isExpanded={isExpanded}
+                        hasDetails={hasDetails}
+                        onToggle={() => {
+                          setExpandedLogIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(log.id)) {
+                              next.delete(log.id);
+                            } else {
+                              next.add(log.id);
+                            }
+                            return next;
+                          });
+                        }}
+                      />
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {hasMore && (
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  onClick={() =>
+                    void loadActivityLogs(activityOffset + ACTIVITY_PAGE_SIZE)
+                  }
+                  disabled={activityLoading}
+                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  {activityLoading && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  )}
+                  Load more ({activityLogs.length} of {activityTotal})
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
   function renderPhoneTab() {
     if (!tenant) return null;
 
@@ -912,9 +1404,11 @@ export default function AdminTenantDetailPage() {
     overview: renderOverviewTab,
     configuration: renderConfigurationTab,
     features: renderFeaturesTab,
+    page_access: renderPageAccessTab,
     members: renderMembersTab,
     calls: renderCallsTab,
     phone: renderPhoneTab,
+    activity: renderActivityTab,
   };
 
   return (
@@ -1034,5 +1528,105 @@ function GreetingBlock({
         {text || "Not configured"}
       </p>
     </div>
+  );
+}
+
+function formatActionLabel(action: string): string {
+  return action.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatResourceType(type: string): string {
+  return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function ActivityLogRow({
+  log,
+  isExpanded,
+  hasDetails,
+  onToggle,
+}: {
+  log: AuditLogEntry;
+  isExpanded: boolean;
+  hasDetails: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <>
+      <tr
+        className={cn(
+          "border-t border-zinc-100 text-zinc-700",
+          hasDetails && "cursor-pointer hover:bg-zinc-50",
+        )}
+        onClick={hasDetails ? onToggle : undefined}
+      >
+        <td className="px-3 py-3">
+          {hasDetails && (
+            <button
+              type="button"
+              className="text-zinc-400 hover:text-zinc-600"
+              aria-label={isExpanded ? "Collapse details" : "Expand details"}
+              tabIndex={-1}
+            >
+              {isExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+            </button>
+          )}
+        </td>
+        <td className="whitespace-nowrap px-4 py-3 text-zinc-500">
+          {new Date(log.created_at).toLocaleString("en-US", {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })}
+        </td>
+        <td className="px-4 py-3 text-zinc-600">
+          {log.email ||
+            (log.user_id ? log.user_id.slice(0, 8) + "..." : "System")}
+        </td>
+        <td className="px-4 py-3">
+          <span className="inline-flex items-center rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700">
+            {formatActionLabel(log.action)}
+          </span>
+        </td>
+        <td className="px-4 py-3 text-zinc-600">
+          {formatResourceType(log.resource_type)}
+        </td>
+        <td className="px-4 py-3 font-mono text-xs text-zinc-400">
+          {log.resource_id ? log.resource_id.slice(0, 8) + "..." : "--"}
+        </td>
+      </tr>
+      {isExpanded && hasDetails && (
+        <tr className="border-t border-zinc-50">
+          <td colSpan={6} className="bg-zinc-50 px-6 py-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              {log.old_values && Object.keys(log.old_values).length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                    Previous Values
+                  </p>
+                  <pre className="overflow-x-auto rounded-xl border border-zinc-200 bg-white p-3 text-xs text-zinc-700">
+                    {JSON.stringify(log.old_values, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {log.new_values && Object.keys(log.new_values).length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                    New Values
+                  </p>
+                  <pre className="overflow-x-auto rounded-xl border border-zinc-200 bg-white p-3 text-xs text-zinc-700">
+                    {JSON.stringify(log.new_values, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }

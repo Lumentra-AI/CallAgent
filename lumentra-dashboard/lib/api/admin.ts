@@ -492,3 +492,69 @@ export function fetchPortRequestStats(): Promise<PortRequestStats> {
 export function fetchErrorStats(): Promise<ErrorStats> {
   return get<ErrorStats>("/admin/monitoring/errors");
 }
+
+// ============================================================================
+// Feature Overrides (Page Access) Types & Functions
+// ============================================================================
+
+export interface FeatureOverride {
+  feature_key: string;
+  enabled: boolean;
+  updated_at?: string;
+}
+
+/**
+ * GET /admin/tenants/:id/feature-overrides - Get page access overrides
+ */
+export function fetchFeatureOverrides(
+  tenantId: string,
+): Promise<{ overrides: FeatureOverride[] }> {
+  return get<{ overrides: FeatureOverride[] }>(
+    `/admin/tenants/${tenantId}/feature-overrides`,
+  );
+}
+
+/**
+ * PUT /admin/tenants/:id/feature-overrides - Update page access overrides
+ */
+export function updateFeatureOverrides(
+  tenantId: string,
+  overrides: Record<string, boolean>,
+): Promise<{ success: boolean; overrides: FeatureOverride[] }> {
+  return put<{ success: boolean; overrides: FeatureOverride[] }>(
+    `/admin/tenants/${tenantId}/feature-overrides`,
+    { overrides },
+  );
+}
+
+// ============================================================================
+// Audit Log / Activity Types & Functions
+// ============================================================================
+
+export interface AuditLogEntry {
+  id: string;
+  user_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  old_values: Record<string, unknown> | null;
+  new_values: Record<string, unknown> | null;
+  created_at: string;
+  email?: string | null;
+}
+
+/**
+ * GET /admin/tenants/:id/activity - Get tenant audit log entries
+ */
+export function fetchTenantActivity(
+  tenantId: string,
+  params?: { limit?: number; offset?: number },
+): Promise<{ logs: AuditLogEntry[]; total: number }> {
+  const queryParams: Record<string, string> = {};
+  if (params?.limit) queryParams.limit = String(params.limit);
+  if (params?.offset) queryParams.offset = String(params.offset);
+  return get<{ logs: AuditLogEntry[]; total: number }>(
+    `/admin/tenants/${tenantId}/activity`,
+    Object.keys(queryParams).length > 0 ? queryParams : undefined,
+  );
+}

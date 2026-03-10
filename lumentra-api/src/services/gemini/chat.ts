@@ -4,6 +4,39 @@
 import { getIndustryConfig } from "../../config/industry-prompts.js";
 import { MASTER_VOICE_PROMPT } from "../../config/master-voice-prompt.js";
 
+// Maps feature keys to human-readable capability descriptions for the LLM
+const FEATURE_CAPABILITY_MAP: Record<string, string> = {
+  calendar: "Booking appointments or checking availability",
+  contacts: "Saving or looking up contact information",
+  deals: "Creating or managing deals or sales",
+  tasks: "Creating or managing tasks",
+  escalations: "Transferring to a human or escalating calls",
+  chats:
+    "Chat functionality (this should not appear since chat is the channel)",
+  notifications: "Sending notifications or reminders",
+};
+
+/**
+ * Build a prompt section listing capabilities the LLM must NOT offer.
+ * Returns empty string if no features are disabled.
+ */
+function buildDisabledFeaturesSection(disabledFeatures?: string[]): string {
+  if (!disabledFeatures || disabledFeatures.length === 0) return "";
+
+  const lines = disabledFeatures
+    .map((f) => FEATURE_CAPABILITY_MAP[f])
+    .filter(Boolean)
+    .map((desc) => `- ${desc}`);
+
+  if (lines.length === 0) return "";
+
+  return `
+## Disabled Features
+The following features are NOT available for this business. Do NOT offer or mention them:
+${lines.join("\n")}
+`;
+}
+
 // Build system prompt for the CHAT WIDGET (text-based, no voice/SSML)
 export function buildChatSystemPrompt(
   agentName: string,
@@ -21,6 +54,7 @@ export function buildChatSystemPrompt(
     locationCity?: string;
     customInstructions?: string;
     timezone?: string;
+    disabledFeatures?: string[];
   },
 ): string {
   const industryConfig = getIndustryConfig(industry);
@@ -130,6 +164,9 @@ ${industryConfig.bookingFlow}
 ${industryConfig.faqSection || ""}
 `;
 
+  // Add disabled features section (if any features are gated off)
+  prompt += buildDisabledFeaturesSection(options?.disabledFeatures);
+
   if (options?.customInstructions && options.customInstructions.trim()) {
     prompt += `
 ## Business-Specific Instructions
@@ -181,6 +218,7 @@ export function buildSystemPrompt(
     transferBehavior?: { type?: string; no_answer?: string };
     escalationContacts?: Array<{ name: string; role?: string | null }>;
     escalationTriggers?: string[];
+    disabledFeatures?: string[];
   },
 ): string {
   // Get industry-specific configuration
@@ -357,6 +395,9 @@ ${industryConfig.bookingFlow}
 
 ${industryConfig.faqSection || ""}
 `;
+
+  // Add disabled features section (if any features are gated off)
+  prompt += buildDisabledFeaturesSection(options?.disabledFeatures);
 
   // Add custom instructions from tenant (business-specific knowledge)
   if (options?.customInstructions && options.customInstructions.trim()) {
