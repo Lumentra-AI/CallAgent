@@ -85,7 +85,9 @@ export function IndustryProvider({ children }: IndustryProviderProps) {
         industry,
         business_name: currentTenant.business_name,
         agent_name: currentTenant.agent_name || "Assistant",
-        timezone: currentTenant.timezone || "America/New_York",
+        timezone:
+          currentTenant.timezone ||
+          Intl.DateTimeFormat().resolvedOptions().timeZone,
       }
     : null;
 
