@@ -178,6 +178,9 @@ export function buildSystemPrompt(
     customInstructions?: string;
     escalationPhone?: string;
     timezone?: string;
+    transferBehavior?: { type?: string; no_answer?: string };
+    escalationContacts?: Array<{ name: string; role?: string | null }>;
+    escalationTriggers?: string[];
   },
 ): string {
   // Get industry-specific configuration
@@ -293,12 +296,53 @@ Today's Date: ${new Date().toISOString().split("T")[0]}
     prompt += `Use these hours to answer "when are you open?" questions. If caller asks about a day/time outside these hours, let them know.\n`;
   }
 
-  // Add escalation info
-  if (options?.escalationPhone) {
-    prompt += `\nTransfer phone: ${options.escalationPhone} (use when caller asks for a human/manager)\n`;
+  // Add transfer and escalation instructions
+  const transferType = options?.transferBehavior?.type || "warm";
+  const hasContacts =
+    options?.escalationContacts && options.escalationContacts.length > 0;
+
+  prompt += `\n## Transfer & Escalation\n`;
+
+  if (hasContacts && options?.escalationPhone) {
+    // List team members by name
+    const contactList = options
+      .escalationContacts!.map((c) =>
+        c.role ? `${c.name} (${c.role})` : c.name,
+      )
+      .join(", ");
+    prompt += `Team members: ${contactList}\n`;
+
+    if (transferType === "warm") {
+      prompt += `Transfer mode: warm -- always tell the caller you'll connect them and ask them to hold.
+When the caller needs to speak with a team member:
+1. Say "Let me connect you with [name]. Please hold for just a moment."
+2. Call the transfer_to_human tool with the reason
+3. The system handles hold music and the transfer automatically\n`;
+    } else if (transferType === "cold") {
+      prompt += `Transfer mode: cold -- transfer immediately without hold.
+When the caller needs to speak with a team member:
+1. Say "I'll transfer you now."
+2. Call the transfer_to_human tool with the reason\n`;
+    } else {
+      prompt += `Transfer mode: callback -- do not transfer calls, take a message instead.
+When the caller asks for a human:
+1. Offer to take a message
+2. Get their name and message
+3. Call the queue_callback tool
+4. Confirm someone will call them back\n`;
+    }
   } else {
-    prompt += `\nNo transfer phone configured. If caller asks for a human, take a message and say someone will call back.\n`;
+    prompt += `No team members are currently available for transfer.
+If the caller asks for a human, offer to take a message and have someone call them back. Use the queue_callback tool to save their message.\n`;
   }
+
+  // Add escalation triggers
+  if (options?.escalationTriggers && options.escalationTriggers.length > 0) {
+    prompt += `\nProactively offer to transfer when the caller mentions: ${options.escalationTriggers.join(", ")}\n`;
+  }
+
+  // After-hours instruction
+  prompt += `If no team member is available when a transfer is needed, apologize and offer to take a message for callback.\n`;
 
   prompt += `
 ${industryConfig.criticalRules}

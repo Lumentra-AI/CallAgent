@@ -363,3 +363,28 @@ export interface LogNoteResult {
   success: boolean;
   message: string;
 }
+
+// Warm transfer types
+
+export interface PrepareTransferArgs {
+  reason: string;
+}
+
+export interface PrepareTransferResult {
+  contacts: Array<{ phone: string; name: string; id: string }>;
+  queue_id: string;
+  transfer_type_effective: string;
+  no_answer_behavior: string;
+}
+
+export interface QueueCallbackArgs {
+  message: string;
+  preferred_time?: string;
+  caller_name?: string;
+}
+
+export interface QueueCallbackResult {
+  success: boolean;
+  message: string;
+  queue_id?: string;
+}
