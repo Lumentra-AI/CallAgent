@@ -15,6 +15,10 @@ import {
   type EscalationQueueResponse,
   type EscalationStatus,
 } from "@/types/escalation";
+import {
+  useEscalationEvents,
+  type EscalationSSEEvent,
+} from "@/hooks/useEscalationEvents";
 
 // State types
 interface EscalationState {
@@ -39,7 +43,8 @@ type EscalationAction =
   | { type: "SCHEDULE_CALLBACK"; payload: { id: string; assignedTo: string } }
   | { type: "SET_LOADING"; payload: boolean }
   | { type: "SET_ERROR"; payload: string | null }
-  | { type: "UPDATE_WAIT_TIMES" };
+  | { type: "UPDATE_WAIT_TIMES" }
+  | { type: "SSE_EVENT"; payload: EscalationSSEEvent };
 
 // Reducer
 function escalationReducer(
@@ -137,6 +142,54 @@ function escalationReducer(
       return { ...state, queue: updatedQueue };
     }
 
+    case "SSE_EVENT": {
+      const event = action.payload;
+      const queueId = event.queueId;
+      const data = event.data;
+
+      if (
+        event.type === "transfer_created" ||
+        event.type === "callback_queued"
+      ) {
+        // New item -- trigger full refresh (we don't have full item data from SSE)
+        return state;
+      }
+
+      if (
+        event.type === "transfer_status_changed" ||
+        event.type === "queue_item_updated"
+      ) {
+        const existingIndex = state.queue.findIndex((e) => e.id === queueId);
+        if (existingIndex === -1) return state;
+
+        const updatedQueue = [...state.queue];
+        const item = { ...updatedQueue[existingIndex] };
+
+        if (data.transferStatus) {
+          item.transferStatus =
+            data.transferStatus as EscalationItem["transferStatus"];
+        }
+        if (data.status) {
+          item.status = data.status as EscalationStatus;
+        }
+        if (data.assignedTo) {
+          item.assignedTo = data.assignedTo as string;
+        }
+
+        updatedQueue[existingIndex] = item;
+
+        // Also update activeEscalation if it matches
+        const activeEscalation =
+          state.activeEscalation?.id === queueId
+            ? item
+            : state.activeEscalation;
+
+        return { ...state, queue: updatedQueue, activeEscalation };
+      }
+
+      return state;
+    }
+
     default:
       return state;
   }
@@ -209,6 +262,25 @@ export function EscalationProvider({ children }: EscalationProviderProps) {
   useEffect(() => {
     void loadQueue();
   }, [loadQueue]);
+
+  // SSE real-time updates
+  const handleSSEEvent = useCallback(
+    (event: EscalationSSEEvent) => {
+      if (
+        event.type === "transfer_created" ||
+        event.type === "callback_queued"
+      ) {
+        // New queue item -- reload full queue to get complete data
+        void loadQueue();
+      } else {
+        // Status update -- apply optimistic update
+        dispatch({ type: "SSE_EVENT", payload: event });
+      }
+    },
+    [loadQueue],
+  );
+
+  useEscalationEvents({ onEvent: handleSSEEvent });
 
   // Update wait times every second for waiting escalations
   useEffect(() => {

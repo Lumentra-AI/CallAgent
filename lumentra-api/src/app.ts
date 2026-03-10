@@ -21,6 +21,7 @@ import { capabilitiesRoutes } from "./routes/capabilities.js";
 import { integrationsRoutes } from "./routes/integrations.js";
 import { phoneConfigRoutes } from "./routes/phone-config.js";
 import { escalationRoutes } from "./routes/escalation.js";
+import { escalationEventsRoutes } from "./routes/escalation-events.js";
 import { promotionsRoutes } from "./routes/promotions.js";
 import { pendingBookingsRoutes } from "./routes/pending-bookings.js";
 import { dealsRoutes } from "./routes/deals.js";
@@ -124,6 +125,8 @@ export function createApp() {
   app.route("/health", healthRoutes);
   app.route("/api/chat", chatRoutes); // Chat widget is public
   app.route("/internal", internalRoutes); // LiveKit agent API (own auth via INTERNAL_API_KEY)
+  // SSE endpoint with query-param auth (EventSource cannot send headers)
+  app.route("/api/escalation/events", escalationEventsRoutes);
   app.use("/admin/*", platformAdminAuth());
   app.route("/admin", adminRoutes);
   app.route("/admin", adminAnalyticsRoutes);

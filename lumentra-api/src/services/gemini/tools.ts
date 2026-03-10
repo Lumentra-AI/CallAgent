@@ -24,6 +24,7 @@ import { query, queryOne, queryAll } from "../database/client.js";
 import { insertOne } from "../database/query-helpers.js";
 import { findOrCreateByPhone } from "../contacts/contact-service.js";
 import { sendBookingConfirmation } from "../notifications/notification-service.js";
+import { escalationEvents } from "../escalation/events.js";
 
 // Generate confirmation code
 function generateConfirmationCode(): string {
@@ -644,6 +645,21 @@ export async function executePrepareTransfer(
     `[TOOLS] Transfer prepared: type=${effectiveType}, contacts=${contacts.length}, queue=${queueEntry.id}`,
   );
 
+  escalationEvents.publish({
+    type: "transfer_created",
+    tenantId: context.tenantId,
+    queueId: queueEntry.id,
+    data: {
+      transferType: effectiveType,
+      transferStatus:
+        effectiveType === "callback" ? "callback_queued" : "pending",
+      phone: context.callerPhone,
+      reason: args.reason,
+      selectedContactName: contacts.length > 0 ? contacts[0].name : null,
+    },
+    timestamp: new Date().toISOString(),
+  });
+
   return {
     contacts: contacts.map((c) => ({ phone: c.phone, name: c.name, id: c.id })),
     queue_id: queueEntry.id,
@@ -675,6 +691,20 @@ export async function executeQueueCallback(
       notes: args.preferred_time
         ? `Preferred callback time: ${args.preferred_time}`
         : null,
+    });
+
+    escalationEvents.publish({
+      type: "callback_queued",
+      tenantId: context.tenantId,
+      queueId: entry.id,
+      data: {
+        transferType: "callback",
+        transferStatus: "callback_queued",
+        phone: context.callerPhone,
+        callerName: args.caller_name || null,
+        message: args.message,
+      },
+      timestamp: new Date().toISOString(),
     });
 
     return {
@@ -737,6 +767,13 @@ export async function executeTool(
           "UPDATE callback_queue SET transfer_status = $1 WHERE id = $2",
           [status, queue_id],
         );
+        escalationEvents.publish({
+          type: "transfer_status_changed",
+          tenantId: context.tenantId,
+          queueId: queue_id,
+          data: { transferStatus: status },
+          timestamp: new Date().toISOString(),
+        });
       }
       return { success: true };
     }

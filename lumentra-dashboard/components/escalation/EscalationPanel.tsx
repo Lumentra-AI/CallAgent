@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -12,16 +12,17 @@ import {
   CalendarClock,
   CheckCircle2,
   Mic,
-  MicOff,
   PhoneForwarded,
   FileText,
   History,
   AlertCircle,
+  ArrowRightLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEscalation } from "@/context/EscalationContext";
 import { AISummary } from "./AISummary";
-import type { EscalationMessage } from "@/types/escalation";
+import { TransferTypeBadge } from "./EscalationCard";
+import type { EscalationMessage, TransferStatus } from "@/types/escalation";
 
 interface EscalationPanelProps {
   className?: string;
@@ -102,6 +103,49 @@ function ConversationTimeline({ messages }: { messages: EscalationMessage[] }) {
       })}
       <div ref={messagesEndRef} />
     </div>
+  );
+}
+
+const TRANSFER_STATUS_LABELS: Record<
+  TransferStatus,
+  { label: string; color: string }
+> = {
+  pending: {
+    label: "Pending",
+    color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
+  },
+  initiated: {
+    label: "Transferring",
+    color: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  },
+  completed: {
+    label: "Transferred",
+    color: "bg-green-500/10 text-green-600 dark:text-green-400",
+  },
+  failed: {
+    label: "Failed",
+    color: "bg-red-500/10 text-red-600 dark:text-red-400",
+  },
+  callback_queued: {
+    label: "Queued",
+    color: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  },
+};
+
+function TransferStatusBadge({ status }: { status: TransferStatus }) {
+  const style = TRANSFER_STATUS_LABELS[status];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+        style.color,
+      )}
+    >
+      {status === "initiated" && (
+        <span className="mr-1 h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+      )}
+      {style.label}
+    </span>
   );
 }
 
@@ -210,6 +254,14 @@ export function EscalationPanel({ className }: EscalationPanelProps) {
                     >
                       {activeEscalation.priority} priority
                     </span>
+                    {activeEscalation.transferType && (
+                      <TransferTypeBadge type={activeEscalation.transferType} />
+                    )}
+                    {activeEscalation.transferStatus && (
+                      <TransferStatusBadge
+                        status={activeEscalation.transferStatus}
+                      />
+                    )}
                     {isInProgress && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-500">
                         <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
@@ -242,6 +294,53 @@ export function EscalationPanel({ className }: EscalationPanelProps) {
                   {activeEscalation.reason}
                 </p>
               </div>
+
+              {/* Transfer Details */}
+              {activeEscalation.transferType && (
+                <div className="border-b border-border p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium text-muted-foreground">
+                      Transfer Details
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {activeEscalation.callerName && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-muted-foreground">Caller:</span>
+                        <span className="font-medium text-foreground">
+                          {activeEscalation.callerName}
+                        </span>
+                      </div>
+                    )}
+                    {activeEscalation.selectedContactName && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-muted-foreground">
+                          Transfer to:
+                        </span>
+                        <span className="font-medium text-foreground">
+                          {activeEscalation.selectedContactName}
+                          {activeEscalation.selectedContactRole && (
+                            <span className="ml-1 text-muted-foreground font-normal">
+                              ({activeEscalation.selectedContactRole})
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    )}
+                    {activeEscalation.conversationSummary && (
+                      <div className="mt-2 rounded-lg bg-muted/50 p-3">
+                        <p className="text-xs font-medium text-muted-foreground mb-1">
+                          Caller Message
+                        </p>
+                        <p className="text-sm text-foreground">
+                          {activeEscalation.conversationSummary}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* AI Summary */}
               <div className="border-b border-border p-4">

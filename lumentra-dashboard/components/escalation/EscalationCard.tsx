@@ -11,6 +11,9 @@ import {
   PhoneIncoming,
   CalendarClock,
   CheckCircle2,
+  ArrowRightLeft,
+  Zap,
+  PhoneCall,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AISummaryInline } from "./AISummary";
@@ -18,6 +21,7 @@ import type {
   EscalationItem,
   EscalationPriority,
   EscalationStatus,
+  TransferType,
 } from "@/types/escalation";
 
 interface EscalationCardProps {
@@ -89,6 +93,30 @@ const STATUS_STYLES: Record<
   },
 };
 
+const TRANSFER_TYPE_STYLES: Record<
+  TransferType,
+  { bg: string; text: string; label: string; icon: typeof Phone }
+> = {
+  warm: {
+    bg: "bg-orange-500/10",
+    text: "text-orange-600 dark:text-orange-400",
+    label: "Warm",
+    icon: ArrowRightLeft,
+  },
+  cold: {
+    bg: "bg-cyan-500/10",
+    text: "text-cyan-600 dark:text-cyan-400",
+    label: "Cold",
+    icon: Zap,
+  },
+  callback: {
+    bg: "bg-violet-500/10",
+    text: "text-violet-600 dark:text-violet-400",
+    label: "Callback",
+    icon: PhoneCall,
+  },
+};
+
 function formatWaitTime(seconds: number): string {
   if (seconds < 60) {
     return `${seconds}s`;
@@ -104,6 +132,36 @@ function formatWaitTime(seconds: number): string {
   const remainingMinutes = minutes % 60;
   return `${hours}h ${remainingMinutes}m`;
 }
+
+function TransferTypeBadge({
+  type,
+  size = "md",
+}: {
+  type: TransferType;
+  size?: "sm" | "md";
+}) {
+  const style = TRANSFER_TYPE_STYLES[type];
+  const Icon = style.icon;
+  const sizeClasses =
+    size === "sm" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-xs";
+  const iconSize = size === "sm" ? "h-2.5 w-2.5" : "h-3 w-3";
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full font-medium",
+        sizeClasses,
+        style.bg,
+        style.text,
+      )}
+    >
+      <Icon className={iconSize} />
+      {style.label}
+    </span>
+  );
+}
+
+export { TransferTypeBadge };
 
 export function EscalationCard({
   escalation,
@@ -166,17 +224,22 @@ export function EscalationCard({
           />
         </div>
 
-        {/* Status badge */}
-        <span
-          className={cn(
-            "flex-shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium",
-            statusStyle.bg,
-            statusStyle.text,
+        {/* Badges */}
+        <div className="flex flex-shrink-0 items-center gap-1.5">
+          {escalation.transferType && (
+            <TransferTypeBadge type={escalation.transferType} size="sm" />
           )}
-        >
-          <StatusIcon className="h-3 w-3" />
-          {statusStyle.label}
-        </span>
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium",
+              statusStyle.bg,
+              statusStyle.text,
+            )}
+          >
+            <StatusIcon className="h-3 w-3" />
+            {statusStyle.label}
+          </span>
+        </div>
       </motion.button>
     );
   }
@@ -224,6 +287,9 @@ export function EscalationCard({
               >
                 {escalation.priority}
               </span>
+              {escalation.transferType && (
+                <TransferTypeBadge type={escalation.transferType} size="md" />
+              )}
             </div>
             <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
               <span className="flex items-center gap-1">
@@ -257,6 +323,29 @@ export function EscalationCard({
       <div className="px-4 pb-3">
         <p className="text-sm text-muted-foreground">{escalation.reason}</p>
       </div>
+
+      {/* Transfer info */}
+      {(escalation.selectedContactName || escalation.callerName) && (
+        <div className="flex items-center gap-3 px-4 pb-3 text-xs text-muted-foreground">
+          {escalation.callerName && (
+            <span className="flex items-center gap-1">
+              <User className="h-3 w-3" />
+              {escalation.callerName}
+            </span>
+          )}
+          {escalation.selectedContactName && (
+            <span className="flex items-center gap-1">
+              <PhoneIncoming className="h-3 w-3" />
+              To: {escalation.selectedContactName}
+              {escalation.selectedContactRole && (
+                <span className="text-muted-foreground/70">
+                  ({escalation.selectedContactRole})
+                </span>
+              )}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* AI Summary */}
       <div className="px-4 pb-3">
