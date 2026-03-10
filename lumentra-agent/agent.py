@@ -17,6 +17,7 @@ from livekit.agents import (
 )
 from livekit.agents.llm import function_tool
 from livekit.agents import room_io
+from livekit.agents.voice import BackgroundAudioPlayer
 from livekit.plugins import deepgram, cartesia, openai, silero, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
@@ -25,6 +26,7 @@ from tools import (
     create_booking,
     create_order,
     transfer_to_human,
+    queue_callback,
     end_call,
 )
 from tenant_config import get_tenant_by_phone
@@ -45,12 +47,14 @@ class LumentraAgent(Agent):
                 create_booking,
                 create_order,
                 transfer_to_human,
+                queue_callback,
                 end_call,
             ],
         )
         self.tenant_config = tenant_config
         self.caller_phone = caller_phone
         self.job_ctx = job_ctx
+        self.hold_player: BackgroundAudioPlayer | None = None
 
     async def on_enter(self):
         greeting = self.tenant_config.get("greeting_standard") or (
@@ -225,16 +229,10 @@ async def entrypoint(ctx: JobContext):
 
             # Transfer to human if escalation phone is configured
             if escalation_phone:
-                from tools import _get_sip_participant
-                sip_participant = _get_sip_participant(ctx.room)
-                if sip_participant:
-                    try:
-                        sip_uri = f"sip:{escalation_phone}@sip.signalwire.com"
-                        await sip_participant.transfer_sip_call(sip_uri)
-                        logger.info("Duration limit: transferred to %s", escalation_phone)
-                        return
-                    except Exception as e:
-                        logger.error("Duration limit: transfer failed: %s", e)
+                from tools import _get_sip_participant, _attempt_transfer
+                if await _attempt_transfer(ctx.room, escalation_phone):
+                    logger.info("Duration limit: transferred to %s", escalation_phone)
+                    return
 
             # Fallback: end the call if transfer not possible
             try:
@@ -246,8 +244,14 @@ async def entrypoint(ctx: JobContext):
         except asyncio.CancelledError:
             logger.debug("Duration watchdog cancelled (call ended normally)")
 
-    # Start the agent session with echo cancellation for SIP calls
+    # Create the agent with hold music support
     agent = LumentraAgent(tenant_config, caller_phone, ctx)
+
+    # Initialize BackgroundAudioPlayer for hold music during transfers
+    hold_player = BackgroundAudioPlayer()
+    agent.hold_player = hold_player
+
+    # Start the agent session with echo cancellation for SIP calls
     await session.start(
         agent=agent,
         room=ctx.room,
@@ -258,6 +262,9 @@ async def entrypoint(ctx: JobContext):
         ),
     )
     # Greeting is handled by LumentraAgent.on_enter()
+
+    # Start the hold music player (publishes audio track to the room, silent until play() is called)
+    await hold_player.start(room=ctx.room, agent_session=session)
 
     # Start the duration watchdog after session is live
     if max_duration > 0:

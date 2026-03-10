@@ -10,6 +10,7 @@ import {
 import { buildSystemPrompt } from "../services/gemini/chat.js";
 import { executeTool } from "../services/gemini/tools.js";
 import { insertOne } from "../services/database/query-helpers.js";
+import { queryAll } from "../services/database/client.js";
 import { findOrCreateByPhone } from "../services/contacts/contact-service.js";
 import { runPostCallAutomation } from "../services/automation/post-call.js";
 import type { ToolExecutionContext } from "../types/voice.js";
@@ -154,6 +155,16 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
   const industry = tenant.industry || "general";
   const tz = tenant.timezone || "America/New_York";
 
+  // Query escalation contacts for this tenant (used in system prompt)
+  const escalationContacts = await queryAll<{
+    name: string;
+    role: string | null;
+  }>(
+    `SELECT name, role FROM escalation_contacts
+     WHERE tenant_id = $1 ORDER BY sort_order ASC`,
+    [tenant.id],
+  );
+
   // Build the system prompt using defaulted values
   const systemPrompt = buildSystemPrompt(
     agentName,
@@ -171,6 +182,9 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
       customInstructions: t.custom_instructions || undefined,
       escalationPhone: tenant.escalation_phone || undefined,
       timezone: tz,
+      transferBehavior: t.transfer_behavior || undefined,
+      escalationContacts: escalationContacts || undefined,
+      escalationTriggers: tenant.escalation_triggers || undefined,
     },
   );
 
@@ -206,6 +220,10 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
       tenant.escalation_enabled && tenant.escalation_phone ? true : false,
     escalation_phone: tenant.escalation_phone,
     escalation_triggers: tenant.escalation_triggers,
+    transfer_behavior: t.transfer_behavior || {
+      type: "warm",
+      no_answer: "message",
+    },
     features: tenant.features,
     voice_pipeline: tenant.voice_pipeline,
     max_call_duration_seconds: t.max_call_duration_seconds ?? 900,

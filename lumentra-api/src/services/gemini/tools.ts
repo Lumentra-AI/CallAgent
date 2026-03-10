@@ -15,11 +15,16 @@ import type {
   CreateOrderResult,
   LogNoteArgs,
   LogNoteResult,
+  PrepareTransferArgs,
+  PrepareTransferResult,
+  QueueCallbackArgs,
+  QueueCallbackResult,
 } from "../../types/voice.js";
 import { query, queryOne, queryAll } from "../database/client.js";
 import { insertOne } from "../database/query-helpers.js";
 import { findOrCreateByPhone } from "../contacts/contact-service.js";
 import { sendBookingConfirmation } from "../notifications/notification-service.js";
+import { escalationEvents } from "../escalation/events.js";
 
 // Generate confirmation code
 function generateConfirmationCode(): string {
@@ -470,6 +475,253 @@ export async function executeLogNote(
   }
 }
 
+// ============================================
+// Warm Transfer: Contact Selection + Transfer Prep
+// ============================================
+
+interface EscalationContactRow {
+  id: string;
+  name: string;
+  phone: string;
+  role: string | null;
+  is_primary: boolean;
+  sort_order: number;
+  availability: string;
+  availability_hours: Record<
+    string,
+    { open?: string; close?: string; open_time?: string; close_time?: string }
+  > | null;
+}
+
+function parseTimeToMinutes(time: string | undefined): number | null {
+  if (!time) return null;
+  const [h, m] = time.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+/**
+ * Select escalation contacts available right now based on their availability settings.
+ * Returns contacts in sort_order, filtered by current time in the tenant's timezone.
+ */
+export async function selectAvailableContacts(
+  tenantId: string,
+  timezone: string,
+): Promise<EscalationContactRow[]> {
+  const allContacts = await queryAll<EscalationContactRow>(
+    `SELECT id, name, phone, role, is_primary, sort_order, availability, availability_hours
+     FROM escalation_contacts
+     WHERE tenant_id = $1
+     ORDER BY sort_order ASC`,
+    [tenantId],
+  );
+
+  if (!allContacts || allContacts.length === 0) return [];
+
+  // Get current day and time in tenant's timezone
+  const now = new Date();
+  let dayName = "";
+  let currentMinutes = 0;
+  try {
+    const dayFmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      weekday: "long",
+    });
+    dayName = dayFmt.format(now).toLowerCase();
+    const timeFmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hour: "numeric",
+      minute: "numeric",
+      hour12: false,
+    });
+    const parts = timeFmt.formatToParts(now);
+    const hour = parseInt(parts.find((p) => p.type === "hour")?.value || "0");
+    const minute = parseInt(
+      parts.find((p) => p.type === "minute")?.value || "0",
+    );
+    currentMinutes = hour * 60 + minute;
+  } catch {
+    // If timezone parsing fails, treat all as available
+    console.warn(
+      `[TOOLS] Failed to parse timezone ${timezone}, returning all contacts`,
+    );
+    return allContacts;
+  }
+
+  const businessDays = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+
+  return allContacts.filter((contact) => {
+    if (contact.availability === "always") return true;
+
+    if (contact.availability === "business_hours") {
+      if (!businessDays.includes(dayName)) return false;
+      return currentMinutes >= 540 && currentMinutes < 1020; // 9:00-17:00
+    }
+
+    if (contact.availability === "custom" && contact.availability_hours) {
+      const daySchedule = contact.availability_hours[dayName];
+      if (!daySchedule) return false;
+      const openMin = parseTimeToMinutes(
+        daySchedule.open || daySchedule.open_time,
+      );
+      const closeMin = parseTimeToMinutes(
+        daySchedule.close || daySchedule.close_time,
+      );
+      if (openMin === null || closeMin === null) return false;
+      return currentMinutes >= openMin && currentMinutes < closeMin;
+    }
+
+    // Unknown availability type: include by default
+    return true;
+  });
+}
+
+function derivePriority(reason: string): string {
+  const r = reason.toLowerCase();
+  if (/emergency|urgent|medical|safety|threat/.test(r)) return "high";
+  if (/complaint|refund|billing|harassment/.test(r)) return "high";
+  if (/cancel|issue|problem|cannot_resolve/.test(r)) return "medium";
+  return "medium";
+}
+
+interface TenantTransferRow {
+  transfer_behavior: { type?: string; no_answer?: string } | null;
+  timezone: string | null;
+}
+
+export async function executePrepareTransfer(
+  args: PrepareTransferArgs,
+  context: ToolExecutionContext,
+): Promise<PrepareTransferResult> {
+  console.log(
+    `[TOOLS] prepare_transfer called for tenant ${context.tenantId}:`,
+    args,
+  );
+
+  // Get tenant's transfer_behavior and timezone
+  const tenant = await queryOne<TenantTransferRow>(
+    "SELECT transfer_behavior, timezone FROM tenants WHERE id = $1",
+    [context.tenantId],
+  );
+
+  const transferBehavior = tenant?.transfer_behavior || {
+    type: "warm",
+    no_answer: "message",
+  };
+  const timezone = tenant?.timezone || "America/New_York";
+
+  // Select available escalation contacts
+  const contacts = await selectAvailableContacts(context.tenantId, timezone);
+
+  // Determine effective transfer type
+  let effectiveType = transferBehavior.type || "warm";
+  if (effectiveType !== "callback" && contacts.length === 0) {
+    effectiveType = "callback"; // No contacts available -> force callback
+    console.log("[TOOLS] No available contacts, forcing callback mode");
+  }
+
+  const priority = derivePriority(args.reason);
+
+  // Create callback_queue entry to track this transfer
+  const queueEntry = await insertOne<{ id: string }>("callback_queue", {
+    tenant_id: context.tenantId,
+    phone_number: context.callerPhone || "",
+    reason: args.reason,
+    priority,
+    status: "pending",
+    transfer_type: effectiveType,
+    transfer_status:
+      effectiveType === "callback" ? "callback_queued" : "pending",
+    selected_contact_id: contacts.length > 0 ? contacts[0].id : null,
+  });
+
+  // Update call outcome to escalation
+  await query(
+    "UPDATE calls SET outcome_type = 'escalation', updated_at = $1 WHERE vapi_call_id = $2",
+    [new Date().toISOString(), context.callSid],
+  );
+
+  console.log(
+    `[TOOLS] Transfer prepared: type=${effectiveType}, contacts=${contacts.length}, queue=${queueEntry.id}`,
+  );
+
+  escalationEvents.publish({
+    type: "transfer_created",
+    tenantId: context.tenantId,
+    queueId: queueEntry.id,
+    data: {
+      transferType: effectiveType,
+      transferStatus:
+        effectiveType === "callback" ? "callback_queued" : "pending",
+      phone: context.callerPhone,
+      reason: args.reason,
+      selectedContactName: contacts.length > 0 ? contacts[0].name : null,
+    },
+    timestamp: new Date().toISOString(),
+  });
+
+  return {
+    contacts: contacts.map((c) => ({ phone: c.phone, name: c.name, id: c.id })),
+    queue_id: queueEntry.id,
+    transfer_type_effective: effectiveType,
+    no_answer_behavior: transferBehavior.no_answer || "message",
+  };
+}
+
+export async function executeQueueCallback(
+  args: QueueCallbackArgs,
+  context: ToolExecutionContext,
+): Promise<QueueCallbackResult> {
+  console.log(
+    `[TOOLS] queue_callback called for tenant ${context.tenantId}:`,
+    args,
+  );
+
+  try {
+    const entry = await insertOne<{ id: string }>("callback_queue", {
+      tenant_id: context.tenantId,
+      phone_number: context.callerPhone || "",
+      reason: "callback_requested",
+      priority: "medium",
+      status: "pending",
+      transfer_type: "callback",
+      transfer_status: "callback_queued",
+      conversation_summary: args.message,
+      caller_name: args.caller_name || null,
+      notes: args.preferred_time
+        ? `Preferred callback time: ${args.preferred_time}`
+        : null,
+    });
+
+    escalationEvents.publish({
+      type: "callback_queued",
+      tenantId: context.tenantId,
+      queueId: entry.id,
+      data: {
+        transferType: "callback",
+        transferStatus: "callback_queued",
+        phone: context.callerPhone,
+        callerName: args.caller_name || null,
+        message: args.message,
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    return {
+      success: true,
+      message:
+        "I've noted your message. A team member will call you back shortly.",
+      queue_id: entry.id,
+    };
+  } catch (error) {
+    console.error("[TOOLS] queue_callback error:", error);
+    return {
+      success: false,
+      message: "I've noted your request. Someone will follow up with you.",
+    };
+  }
+}
+
 // Tool executor - routes tool calls to the right function
 export async function executeTool(
   toolName: string,
@@ -498,6 +750,33 @@ export async function executeTool(
       return executeEndCall(args as unknown as EndCallArgs, context);
     case "log_note":
       return executeLogNote(args as unknown as LogNoteArgs, context);
+    case "prepare_transfer":
+      return executePrepareTransfer(
+        args as unknown as PrepareTransferArgs,
+        context,
+      );
+    case "queue_callback":
+      return executeQueueCallback(
+        args as unknown as QueueCallbackArgs,
+        context,
+      );
+    case "update_transfer_status": {
+      const { queue_id, status } = args as { queue_id: string; status: string };
+      if (queue_id && status) {
+        await query(
+          "UPDATE callback_queue SET transfer_status = $1 WHERE id = $2",
+          [status, queue_id],
+        );
+        escalationEvents.publish({
+          type: "transfer_status_changed",
+          tenantId: context.tenantId,
+          queueId: queue_id,
+          data: { transferStatus: status },
+          timestamp: new Date().toISOString(),
+        });
+      }
+      return { success: true };
+    }
     default:
       throw new Error(`Unknown tool: ${toolName}`);
   }

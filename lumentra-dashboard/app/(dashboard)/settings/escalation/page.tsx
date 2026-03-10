@@ -56,6 +56,12 @@ const TRANSFER_OPTIONS: {
     recommended: true,
   },
   {
+    value: "consultation",
+    label: "Consultation transfer",
+    description:
+      "Dial team member, brief them on the call, connect after they accept",
+  },
+  {
     value: "cold",
     label: "Cold transfer",
     description: "Direct connection, assistant hangs up immediately",

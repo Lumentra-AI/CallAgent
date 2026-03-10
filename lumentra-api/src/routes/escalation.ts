@@ -11,6 +11,7 @@ import {
 } from "../services/database/query-helpers.js";
 import { getAuthUserId } from "../middleware/index.js";
 import { invalidateTenant } from "../services/database/tenant-cache.js";
+import { escalationEvents } from "../services/escalation/events.js";
 import type { PoolClient } from "pg";
 
 export const escalationRoutes = new Hono();
@@ -59,6 +60,14 @@ interface EscalationQueueRow {
   call_transcript: unknown;
   first_name: string | null;
   last_name: string | null;
+  // Sprint 8 transfer fields
+  transfer_type: string | null;
+  transfer_status: string | null;
+  selected_contact_id: string | null;
+  conversation_summary: string | null;
+  caller_name: string | null;
+  selected_contact_name: string | null;
+  selected_contact_role: string | null;
 }
 
 function mapQueueStatus(
@@ -276,15 +285,23 @@ escalationRoutes.get("/queue", async (c) => {
         cq.created_at,
         cq.completed_at,
         cq.notes,
+        cq.transfer_type,
+        cq.transfer_status,
+        cq.selected_contact_id,
+        cq.conversation_summary,
+        cq.caller_name,
         c.summary AS call_summary,
         c.sentiment_score,
         c.intents_detected,
         c.transcript AS call_transcript,
         ct.first_name,
-        ct.last_name
+        ct.last_name,
+        ec.name AS selected_contact_name,
+        ec.role AS selected_contact_role
       FROM callback_queue cq
       LEFT JOIN calls c ON c.id = cq.original_call_id
       LEFT JOIN contacts ct ON ct.id = cq.contact_id
+      LEFT JOIN escalation_contacts ec ON ec.id = cq.selected_contact_id
       ${whereClause}
       ORDER BY
         CASE cq.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
@@ -347,6 +364,13 @@ escalationRoutes.get("/queue", async (c) => {
           "Log resolution outcome",
         ],
         sentiment: mapSentiment(row.sentiment_score),
+        // Sprint 8: transfer tracking fields
+        transferType: row.transfer_type || undefined,
+        transferStatus: row.transfer_status || undefined,
+        selectedContactName: row.selected_contact_name || undefined,
+        selectedContactRole: row.selected_contact_role || undefined,
+        conversationSummary: row.conversation_summary || undefined,
+        callerName: row.caller_name || undefined,
       };
     });
 
@@ -402,6 +426,14 @@ escalationRoutes.put("/queue/:id/take", async (c) => {
       return c.json({ error: "Queue item not found" }, 404);
     }
 
+    escalationEvents.publish({
+      type: "queue_item_updated",
+      tenantId: membership.tenant_id,
+      queueId: id,
+      data: { status: "in-progress" },
+      timestamp: new Date().toISOString(),
+    });
+
     return c.json({ success: true });
   } catch (error) {
     console.error("[ESCALATION] Error taking queue item:", error);
@@ -452,6 +484,14 @@ escalationRoutes.put("/queue/:id/resolve", async (c) => {
     if (!updated) {
       return c.json({ error: "Queue item not found" }, 404);
     }
+
+    escalationEvents.publish({
+      type: "queue_item_updated",
+      tenantId: membership.tenant_id,
+      queueId: id,
+      data: { status: "resolved" },
+      timestamp: new Date().toISOString(),
+    });
 
     return c.json({ success: true });
   } catch (error) {
@@ -511,6 +551,17 @@ escalationRoutes.put("/queue/:id/schedule-callback", async (c) => {
     if (!updated) {
       return c.json({ error: "Queue item not found" }, 404);
     }
+
+    escalationEvents.publish({
+      type: "queue_item_updated",
+      tenantId: membership.tenant_id,
+      queueId: id,
+      data: {
+        status: "callback-scheduled",
+        assignedTo: assignedTo || undefined,
+      },
+      timestamp: new Date().toISOString(),
+    });
 
     return c.json({ success: true });
   } catch (error) {

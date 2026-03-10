@@ -60,6 +60,10 @@ def apply_defaults(config: dict) -> dict:
             tenant_id,
         )
 
+    if not config.get("transfer_behavior"):
+        config["transfer_behavior"] = {"type": "warm", "no_answer": "message"}
+        logger.warning("[TENANT %s] Missing transfer_behavior, using default", tenant_id)
+
     return config
 
 

@@ -18,6 +18,14 @@ export interface EscalationMessage {
   timestamp: Date;
 }
 
+export type TransferType = "warm" | "cold" | "callback" | "consultation";
+export type TransferStatus =
+  | "pending"
+  | "initiated"
+  | "completed"
+  | "failed"
+  | "callback_queued";
+
 export interface EscalationItem {
   id: string;
   callId: string;
@@ -36,6 +44,13 @@ export interface EscalationItem {
   extractedIntents: string[];
   suggestedActions: string[];
   sentiment: EscalationSentiment;
+  // Sprint 8: transfer tracking
+  transferType?: TransferType;
+  transferStatus?: TransferStatus;
+  selectedContactName?: string;
+  selectedContactRole?: string;
+  conversationSummary?: string;
+  callerName?: string;
 }
 
 export interface ApiEscalationMessage {
@@ -62,6 +77,13 @@ export interface ApiEscalationItem {
   extractedIntents: string[];
   suggestedActions: string[];
   sentiment: EscalationSentiment;
+  // Sprint 8: transfer tracking
+  transferType?: TransferType;
+  transferStatus?: TransferStatus;
+  selectedContactName?: string;
+  selectedContactRole?: string;
+  conversationSummary?: string;
+  callerName?: string;
 }
 
 export interface EscalationQueueResponse {
