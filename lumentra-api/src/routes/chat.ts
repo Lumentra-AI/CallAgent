@@ -21,6 +21,7 @@ import {
 import { getTenantById } from "../services/database/tenant-cache.js";
 import { findOrCreateByPhone } from "../services/contacts/contact-service.js";
 import { rateLimit } from "../middleware/rate-limit.js";
+import { logActivity } from "../services/audit/logger.js";
 import type { ToolExecutionContext } from "../types/voice.js";
 import {
   chatWithFallback,
@@ -238,6 +239,15 @@ chatRoutes.post("/", async (c) => {
         result: tc.result,
       })),
     };
+
+    await logActivity({
+      tenantId: tenant_id,
+      userId: null,
+      action: "create",
+      resourceType: "chat_message",
+      resourceId: session_id,
+      newValues: { message, provider: chatResult.provider },
+    });
 
     return c.json(response);
   } catch (err) {

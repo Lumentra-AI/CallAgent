@@ -10,6 +10,7 @@ import {
   deleteRows,
 } from "../services/database/query-helpers.js";
 import { getAuthUserId } from "../middleware/index.js";
+import { logActivity } from "../services/audit/logger.js";
 import { invalidateTenant } from "../services/database/tenant-cache.js";
 import { escalationEvents } from "../services/escalation/events.js";
 import type { PoolClient } from "pg";
@@ -434,6 +435,15 @@ escalationRoutes.put("/queue/:id/take", async (c) => {
       timestamp: new Date().toISOString(),
     });
 
+    logActivity({
+      tenantId: membership.tenant_id,
+      userId,
+      action: "update",
+      resourceType: "escalation",
+      resourceId: id,
+      newValues: { status: "in-progress" },
+    });
+
     return c.json({ success: true });
   } catch (error) {
     console.error("[ESCALATION] Error taking queue item:", error);
@@ -491,6 +501,15 @@ escalationRoutes.put("/queue/:id/resolve", async (c) => {
       queueId: id,
       data: { status: "resolved" },
       timestamp: new Date().toISOString(),
+    });
+
+    logActivity({
+      tenantId: membership.tenant_id,
+      userId,
+      action: "update",
+      resourceType: "escalation",
+      resourceId: id,
+      newValues: { status: "resolved" },
     });
 
     return c.json({ success: true });
@@ -681,6 +700,19 @@ escalationRoutes.post("/contacts", async (c) => {
       },
     );
 
+    logActivity({
+      tenantId,
+      userId,
+      action: "create",
+      resourceType: "escalation_contact",
+      resourceId: contact.id,
+      newValues: {
+        name: body.name,
+        phone: body.phone,
+        role: body.role || null,
+      },
+    });
+
     return c.json(contact, 201);
   } catch (error) {
     console.error("[ESCALATION] Error adding contact:", error);
@@ -756,6 +788,15 @@ escalationRoutes.put("/contacts/:id", async (c) => {
       updateData,
       { id },
     );
+
+    logActivity({
+      tenantId: membership.tenant_id,
+      userId,
+      action: "update",
+      resourceType: "escalation_contact",
+      resourceId: id,
+      newValues: updateData,
+    });
 
     return c.json(contact);
   } catch (error) {
@@ -865,6 +906,14 @@ escalationRoutes.delete("/contacts/:id", async (c) => {
         );
       }
     }
+
+    logActivity({
+      tenantId: membership.tenant_id,
+      userId,
+      action: "delete",
+      resourceType: "escalation_contact",
+      resourceId: id,
+    });
 
     return c.json({ success: true });
   } catch (error) {

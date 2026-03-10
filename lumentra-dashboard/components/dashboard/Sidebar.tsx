@@ -4,6 +4,8 @@ import React from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useConfig } from "@/context/ConfigContext";
 import { useAdmin } from "@/context/AdminContext";
+import { useFeatures, type FeatureKey } from "@/context/FeatureContext";
+import { useEscalation } from "@/context/EscalationContext";
 import type { ViewType } from "@/types";
 import {
   LayoutDashboard,
@@ -13,26 +15,24 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
-  LogOut,
   Users,
   Calendar,
   Bell,
   Package,
   Headphones,
-  AlertCircle,
+  PhoneForwarded,
   User,
   Target,
   CheckSquare,
   Shield,
+  MessageSquare,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIndustry } from "@/context/IndustryContext";
 
 // Route mapping for navigation
-const VIEW_ROUTES: Record<
-  ViewType | "workstation" | "escalations" | "profile" | "admin",
-  string
-> = {
+const VIEW_ROUTES: Record<string, string> = {
   dashboard: "/dashboard",
   workstation: "/workstation",
   calls: "/calls",
@@ -41,120 +41,192 @@ const VIEW_ROUTES: Record<
   contacts: "/contacts",
   deals: "/deals",
   tasks: "/tasks",
+  chats: "/chats",
   calendar: "/calendar",
   notifications: "/notifications",
   resources: "/resources",
+  pending: "/pending",
   settings: "/settings",
   profile: "/profile",
   admin: "/admin/overview",
 };
 
-// ============================================================================
-// NAV ITEMS
-// ============================================================================
-
 interface NavItem {
-  id: ViewType | "workstation" | "escalations" | "profile" | "admin";
+  id: string;
+  featureKey?: FeatureKey;
   label: string;
   icon: React.ElementType;
   badge?: number;
+  alwaysShow?: boolean;
 }
 
-interface NavSection {
-  title: string;
-  items: NavItem[];
-}
+// All possible nav items -- filtered by features at render time
+const ALL_NAV_ITEMS: NavItem[] = [
+  {
+    id: "workstation",
+    featureKey: "workstation",
+    label: "Workstation",
+    icon: Headphones,
+  },
+  {
+    id: "dashboard",
+    featureKey: "dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+  },
+  { id: "calls", featureKey: "calls", label: "Calls", icon: Phone },
+  { id: "contacts", featureKey: "contacts", label: "Contacts", icon: Users },
+  { id: "chats", featureKey: "chats", label: "Chats", icon: MessageSquare },
+  {
+    id: "escalations",
+    featureKey: "escalations",
+    label: "Escalations",
+    icon: PhoneForwarded,
+  },
+  {
+    id: "pending",
+    featureKey: "pending",
+    label: "Pending",
+    icon: ClipboardList,
+  },
+  { id: "calendar", featureKey: "calendar", label: "Calendar", icon: Calendar },
+  { id: "deals", featureKey: "deals", label: "Deals", icon: Target },
+  { id: "tasks", featureKey: "tasks", label: "Tasks", icon: CheckSquare },
+  {
+    id: "analytics",
+    featureKey: "analytics",
+    label: "Analytics",
+    icon: BarChart3,
+  },
+  {
+    id: "resources",
+    featureKey: "resources",
+    label: "Resources",
+    icon: Package,
+  },
+  {
+    id: "notifications",
+    featureKey: "notifications",
+    label: "Notifications",
+    icon: Bell,
+  },
+];
 
-function buildNavSections(
-  dealPluralLabel: string,
-  isPlatformAdmin: boolean,
-): NavSection[] {
-  return [
-    {
-      title: "Workspace",
-      items: [
-        { id: "workstation", label: "Workstation", icon: Headphones },
-        { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-        { id: "escalations", label: "Escalations", icon: AlertCircle },
-      ],
-    },
-    {
-      title: "Activity",
-      items: [
-        { id: "calls", label: "Calls", icon: Phone },
-        { id: "analytics", label: "Analytics", icon: BarChart3 },
-      ],
-    },
-    {
-      title: "CRM",
-      items: [
-        { id: "contacts", label: "Contacts", icon: Users },
-        { id: "deals", label: dealPluralLabel, icon: Target },
-        { id: "tasks", label: "Tasks", icon: CheckSquare },
-        { id: "calendar", label: "Calendar", icon: Calendar },
-        { id: "notifications", label: "Notifications", icon: Bell },
-        { id: "resources", label: "Resources", icon: Package },
-      ],
-    },
-    {
-      title: "Account",
-      items: [
-        { id: "profile", label: "Profile", icon: User },
-        { id: "settings", label: "Settings", icon: Settings },
-        ...(isPlatformAdmin
-          ? [{ id: "admin" as const, label: "Admin Panel", icon: Shield }]
-          : []),
-      ],
-    },
-  ];
-}
-
-// ============================================================================
-// SIDEBAR COMPONENT
-// ============================================================================
+const BOTTOM_ITEMS: NavItem[] = [
+  { id: "profile", label: "Profile", icon: User, alwaysShow: true },
+  { id: "settings", label: "Settings", icon: Settings, alwaysShow: true },
+];
 
 export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
-  const { config, uiState, setView, toggleSidebar, resetConfig } = useConfig();
+  const { config, uiState, setView, toggleSidebar } = useConfig();
   const { isPlatformAdmin } = useAdmin();
-  const { dealPluralLabel } = useIndustry();
+  const { hasFeature } = useFeatures();
+  const { waitingCount } = useEscalation();
+  const { dealPluralLabel, preset } = useIndustry();
   const { sidebarCollapsed } = uiState;
 
-  const NAV_SECTIONS = React.useMemo(
-    () => buildNavSections(dealPluralLabel, isPlatformAdmin),
-    [dealPluralLabel, isPlatformAdmin],
-  );
+  // Filter nav items by enabled features
+  const visibleNavItems = React.useMemo(() => {
+    return ALL_NAV_ITEMS.filter((item) => {
+      if (!item.featureKey) return true;
+      return hasFeature(item.featureKey);
+    });
+  }, [hasFeature]);
 
-  // Determine active view from current pathname
+  // Industry-specific label overrides
+  const getLabel = (item: NavItem): string => {
+    if (item.id === "contacts" && preset?.terminology?.customerPlural) {
+      return preset.terminology.customerPlural;
+    }
+    if (item.id === "deals") return dealPluralLabel;
+    if (item.id === "calendar" && preset?.terminology?.transactionPlural) {
+      return preset.terminology.transactionPlural;
+    }
+    return item.label;
+  };
+
+  // Badge counts
+  const getBadge = (item: NavItem): number | undefined => {
+    if (item.id === "escalations" && waitingCount > 0) return waitingCount;
+    return item.badge;
+  };
+
+  // Determine active state from pathname
   const currentPath = React.useMemo(() => {
     return pathname?.replace("/", "") || "dashboard";
   }, [pathname]);
 
-  // Handle navigation
   const handleNavClick = (viewId: string) => {
-    if (viewId in VIEW_ROUTES) {
-      const route = VIEW_ROUTES[viewId as keyof typeof VIEW_ROUTES];
-      // Only update context for ViewType items
-      if (
-        [
-          "dashboard",
-          "calls",
-          "analytics",
-          "contacts",
-          "deals",
-          "tasks",
-          "calendar",
-          "notifications",
-          "resources",
-          "settings",
-        ].includes(viewId)
-      ) {
-        setView(viewId as ViewType);
-      }
-      router.push(route);
+    const route = VIEW_ROUTES[viewId];
+    if (!route) return;
+
+    // Update ConfigContext view for ViewType items
+    const viewTypeItems = [
+      "dashboard",
+      "calls",
+      "analytics",
+      "contacts",
+      "deals",
+      "tasks",
+      "calendar",
+      "notifications",
+      "resources",
+      "settings",
+    ];
+    if (viewTypeItems.includes(viewId)) {
+      setView(viewId as ViewType);
     }
+    router.push(route);
   };
+
+  const renderNavItem = (item: NavItem) => {
+    const isActive =
+      item.id === "admin"
+        ? Boolean(pathname?.startsWith("/admin"))
+        : currentPath === item.id;
+    const Icon = item.icon;
+    const label = getLabel(item);
+    const badge = getBadge(item);
+
+    return (
+      <button
+        key={item.id}
+        onClick={() => handleNavClick(item.id)}
+        className={cn(
+          "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+          isActive
+            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+            : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+          sidebarCollapsed && "justify-center px-2",
+        )}
+        title={sidebarCollapsed ? label : undefined}
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        {!sidebarCollapsed && <span className="flex-1 text-left">{label}</span>}
+        {!sidebarCollapsed && badge !== undefined && badge > 0 && (
+          <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-medium text-destructive-foreground">
+            {badge}
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  // Build bottom items with conditional admin
+  const bottomItems = React.useMemo(() => {
+    const items = [...BOTTOM_ITEMS];
+    if (isPlatformAdmin) {
+      items.push({
+        id: "admin",
+        label: "Admin Panel",
+        icon: Shield,
+        alwaysShow: true,
+      });
+    }
+    return items;
+  }, [isPlatformAdmin]);
 
   return (
     <aside
@@ -176,72 +248,16 @@ export default function Sidebar() {
         {sidebarCollapsed && <Zap className="mx-auto h-5 w-5 text-primary" />}
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-2 scrollbar-thin">
-        {NAV_SECTIONS.map((section, sectionIndex) => (
-          <div key={section.title} className={cn(sectionIndex > 0 && "mt-4")}>
-            {!sidebarCollapsed && (
-              <div className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                {section.title}
-              </div>
-            )}
-            {sidebarCollapsed && sectionIndex > 0 && (
-              <div className="mx-2 mb-2 border-t border-sidebar-border" />
-            )}
-            <div className="space-y-1">
-              {section.items.map((item) => {
-                const isActive =
-                  item.id === "admin"
-                    ? Boolean(pathname?.startsWith("/admin"))
-                    : currentPath === item.id;
-                const Icon = item.icon;
-
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleNavClick(item.id)}
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                      isActive
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-                      sidebarCollapsed && "justify-center px-2",
-                    )}
-                    title={sidebarCollapsed ? item.label : undefined}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {!sidebarCollapsed && (
-                      <span className="flex-1 text-left">{item.label}</span>
-                    )}
-                    {!sidebarCollapsed &&
-                      item.badge !== undefined &&
-                      item.badge > 0 && (
-                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-medium text-destructive-foreground">
-                          {item.badge}
-                        </span>
-                      )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+      {/* Main Navigation -- flat list, no section groupings */}
+      <nav className="flex-1 overflow-y-auto p-2 space-y-0.5 scrollbar-thin">
+        {visibleNavItems.map(renderNavItem)}
       </nav>
 
-      {/* Business Info */}
-      {!sidebarCollapsed && config && (
-        <div className="border-t border-sidebar-border p-4">
-          <div className="mb-1 truncate text-sm font-medium text-sidebar-foreground">
-            {config.businessName}
-          </div>
-          <div className="truncate text-xs text-muted-foreground">
-            {config.agentName} Agent
-          </div>
-        </div>
-      )}
+      {/* Bottom Navigation */}
+      <div className="border-t border-sidebar-border p-2 space-y-0.5">
+        {bottomItems.map(renderNavItem)}
 
-      {/* Collapse Toggle */}
-      <div className="border-t border-sidebar-border p-2">
+        {/* Collapse Toggle */}
         <button
           onClick={toggleSidebar}
           className="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
@@ -257,20 +273,17 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* Reset (Dev) */}
-      <div className="border-t border-sidebar-border p-2">
-        <button
-          onClick={resetConfig}
-          className={cn(
-            "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-destructive",
-            sidebarCollapsed && "justify-center",
-          )}
-          title="Reset Configuration"
-        >
-          <LogOut className="h-4 w-4" />
-          {!sidebarCollapsed && <span>Reset</span>}
-        </button>
-      </div>
+      {/* Business Info */}
+      {!sidebarCollapsed && config && (
+        <div className="border-t border-sidebar-border p-4">
+          <div className="mb-1 truncate text-sm font-medium text-sidebar-foreground">
+            {config.businessName}
+          </div>
+          <div className="truncate text-xs text-muted-foreground">
+            {config.agentName} Agent
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

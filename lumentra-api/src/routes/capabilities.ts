@@ -5,6 +5,7 @@ import {
   transaction,
 } from "../services/database/client.js";
 import { getAuthUserId } from "../middleware/index.js";
+import { logActivity } from "../services/audit/logger.js";
 import type { PoolClient } from "pg";
 
 export const capabilitiesRoutes = new Hono();
@@ -436,6 +437,14 @@ capabilitiesRoutes.put("/", async (c) => {
       ORDER BY created_at ASC
     `;
     const updated = await queryAll<CapabilityRow>(updatedSql, [tenantId]);
+
+    await logActivity({
+      tenantId,
+      userId,
+      action: "update",
+      resourceType: "capabilities",
+      newValues: { capabilities: body.capabilities },
+    });
 
     return c.json({ capabilities: updated || [] });
   } catch (error) {

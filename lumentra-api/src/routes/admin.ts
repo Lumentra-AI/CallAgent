@@ -1,10 +1,11 @@
 import { Hono } from "hono";
 import { queryOne, queryAll } from "../services/database/client.js";
-import { insertOne, updateOne } from "../services/database/query-helpers.js";
+import { updateOne } from "../services/database/query-helpers.js";
 import { releaseNumber } from "../services/signalwire/phone.js";
 import { invalidateTenant } from "../services/database/tenant-cache.js";
 import { notifyAdmin } from "../services/notifications/admin-notify.js";
 import { getPlatformAdminContext } from "../middleware/auth.js";
+import { logActivity } from "../services/audit/logger.js";
 
 // Tier feature defaults for auto-adjustment on tier change
 const TIER_FEATURE_DEFAULTS: Record<string, Record<string, boolean>> = {
@@ -33,32 +34,6 @@ const TIER_FEATURE_DEFAULTS: Record<string, Record<string, boolean>> = {
     priority_support: true,
   },
 };
-
-/** Write an audit log entry. Silently catches errors to avoid blocking the operation. */
-async function writeAuditLog(opts: {
-  tenantId: string;
-  adminId: string | null;
-  action: string;
-  resourceType: string;
-  resourceId: string;
-  oldValues: Record<string, unknown> | null;
-  newValues: Record<string, unknown> | null;
-}): Promise<void> {
-  try {
-    await insertOne("audit_logs", {
-      tenant_id: opts.tenantId,
-      user_id: opts.adminId,
-      action: opts.action,
-      resource_type: opts.resourceType,
-      resource_id: opts.resourceId,
-      old_values: opts.oldValues ? JSON.stringify(opts.oldValues) : null,
-      new_values: opts.newValues ? JSON.stringify(opts.newValues) : null,
-      created_at: new Date().toISOString(),
-    });
-  } catch (err) {
-    console.error("[ADMIN] Failed to write audit log:", err);
-  }
-}
 
 export const adminRoutes = new Hono();
 
@@ -368,9 +343,9 @@ adminRoutes.put("/tenants/:id", async (c) => {
     await invalidateTenant(id);
 
     // Audit log
-    await writeAuditLog({
+    await logActivity({
       tenantId: id,
-      adminId: admin.userId ?? null,
+      userId: admin.userId ?? null,
       action: "update",
       resourceType: "tenant",
       resourceId: id,
@@ -442,9 +417,9 @@ adminRoutes.put("/tenants/:id/status", async (c) => {
     await invalidateTenant(id);
 
     // Audit log
-    await writeAuditLog({
+    await logActivity({
       tenantId: id,
-      adminId: admin.userId ?? null,
+      userId: admin.userId ?? null,
       action: "update",
       resourceType: "tenant",
       resourceId: id,
@@ -517,9 +492,9 @@ adminRoutes.put("/tenants/:id/tier", async (c) => {
     await invalidateTenant(id);
 
     // Audit log
-    await writeAuditLog({
+    await logActivity({
       tenantId: id,
-      adminId: admin.userId ?? null,
+      userId: admin.userId ?? null,
       action: "update",
       resourceType: "tenant",
       resourceId: id,
@@ -593,9 +568,9 @@ adminRoutes.post("/tenants/:id/features", async (c) => {
     await invalidateTenant(id);
 
     // Audit log
-    await writeAuditLog({
+    await logActivity({
       tenantId: id,
-      adminId: admin.userId ?? null,
+      userId: admin.userId ?? null,
       action: "update",
       resourceType: "tenant",
       resourceId: id,
@@ -609,6 +584,104 @@ adminRoutes.post("/tenants/:id/features", async (c) => {
   } catch (error) {
     console.error("[ADMIN] Error updating tenant features:", error);
     return c.json({ error: "Failed to update tenant features" }, 500);
+  }
+});
+
+/**
+ * PUT /admin/tenants/:id/feature-overrides
+ * Manage tenant_feature_overrides (dashboard page visibility).
+ * Body: { overrides: { feature_key: boolean, ... } }
+ */
+adminRoutes.put("/tenants/:id/feature-overrides", async (c) => {
+  const id = c.req.param("id");
+  const admin = getPlatformAdminContext(c);
+  const body = await c.req.json();
+
+  if (!body.overrides || typeof body.overrides !== "object") {
+    return c.json(
+      { error: "Provide { overrides: { feature_key: boolean, ... } }" },
+      400,
+    );
+  }
+
+  try {
+    const existing = await queryOne<{ id: string }>(
+      `SELECT id FROM tenants WHERE id = $1`,
+      [id],
+    );
+
+    if (!existing) {
+      return c.json({ error: "Tenant not found" }, 404);
+    }
+
+    // Upsert each override
+    for (const [featureKey, enabled] of Object.entries(body.overrides)) {
+      if (typeof enabled !== "boolean") continue;
+
+      await queryOne(
+        `INSERT INTO tenant_feature_overrides (tenant_id, feature_key, enabled)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (tenant_id, feature_key)
+         DO UPDATE SET enabled = $3, updated_at = NOW()`,
+        [id, featureKey, enabled],
+      );
+    }
+
+    // Return current overrides
+    const overrides = await queryAll<{
+      feature_key: string;
+      enabled: boolean;
+    }>(
+      `SELECT feature_key, enabled FROM tenant_feature_overrides WHERE tenant_id = $1`,
+      [id],
+    );
+
+    // Audit log
+    await logActivity({
+      tenantId: id,
+      userId: admin.userId ?? null,
+      action: "update",
+      resourceType: "feature_overrides",
+      resourceId: id,
+      oldValues: null,
+      newValues: body.overrides,
+    });
+
+    console.log(
+      `[ADMIN] Tenant ${id} feature overrides updated by platform admin`,
+    );
+
+    return c.json({ success: true, overrides: overrides || [] });
+  } catch (error) {
+    console.error("[ADMIN] Error updating feature overrides:", error);
+    return c.json({ error: "Failed to update feature overrides" }, 500);
+  }
+});
+
+/**
+ * GET /admin/tenants/:id/feature-overrides
+ * List feature overrides for a tenant
+ */
+adminRoutes.get("/tenants/:id/feature-overrides", async (c) => {
+  const id = c.req.param("id");
+
+  try {
+    const overrides = await queryAll<{
+      feature_key: string;
+      enabled: boolean;
+      updated_at: string;
+    }>(
+      `SELECT feature_key, enabled, updated_at
+       FROM tenant_feature_overrides
+       WHERE tenant_id = $1
+       ORDER BY feature_key ASC`,
+      [id],
+    );
+
+    return c.json({ overrides: overrides || [] });
+  } catch (error) {
+    console.error("[ADMIN] Error fetching feature overrides:", error);
+    return c.json({ error: "Failed to fetch feature overrides" }, 500);
   }
 });
 
@@ -660,9 +733,9 @@ adminRoutes.delete("/tenants/:id", async (c) => {
     await invalidateTenant(id);
 
     // Audit log
-    await writeAuditLog({
+    await logActivity({
       tenantId: id,
-      adminId: admin.userId ?? null,
+      userId: admin.userId ?? null,
       action: "delete",
       resourceType: "tenant",
       resourceId: id,

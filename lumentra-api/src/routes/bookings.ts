@@ -18,9 +18,11 @@ import {
 import { BookingFilters, PaginationParams } from "../types/crm.js";
 import {
   getAuthTenantId,
+  getAuthUserId,
   strictRateLimit,
   requireRole,
 } from "../middleware/index.js";
+import { logActivity } from "../services/audit/logger.js";
 
 export const bookingsRoutes = new Hono();
 
@@ -241,6 +243,15 @@ bookingsRoutes.post("/", strictRateLimit("bookings-create"), async (c) => {
 
     const booking = await createBooking(tenantId, parsed.data);
 
+    await logActivity({
+      tenantId,
+      userId: getAuthUserId(c),
+      action: "create",
+      resourceType: "booking",
+      resourceId: booking.id,
+      newValues: parsed.data as Record<string, unknown>,
+    });
+
     return c.json(booking, 201);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -270,6 +281,15 @@ bookingsRoutes.put("/:id", async (c) => {
     }
 
     const booking = await updateBooking(tenantId, id, parsed.data);
+
+    await logActivity({
+      tenantId,
+      userId: getAuthUserId(c),
+      action: "update",
+      resourceType: "booking",
+      resourceId: id,
+      newValues: parsed.data as Record<string, unknown>,
+    });
 
     return c.json(booking);
   } catch (error) {
@@ -329,6 +349,15 @@ bookingsRoutes.delete(
       const body = await c.req.json().catch(() => ({}));
 
       await cancelBooking(tenantId, id, body.reason);
+
+      await logActivity({
+        tenantId,
+        userId: getAuthUserId(c),
+        action: "delete",
+        resourceType: "booking",
+        resourceId: id,
+        newValues: body.reason ? { reason: body.reason } : null,
+      });
 
       return c.json({ success: true });
     } catch (error) {
@@ -410,6 +439,15 @@ bookingsRoutes.post("/:id/cancel", async (c) => {
     const body = await c.req.json().catch(() => ({}));
 
     const booking = await cancelBooking(tenantId, id, body.reason);
+
+    await logActivity({
+      tenantId,
+      userId: getAuthUserId(c),
+      action: "update",
+      resourceType: "booking",
+      resourceId: id,
+      newValues: { status: "cancelled", reason: body.reason ?? null },
+    });
 
     return c.json(booking);
   } catch (error) {

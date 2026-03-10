@@ -32,6 +32,7 @@ import {
   strictRateLimit,
   requireRole,
 } from "../middleware/index.js";
+import { logActivity } from "../services/audit/logger.js";
 
 export const contactsRoutes = new Hono();
 
@@ -315,6 +316,15 @@ contactsRoutes.post("/", strictRateLimit("contacts-create"), async (c) => {
 
     const contact = await createContact(tenantId, parsed.data);
 
+    await logActivity({
+      tenantId,
+      userId: getAuthUserId(c),
+      action: "create",
+      resourceType: "contact",
+      resourceId: contact.id,
+      newValues: parsed.data as Record<string, unknown>,
+    });
+
     return c.json(contact, 201);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -349,6 +359,15 @@ contactsRoutes.put("/:id", async (c) => {
 
     const contact = await updateContact(tenantId, id, parsed.data);
 
+    await logActivity({
+      tenantId,
+      userId: getAuthUserId(c),
+      action: "update",
+      resourceType: "contact",
+      resourceId: id,
+      newValues: parsed.data as Record<string, unknown>,
+    });
+
     return c.json(contact);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -369,6 +388,14 @@ contactsRoutes.delete("/:id", requireRole("owner", "admin"), async (c) => {
     const id = c.req.param("id");
 
     await deleteContact(tenantId, id);
+
+    await logActivity({
+      tenantId,
+      userId: getAuthUserId(c),
+      action: "delete",
+      resourceType: "contact",
+      resourceId: id,
+    });
 
     return c.json({ success: true });
   } catch (error) {
@@ -900,6 +927,18 @@ contactsRoutes.post("/merge", requireRole("owner", "admin"), async (c) => {
       parsed.data.primary_id,
       parsed.data.secondary_ids,
     );
+
+    await logActivity({
+      tenantId,
+      userId: getAuthUserId(c),
+      action: "update",
+      resourceType: "contact",
+      resourceId: parsed.data.primary_id,
+      newValues: {
+        merged_from: parsed.data.secondary_ids,
+        primary_id: parsed.data.primary_id,
+      },
+    });
 
     return c.json(contact);
   } catch (error) {

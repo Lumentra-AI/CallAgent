@@ -12,6 +12,7 @@ import {
   strictRateLimit,
   requireRole,
 } from "../middleware/index.js";
+import { logActivity } from "../services/audit/logger.js";
 
 export const tenantsRoutes = new Hono();
 
@@ -357,6 +358,15 @@ tenantsRoutes.put(
       // Invalidate cache so changes take effect immediately
       await invalidateTenant(id);
 
+      logActivity({
+        tenantId: id,
+        userId,
+        action: "update",
+        resourceType: "tenant",
+        resourceId: id,
+        newValues: body,
+      });
+
       return c.json(data);
     } catch (err) {
       console.error("[tenants] PUT /:id error:", err);
@@ -525,6 +535,15 @@ tenantsRoutes.post("/:id/members", async (c) => {
       accepted_at: new Date().toISOString(), // Auto-accept for now
     });
 
+    logActivity({
+      tenantId,
+      userId,
+      action: "create",
+      resourceType: "tenant_member",
+      resourceId: data.id,
+      newValues: { user_id: body.user_id, role: body.role },
+    });
+
     return c.json(data, 201);
   } catch (err) {
     console.error("[tenants] POST /:id/members error:", err);
@@ -640,6 +659,18 @@ tenantsRoutes.delete("/:id/members/:memberId", async (c) => {
       { is_active: false },
       { id: memberId },
     );
+
+    logActivity({
+      tenantId,
+      userId,
+      action: "delete",
+      resourceType: "tenant_member",
+      resourceId: memberId,
+      newValues: {
+        removed_user_id: targetMember.user_id,
+        role: targetMember.role,
+      },
+    });
 
     return c.json({ success: true });
   } catch (err) {

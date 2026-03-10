@@ -26,6 +26,9 @@ import { promotionsRoutes } from "./routes/promotions.js";
 import { pendingBookingsRoutes } from "./routes/pending-bookings.js";
 import { dealsRoutes } from "./routes/deals.js";
 import { tasksRoutes } from "./routes/tasks.js";
+import { featuresRoutes } from "./routes/features.js";
+import { teamRoutes } from "./routes/team.js";
+import { activityRoutes } from "./routes/activity.js";
 import { internalRoutes } from "./routes/internal.js";
 import { adminRoutes } from "./routes/admin.js";
 import { adminAnalyticsRoutes } from "./routes/admin-analytics.js";
@@ -171,6 +174,9 @@ export function createApp() {
   app.route("/api/deals", dealsRoutes);
   app.route("/api/tasks", tasksRoutes);
   app.route("/api/chat-sessions", chatSessionsRoutes);
+  app.route("/api/features", featuresRoutes);
+  app.route("/api/team", teamRoutes);
+  app.route("/api/activity", activityRoutes);
 
   // Root
   app.get("/", (c) => {

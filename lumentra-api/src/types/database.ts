@@ -386,6 +386,29 @@ export interface TransferBehavior {
   no_answer: NoAnswerBehavior;
 }
 
+export interface TenantFeatureOverride {
+  id: string;
+  tenant_id: string;
+  feature_key: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TenantMember {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  role: "owner" | "admin" | "member" | "readonly";
+  invited_by?: string;
+  invited_at?: string;
+  accepted_at?: string;
+  is_active: boolean;
+  allowed_pages?: string[] | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // Extended Tenant type with new setup wizard fields
 export interface TenantExtended extends Tenant {
   setup_step?: SetupStep;

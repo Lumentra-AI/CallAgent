@@ -39,7 +39,7 @@ const THEME_STORAGE_KEY = "lumentra_theme";
 // ============================================================================
 
 function getSystemTheme(): ResolvedTheme {
-  if (typeof window === "undefined") return "dark";
+  if (typeof window === "undefined") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light";
@@ -67,11 +67,9 @@ const getMountedSnapshot = () => true;
 const getMountedServerSnapshot = () => false;
 
 function getInitialTheme(): ThemeMode {
-  if (typeof window === "undefined") return "system";
+  if (typeof window === "undefined") return "light";
   const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null;
-  return saved && ["light", "dark", "system"].includes(saved)
-    ? saved
-    : "system";
+  return saved && ["light", "dark", "system"].includes(saved) ? saved : "light";
 }
 
 // ============================================================================
