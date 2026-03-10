@@ -14,6 +14,7 @@ import {
   ArrowRightLeft,
   Zap,
   PhoneCall,
+  PhoneForwarded,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AISummaryInline } from "./AISummary";
@@ -114,6 +115,12 @@ const TRANSFER_TYPE_STYLES: Record<
     text: "text-violet-600 dark:text-violet-400",
     label: "Callback",
     icon: PhoneCall,
+  },
+  consultation: {
+    bg: "bg-emerald-500/10",
+    text: "text-emerald-600 dark:text-emerald-400",
+    label: "Consultation",
+    icon: PhoneForwarded,
   },
 };
 

@@ -1,6 +1,6 @@
 import asyncio
-import json
 import logging
+import os
 
 from livekit import rtc
 from livekit.agents import RunContext
@@ -9,6 +9,17 @@ from livekit.agents.llm import function_tool
 from api_client import get_client
 
 logger = logging.getLogger("lumentra-agent.tools")
+
+# LiveKit API for outbound SIP (consultation transfer)
+try:
+    from livekit import api as lkapi
+    from livekit.protocol.sip import CreateSIPParticipantRequest
+    from livekit.protocol.room import RoomParticipantIdentity
+except ImportError:
+    lkapi = None
+    CreateSIPParticipantRequest = None  # type: ignore[assignment,misc]
+    RoomParticipantIdentity = None  # type: ignore[assignment,misc]
+    logger.warning("livekit.api not available -- consultation transfers will fall back to warm")
 
 
 async def _call_tool(context: RunContext, action: str, args: dict) -> str:
@@ -232,6 +243,300 @@ async def _warm_transfer_sequence(
             pass
 
 
+async def _wait_for_dtmf(
+    room: rtc.Room,
+    target_identity: str,
+    timeout: float = 15.0,
+) -> str | None:
+    """Wait for a DTMF digit from a specific SIP participant.
+
+    Returns the digit string ('1', '2', etc.) or None on timeout.
+    """
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[str] = loop.create_future()
+
+    def on_dtmf(dtmf):
+        if future.done():
+            return
+        # dtmf.participant is the RemoteParticipant who sent the DTMF
+        participant = getattr(dtmf, "participant", None)
+        p_identity = getattr(participant, "identity", "") if participant else ""
+        digit = getattr(dtmf, "digit", "") or str(getattr(dtmf, "code", ""))
+        if p_identity == target_identity and digit:
+            future.set_result(digit)
+
+    room.on("sip_dtmf_received", on_dtmf)
+    try:
+        return await asyncio.wait_for(future, timeout=timeout)
+    except asyncio.TimeoutError:
+        return None
+    finally:
+        try:
+            room.off("sip_dtmf_received", on_dtmf)
+        except Exception:
+            pass
+
+
+async def _consultation_transfer_sequence(
+    context: RunContext,
+    contacts: list[dict],
+    no_answer: str,
+    queue_id: str,
+    reason: str,
+) -> None:
+    """Background task for consultation transfer.
+
+    Dials each contact via outbound SIP, plays a TTS briefing,
+    waits for DTMF accept/decline, then connects or falls back.
+    Falls back to warm transfer if outbound SIP trunk is not configured.
+    """
+    session = context.session
+    agent = context.session.current_agent
+    room = session.room_io.room
+
+    trunk_id = os.getenv("LK_SIP_OUTBOUND_TRUNK_ID", "")
+
+    # Graceful degradation: no outbound trunk -> fall back to warm (SIP REFER)
+    if not trunk_id or lkapi is None:
+        logger.warning("No outbound SIP trunk configured, falling back to warm transfer")
+        contact_phones = [c["phone"] for c in contacts]
+        await _warm_transfer_sequence(context, contact_phones, no_answer, queue_id)
+        return
+
+    try:
+        # Wait for agent to finish speaking the hold message
+        await asyncio.sleep(4.0)
+
+        # Pause agent: stop listening and responding
+        session.input.set_audio_enabled(False)
+        session.output.set_audio_enabled(False)
+
+        # Play hold music
+        hold_handle = None
+        if agent.hold_player:
+            try:
+                from livekit.agents.voice import AudioConfig, BuiltinAudioClip
+                hold_handle = agent.hold_player.play(
+                    AudioConfig(BuiltinAudioClip.HOLD_MUSIC, volume=0.5),
+                    loop=True,
+                )
+            except Exception as e:
+                logger.warning("Hold music failed to start: %s", e)
+
+        # Update transfer status to initiated
+        client = get_client()
+        try:
+            await client.post(
+                "/internal/voice-tools/update_transfer_status",
+                json={
+                    "tenant_id": agent.tenant_config["id"],
+                    "args": {"queue_id": queue_id, "status": "initiated"},
+                },
+            )
+        except Exception:
+            pass
+
+        lk = lkapi.LiveKitAPI()
+        accepted = False
+        business_name = agent.tenant_config.get("business_name", "our team")
+
+        try:
+            for i, contact in enumerate(contacts):
+                phone = contact["phone"]
+                name = contact.get("name", "team member")
+                contact_id = contact.get("id", "unknown")
+                supervisor_identity = f"supervisor-{contact_id[:8]}"
+
+                logger.info(
+                    "Consultation attempt %d/%d: dialing %s (%s)",
+                    i + 1, len(contacts), name, phone,
+                )
+
+                # Dial supervisor via outbound SIP trunk
+                try:
+                    await asyncio.wait_for(
+                        lk.sip.create_sip_participant(
+                            CreateSIPParticipantRequest(
+                                sip_trunk_id=trunk_id,
+                                sip_call_to=phone,
+                                room_name=room.name,
+                                participant_identity=supervisor_identity,
+                                participant_name=name,
+                            )
+                        ),
+                        timeout=35.0,
+                    )
+                    logger.info("Supervisor %s answered", name)
+                except (asyncio.TimeoutError, Exception) as e:
+                    logger.warning("Supervisor %s did not answer: %s", name, e)
+                    continue
+
+                # Supervisor is in the room -- stop hold music, brief them
+                if hold_handle:
+                    try:
+                        hold_handle.stop()
+                        hold_handle = None
+                    except Exception:
+                        pass
+
+                # Re-enable output for TTS briefing (keep input disabled)
+                session.output.set_audio_enabled(True)
+
+                briefing = (
+                    f"Hi {name}, this is the {business_name} assistant. "
+                    f"I have a caller on the line regarding {reason}. "
+                    f"Press 1 to accept the call, or 2 to decline."
+                )
+
+                try:
+                    handle = session.say(briefing, allow_interruptions=False)
+                    await handle
+                except Exception as e:
+                    logger.error("TTS briefing failed: %s", e)
+                    try:
+                        await lk.room.remove_participant(
+                            RoomParticipantIdentity(
+                                room=room.name,
+                                identity=supervisor_identity,
+                            )
+                        )
+                    except Exception:
+                        pass
+                    session.output.set_audio_enabled(False)
+                    continue
+
+                # Wait for DTMF response
+                digit = await _wait_for_dtmf(room, supervisor_identity, timeout=15.0)
+
+                if digit == "1":
+                    # Supervisor accepted
+                    logger.info("Supervisor %s accepted the transfer", name)
+                    try:
+                        handle = session.say("Connecting you now.", allow_interruptions=False)
+                        await handle
+                    except Exception:
+                        pass
+
+                    # Agent goes silent -- caller and supervisor talk directly
+                    session.output.set_audio_enabled(False)
+                    session.input.set_audio_enabled(False)
+
+                    try:
+                        await client.post(
+                            "/internal/voice-tools/update_transfer_status",
+                            json={
+                                "tenant_id": agent.tenant_config["id"],
+                                "args": {"queue_id": queue_id, "status": "completed"},
+                            },
+                        )
+                    except Exception:
+                        pass
+
+                    accepted = True
+                    break
+                else:
+                    # Declined or timed out
+                    logger.info(
+                        "Supervisor %s declined or timed out (digit=%s)", name, digit
+                    )
+
+                    # Brief acknowledgment if they pressed 2
+                    if digit == "2":
+                        try:
+                            handle = session.say("No problem, thanks.", allow_interruptions=False)
+                            await handle
+                        except Exception:
+                            pass
+
+                    # Remove supervisor from room
+                    try:
+                        await lk.room.remove_participant(
+                            RoomParticipantIdentity(
+                                room=room.name,
+                                identity=supervisor_identity,
+                            )
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to remove supervisor: %s", e)
+
+                    # Disable output, restart hold music for next attempt
+                    session.output.set_audio_enabled(False)
+                    if agent.hold_player and i < len(contacts) - 1:
+                        try:
+                            from livekit.agents.voice import AudioConfig, BuiltinAudioClip
+                            hold_handle = agent.hold_player.play(
+                                AudioConfig(BuiltinAudioClip.HOLD_MUSIC, volume=0.5),
+                                loop=True,
+                            )
+                        except Exception:
+                            pass
+        finally:
+            await lk.aclose()
+
+        if accepted:
+            return
+
+        # All contacts declined or failed
+        if hold_handle:
+            try:
+                hold_handle.stop()
+            except Exception:
+                pass
+
+        # Update status
+        try:
+            await client.post(
+                "/internal/voice-tools/update_transfer_status",
+                json={
+                    "tenant_id": agent.tenant_config["id"],
+                    "args": {"queue_id": queue_id, "status": "failed"},
+                },
+            )
+        except Exception:
+            pass
+
+        # Resume agent with fallback speech
+        session.input.set_audio_enabled(True)
+        session.output.set_audio_enabled(True)
+
+        if no_answer == "message":
+            session.generate_reply(
+                instructions=(
+                    "The consultation transfer was unsuccessful -- no team member was available to take the call. "
+                    "Apologize to the caller and offer to take a message so someone can call them back. "
+                    "Ask for their name and what they'd like to pass along, then use the queue_callback tool."
+                )
+            )
+        elif no_answer == "retry":
+            session.generate_reply(
+                instructions=(
+                    "The consultation transfer was unsuccessful -- nobody was available. "
+                    "Apologize and suggest the caller try calling back during business hours. "
+                    "Offer to take a message as an alternative."
+                )
+            )
+        else:
+            session.generate_reply(
+                instructions=(
+                    "The consultation transfer was unsuccessful. Apologize to the caller "
+                    "and ask if there's something else you can help with."
+                )
+            )
+
+    except asyncio.CancelledError:
+        logger.debug("Consultation transfer sequence cancelled")
+    except Exception as e:
+        logger.error("Consultation transfer sequence error: %s", e)
+        try:
+            session.input.set_audio_enabled(True)
+            session.output.set_audio_enabled(True)
+            session.generate_reply(
+                instructions="Something went wrong with the transfer. Apologize and offer to help another way."
+            )
+        except Exception:
+            pass
+
+
 async def _cold_transfer_sequence(
     context: RunContext,
     contact_phones: list[str],
@@ -429,6 +734,14 @@ async def transfer_to_human(
             _cold_transfer_sequence(context, contact_phones, no_answer, queue_id)
         )
         return f"Transferring you to {contact_name} now."
+
+    # CONSULTATION: dial supervisor, brief, DTMF accept/decline
+    if transfer_type == "consultation":
+        logger.info("Initiating consultation transfer to %d contact(s)", len(contacts))
+        asyncio.create_task(
+            _consultation_transfer_sequence(context, contacts, no_answer, queue_id, reason)
+        )
+        return f"Let me connect you with {contact_name}. Please hold while I brief them."
 
     # WARM: hold message -> hold music -> transfer -> fallback
     logger.info("Initiating warm transfer to %d contact(s)", len(contacts))

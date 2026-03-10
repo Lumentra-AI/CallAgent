@@ -275,7 +275,7 @@ export type MentionBehavior = "always" | "relevant" | "interested";
 
 export type ContactAvailability = "business_hours" | "always" | "custom";
 
-export type TransferType = "warm" | "cold" | "callback";
+export type TransferType = "warm" | "cold" | "callback" | "consultation";
 
 export type NoAnswerBehavior =
   | "next_contact"

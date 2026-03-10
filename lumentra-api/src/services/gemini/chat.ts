@@ -312,7 +312,13 @@ Today's Date: ${new Date().toISOString().split("T")[0]}
       .join(", ");
     prompt += `Team members: ${contactList}\n`;
 
-    if (transferType === "warm") {
+    if (transferType === "consultation") {
+      prompt += `Transfer mode: consultation -- connect after briefing the team member first.
+When the caller needs to speak with a team member:
+1. Say "Let me connect you with [name]. Please hold while I brief them."
+2. Call the transfer_to_human tool with the reason
+3. The system dials the team member, briefs them on the call, and connects everyone once they accept\n`;
+    } else if (transferType === "warm") {
       prompt += `Transfer mode: warm -- always tell the caller you'll connect them and ask them to hold.
 When the caller needs to speak with a team member:
 1. Say "Let me connect you with [name]. Please hold for just a moment."

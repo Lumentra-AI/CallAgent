@@ -18,7 +18,7 @@ export interface EscalationMessage {
   timestamp: Date;
 }
 
-export type TransferType = "warm" | "cold" | "callback";
+export type TransferType = "warm" | "cold" | "callback" | "consultation";
 export type TransferStatus =
   | "pending"
   | "initiated"
