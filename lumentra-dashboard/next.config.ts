@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -39,7 +40,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
-              `connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL || ""} ${process.env.NEXT_PUBLIC_API_URL || ""}`,
+              `connect-src 'self' https://*.ingest.sentry.io ${process.env.NEXT_PUBLIC_SUPABASE_URL || ""} ${process.env.NEXT_PUBLIC_API_URL || ""}`,
               "frame-src 'self'",
               "base-uri 'self'",
               "form-action 'self'",
@@ -51,4 +52,7 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  silent: true,
+  disableLogger: true,
+});

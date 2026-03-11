@@ -33,6 +33,17 @@ from tenant_config import get_tenant_by_phone
 from call_logger import log_call
 
 load_dotenv()
+
+# Initialize Sentry for error tracking (no-op if SENTRY_DSN not set)
+_sentry_dsn = os.environ.get("SENTRY_DSN", "")
+if _sentry_dsn:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        environment=os.environ.get("ENVIRONMENT", "production"),
+        traces_sample_rate=0.2,
+    )
+
 logger = logging.getLogger("lumentra-agent")
 
 

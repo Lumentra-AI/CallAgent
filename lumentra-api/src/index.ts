@@ -1,3 +1,4 @@
+import "./instrument.js";
 import "dotenv/config";
 import { serve } from "@hono/node-server";
 import { initTenantCache } from "./services/database/tenant-cache.js";
@@ -24,7 +25,13 @@ async function start() {
       "SIGNALWIRE_WEBHOOK_SECRET",
     );
   }
-  const recommendedEnv = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
+  const recommendedEnv = [
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "INTERNAL_API_KEY",
+    "RESEND_API_KEY",
+    "PLATFORM_ADMIN_EMAILS",
+  ];
 
   const missingRequired = requiredEnv.filter((key) => !process.env[key]);
   if (missingRequired.length > 0) {

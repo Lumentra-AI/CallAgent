@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -195,6 +196,9 @@ export function createApp() {
   // Error handler
   app.onError((err, c) => {
     console.error("[ERROR]", err);
+    Sentry.captureException(err, {
+      extra: { path: c.req.path, method: c.req.method },
+    });
     return c.json(
       {
         error: "Internal server error",

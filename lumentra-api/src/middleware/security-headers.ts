@@ -8,6 +8,10 @@ export function securityHeaders() {
     c.header("X-Frame-Options", "DENY");
     c.header("Referrer-Policy", "strict-origin-when-cross-origin");
     c.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    c.header(
+      "Content-Security-Policy",
+      "default-src 'none'; frame-ancestors 'none'",
+    );
 
     if (process.env.NODE_ENV === "production") {
       c.header(
