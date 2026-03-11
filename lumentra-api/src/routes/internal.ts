@@ -204,7 +204,7 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
       `Thank you for calling ${businessName}. How can I help you today?`,
     greeting_after_hours:
       tenant.greeting_after_hours ||
-      `Thank you for calling ${businessName}. We're currently closed. I can still help you with general questions or take a message.`,
+      `Thank you for calling ${businessName}. We're currently closed, but I can still help you with general questions or take a message.`,
     greeting_returning: tenant.greeting_returning,
     timezone: tz,
     operating_hours: tenant.operating_hours || {

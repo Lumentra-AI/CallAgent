@@ -691,23 +691,36 @@ async def create_order(
 async def transfer_to_human(
     context: RunContext,
     reason: str,
+    target_role: str = "",
 ) -> str:
-    """Transfer to human staff. Use when the caller explicitly asks for a human,
-    real person, manager, or when you cannot resolve their issue.
+    """Transfer to human staff or a specific department. Use when the caller
+    explicitly asks for a human, a specific department, or when you cannot
+    resolve their issue.
 
     The system will handle hold music, contact selection, and transfer automatically
     based on the business's configured transfer behavior (warm/cold/callback).
 
+    If the caller asks for a specific department or person (e.g. "housekeeping",
+    "room service", "front desk", "Dr. Smith"), pass that as target_role so the
+    system routes to the right contact.
+
     Args:
         reason: One of: customer_request, complaint, refund_request, cannot_resolve,
-                billing_issue, cancellation, special_request, persistent_request.
+                billing_issue, cancellation, special_request, persistent_request,
+                department_transfer.
+        target_role: Optional department or person name to transfer to (e.g.
+                     "housekeeping", "room service", "front desk", "maintenance",
+                     "billing", "manager"). Leave empty for general escalation.
     """
     agent = context.session.current_agent
     room = context.session.room_io.room
 
     # Step 1: Call prepare_transfer API -- selects available contacts,
     # creates queue entry, determines effective transfer type
-    result = await _call_tool_raw(context, "prepare_transfer", {"reason": reason})
+    prepare_args = {"reason": reason}
+    if target_role:
+        prepare_args["target_contact"] = target_role
+    result = await _call_tool_raw(context, "prepare_transfer", prepare_args)
 
     transfer_type = result.get("transfer_type_effective", "callback")
     contacts = result.get("contacts", [])

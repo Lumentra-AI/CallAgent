@@ -611,7 +611,51 @@ export async function executePrepareTransfer(
   const timezone = tenant?.timezone || "America/New_York";
 
   // Select available escalation contacts
-  const contacts = await selectAvailableContacts(context.tenantId, timezone);
+  let contacts = await selectAvailableContacts(context.tenantId, timezone);
+
+  // Targeted transfer: if target_contact is specified, prioritize matching contact
+  if (args.target_contact && contacts.length > 0) {
+    const target = args.target_contact.toLowerCase().trim();
+    const matchIdx = contacts.findIndex((c) => {
+      const roleLower = (c.role || "").toLowerCase();
+      const nameLower = c.name.toLowerCase();
+      // Exact match on role or name
+      if (roleLower === target || nameLower === target) return true;
+      // Partial match: target contained in role or name, or vice versa
+      if (
+        roleLower &&
+        (roleLower.includes(target) || target.includes(roleLower))
+      )
+        return true;
+      if (nameLower.includes(target) || target.includes(nameLower)) return true;
+      // Underscore/space normalization: "room_service" matches "room service"
+      const targetNorm = target.replace(/[_\s-]+/g, " ");
+      const roleNorm = roleLower.replace(/[_\s-]+/g, " ");
+      const nameNorm = nameLower.replace(/[_\s-]+/g, " ");
+      if (roleNorm === targetNorm || nameNorm === targetNorm) return true;
+      if (
+        roleNorm &&
+        (roleNorm.includes(targetNorm) || targetNorm.includes(roleNorm))
+      )
+        return true;
+      if (nameNorm.includes(targetNorm) || targetNorm.includes(nameNorm))
+        return true;
+      return false;
+    });
+
+    if (matchIdx >= 0) {
+      // Move matched contact to front, keep others as fallbacks
+      const matched = contacts.splice(matchIdx, 1)[0];
+      contacts = [matched, ...contacts];
+      console.log(
+        `[TOOLS] Targeted transfer: matched "${args.target_contact}" to ${matched.name} (${matched.role})`,
+      );
+    } else {
+      console.log(
+        `[TOOLS] Targeted transfer: no match for "${args.target_contact}", using sort_order`,
+      );
+    }
+  }
 
   // Determine effective transfer type
   let effectiveType = transferBehavior.type || "warm";

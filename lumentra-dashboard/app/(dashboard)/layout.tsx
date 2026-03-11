@@ -146,18 +146,25 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     }
   }, [authLoading, user, router]);
 
-  // Redirect to setup if user has no tenants
+  // Redirect to setup if user has no tenants or setup is incomplete
+  useEffect(() => {
+    if (!authLoading && !tenantLoading && user && !error) {
+      if (tenants.length === 0) {
+        router.replace("/setup");
+      }
+    }
+  }, [authLoading, tenantLoading, user, tenants, error, router]);
+
+  // Redirect to setup if current tenant hasn't completed setup
   useEffect(() => {
     if (
-      !authLoading &&
-      !tenantLoading &&
-      user &&
-      tenants.length === 0 &&
-      !error
+      currentTenant &&
+      !currentTenant.setup_completed_at &&
+      currentTenant.status !== "active"
     ) {
       router.replace("/setup");
     }
-  }, [authLoading, tenantLoading, user, tenants, error, router]);
+  }, [currentTenant, router]);
 
   if (authLoading || configLoading || tenantLoading) {
     return <LoadingScreen />;

@@ -58,8 +58,8 @@ class LumentraAgent(Agent):
 
     async def on_enter(self):
         greeting = self.tenant_config.get("greeting_standard") or (
-            f"Thank you for calling {self.tenant_config.get('business_name', 'us')}. "
-            "How can I help you?"
+            f"Thank you for calling {self.tenant_config.get('business_name', 'our business')}. "
+            "How can I help you today?"
         )
         self.session.generate_reply(
             instructions=f"Greet the caller: {greeting}"
@@ -116,6 +116,23 @@ async def entrypoint(ctx: JobContext):
     tenant_config = await get_tenant_by_phone(dialed_number)
     if not tenant_config:
         logger.error("No tenant found for number: %s", dialed_number)
+        # Graceful rejection instead of silent hang
+        try:
+            _reject_tts = cartesia.TTS(
+                model="sonic-3",
+                voice="a0e99841-438c-4a64-b679-ae501e7d6091",
+            )
+            _reject_session = AgentSession(
+                tts=_reject_tts,
+                vad=ctx.proc.userdata["vad"],
+            )
+            _reject_agent = Agent(
+                instructions="Say exactly: 'We're sorry, this number is not currently in service. Please check the number and try again. Goodbye.' Then stop."
+            )
+            await _reject_session.start(agent=_reject_agent, room=ctx.room)
+            await asyncio.sleep(6)
+        except Exception as e:
+            logger.error("Graceful rejection failed: %s", e)
         return
 
     # Configure LLM: gpt-4.1-mini (best balance of quality, speed, tool calling)

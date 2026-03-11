@@ -32,8 +32,8 @@ def apply_defaults(config: dict) -> dict:
 
     if not config.get("greeting_after_hours"):
         config["greeting_after_hours"] = (
-            f"Thank you for calling {business}. We're currently closed. "
-            "I can still help you with general questions or take a message."
+            f"Thank you for calling {business}. We're currently closed, "
+            "but I can still help you with general questions or take a message."
         )
         logger.warning("[TENANT %s] Missing greeting_after_hours, using default", tenant_id)
 

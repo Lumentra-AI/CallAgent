@@ -342,31 +342,34 @@ Today's Date: ${new Date().toISOString().split("T")[0]}
   prompt += `\n## Transfer & Escalation\n`;
 
   if (hasContacts && options?.escalationPhone) {
-    // List team members by name
+    // List team members by name and role for targeted transfer
     const contactList = options
       .escalationContacts!.map((c) =>
         c.role ? `${c.name} (${c.role})` : c.name,
       )
       .join(", ");
-    prompt += `Team members: ${contactList}\n`;
+    prompt += `Team members / departments: ${contactList}\n`;
+
+    // Targeted transfer instructions (applies to all transfer modes)
+    prompt += `\nTargeted transfers: When the caller asks for a SPECIFIC department or person (e.g. "transfer me to housekeeping", "can I speak to the front desk", "I need maintenance"), use the transfer_to_human tool with target_role set to the department/person name. The system will route to the correct contact automatically.\n`;
 
     if (transferType === "consultation") {
       prompt += `Transfer mode: consultation -- connect after briefing the team member first.
 When the caller needs to speak with a team member:
-1. Say "Let me connect you with [name]. Please hold while I brief them."
-2. Call the transfer_to_human tool with the reason
+1. Say "Let me connect you with [name/department]. Please hold while I brief them."
+2. Call the transfer_to_human tool with the reason and target_role (if specific department requested)
 3. The system dials the team member, briefs them on the call, and connects everyone once they accept\n`;
     } else if (transferType === "warm") {
       prompt += `Transfer mode: warm -- always tell the caller you'll connect them and ask them to hold.
 When the caller needs to speak with a team member:
-1. Say "Let me connect you with [name]. Please hold for just a moment."
-2. Call the transfer_to_human tool with the reason
+1. Say "Let me connect you with [name/department]. Please hold for just a moment."
+2. Call the transfer_to_human tool with the reason and target_role (if specific department requested)
 3. The system handles hold music and the transfer automatically\n`;
     } else if (transferType === "cold") {
       prompt += `Transfer mode: cold -- transfer immediately without hold.
 When the caller needs to speak with a team member:
-1. Say "I'll transfer you now."
-2. Call the transfer_to_human tool with the reason\n`;
+1. Say "I'll transfer you to [name/department] now."
+2. Call the transfer_to_human tool with the reason and target_role (if specific department requested)\n`;
     } else {
       prompt += `Transfer mode: callback -- do not transfer calls, take a message instead.
 When the caller asks for a human:

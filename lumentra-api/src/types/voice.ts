@@ -369,6 +369,10 @@ export interface LogNoteResult {
 
 export interface PrepareTransferArgs {
   reason: string;
+  /** Optional: target contact by role or name (e.g. "housekeeping", "front desk", "Dr. Smith").
+   *  Matched case-insensitively against escalation_contacts.role and .name.
+   *  If matched, that contact is prioritized first. If no match, standard sort_order is used. */
+  target_contact?: string;
 }
 
 export interface PrepareTransferResult {
