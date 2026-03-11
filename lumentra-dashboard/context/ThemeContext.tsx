@@ -33,6 +33,8 @@ const ThemeContext = createContext<ThemeContextType | null>(null);
 // ============================================================================
 
 const THEME_STORAGE_KEY = "lumentra_theme";
+const THEME_VERSION_KEY = "lumentra_theme_v";
+const THEME_VERSION = 2; // Bump to force reset to light
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -68,6 +70,18 @@ const getMountedServerSnapshot = () => false;
 
 function getInitialTheme(): ThemeMode {
   if (typeof window === "undefined") return "light";
+
+  // One-time reset: if theme version is outdated, force light
+  const storedVersion = parseInt(
+    localStorage.getItem(THEME_VERSION_KEY) || "0",
+    10,
+  );
+  if (storedVersion < THEME_VERSION) {
+    localStorage.setItem(THEME_STORAGE_KEY, "light");
+    localStorage.setItem(THEME_VERSION_KEY, String(THEME_VERSION));
+    return "light";
+  }
+
   const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null;
   return saved && ["light", "dark", "system"].includes(saved) ? saved : "light";
 }
@@ -115,6 +129,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setResolvedTheme(newResolved);
     applyTheme(newResolved);
     localStorage.setItem(THEME_STORAGE_KEY, newTheme);
+    localStorage.setItem(THEME_VERSION_KEY, String(THEME_VERSION));
   }, []);
 
   const toggleTheme = useCallback(() => {
