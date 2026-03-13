@@ -38,7 +38,7 @@ export function generateSystemMetrics(): SystemMetrics {
 export function generateBusinessMetrics(
   industry: IndustryType,
 ): BusinessMetrics {
-  const preset = INDUSTRY_PRESETS[industry];
+  const preset = INDUSTRY_PRESETS[industry] || INDUSTRY_PRESETS["hotel"];
   const baseRate = preset.defaultPricing.baseRate;
 
   // SOW Reference: 47 bookings captured, $6,000+ revenue
@@ -436,7 +436,7 @@ export function generateInitialLogs(count: number = 25): LogEntry[] {
 // ============================================================================
 
 export function generateCallSession(industry: IndustryType): CallSession {
-  const preset = INDUSTRY_PRESETS[industry];
+  const preset = INDUSTRY_PRESETS[industry] || INDUSTRY_PRESETS["hotel"];
   const intents = preset.intents;
   const randomIntent = intents[Math.floor(Math.random() * intents.length)];
   const duration = Math.floor(60 + Math.random() * 300);

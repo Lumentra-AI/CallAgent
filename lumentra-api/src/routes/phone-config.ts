@@ -648,7 +648,7 @@ phoneConfigRoutes.post(
             setup_type: "forward",
             provider: "signalwire",
             provider_sid: sid,
-            status: "pending", // Pending until user confirms forwarding is active
+            status: "active", // Number is provisioned and ready to receive calls
           },
           ["tenant_id"],
         );

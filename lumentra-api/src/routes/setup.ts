@@ -634,7 +634,7 @@ setupRoutes.post("/complete", async (c) => {
 
     if (
       !phoneConfig?.phone_number ||
-      !["active", "porting_with_temp"].includes(phoneConfig.status)
+      !["active", "porting_with_temp", "pending"].includes(phoneConfig.status)
     ) {
       errors.push("Phone number setup is required");
       incompleteSteps.push("phone");

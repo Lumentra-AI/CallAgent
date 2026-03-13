@@ -17,7 +17,7 @@ from livekit.agents import (
 )
 from livekit.agents.llm import function_tool
 from livekit.agents import room_io
-from livekit.agents.voice import BackgroundAudioPlayer
+from livekit.agents.voice.background_audio import BackgroundAudioPlayer
 from livekit.plugins import deepgram, cartesia, openai, silero, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 

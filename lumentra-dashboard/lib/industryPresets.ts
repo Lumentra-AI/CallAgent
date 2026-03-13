@@ -1357,7 +1357,7 @@ export function createDefaultConfig(
   industry: IndustryType,
   userRole: "admin" | "staff" = "staff",
 ): AppConfig {
-  const preset = INDUSTRY_PRESETS[industry];
+  const preset = INDUSTRY_PRESETS[industry] || INDUSTRY_PRESETS["hotel"];
   const themeColor = getDefaultThemeForIndustry(industry);
 
   return {
@@ -1425,15 +1425,18 @@ function getDefaultThemeForIndustry(
   };
 
   const preset = INDUSTRY_PRESETS[industry];
+  if (!preset) return "indigo";
   return categoryThemes[preset.category] || "indigo";
 }
 
 export function getPreset(industry: IndustryType): IndustryPreset {
-  return INDUSTRY_PRESETS[industry];
+  return INDUSTRY_PRESETS[industry] || INDUSTRY_PRESETS["hotel"];
 }
 
 export function getTerminology(industry: IndustryType) {
-  return INDUSTRY_PRESETS[industry].terminology;
+  const preset = INDUSTRY_PRESETS[industry];
+  if (!preset) return INDUSTRY_PRESETS["hotel"].terminology;
+  return preset.terminology;
 }
 
 export function getIndustriesByCategory(
