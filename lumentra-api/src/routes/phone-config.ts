@@ -26,6 +26,10 @@ import {
   deleteSipEndpoint,
   getSipEndpointStatus,
 } from "../services/signalwire/sip.js";
+import {
+  addNumberToSipTrunk,
+  removeNumberFromSipTrunk,
+} from "../services/livekit/sip-trunk.js";
 
 export const phoneConfigRoutes = new Hono();
 
@@ -80,6 +84,11 @@ async function releaseExistingPhoneConfig(tenantId: string): Promise<void> {
   );
 
   if (!existing || !existing.provider_sid) return;
+
+  // Remove old number from LiveKit SIP trunk
+  if (existing.phone_number) {
+    await removeNumberFromSipTrunk(existing.phone_number);
+  }
 
   if (existing.setup_type === "sip") {
     const { error } = await deleteSipEndpoint(existing.provider_sid);
@@ -324,6 +333,9 @@ phoneConfigRoutes.post(
 
         await logProvisionAction(tenantId, body.phoneNumber, sid, "provision");
 
+        // Register with LiveKit SIP trunk so agent can identify dialed number
+        await addNumberToSipTrunk(body.phoneNumber);
+
         return c.json({
           success: true,
           phoneNumber: body.phoneNumber,
@@ -435,6 +447,7 @@ phoneConfigRoutes.post(
               temporaryNumber = numbers[0];
               tempSid = sid;
               await logProvisionAction(tenantId, numbers[0], sid, "port");
+              await addNumberToSipTrunk(numbers[0]);
             }
           }
         }
@@ -683,6 +696,9 @@ Note: This only forwards calls you miss -- your phone still rings first.`;
 
         await logProvisionAction(tenantId, numbers[0], sid, "forward");
 
+        // Register with LiveKit SIP trunk
+        await addNumberToSipTrunk(numbers[0]);
+
         return c.json({
           success: true,
           forwardTo: numbers[0],
@@ -695,6 +711,7 @@ Note: This only forwards calls you miss -- your phone still rings first.`;
           dbError,
         );
         await releaseNumber(sid);
+        await removeNumberFromSipTrunk(numbers[0]);
         return c.json(
           {
             error: "Failed to save forwarding configuration. Please try again.",
