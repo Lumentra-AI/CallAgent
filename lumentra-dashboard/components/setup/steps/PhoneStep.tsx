@@ -634,112 +634,117 @@ export function PhoneStep() {
 
   // ---- Render: New Number ----
 
-  const renderNewNumberFlow = () => (
-    <div className="space-y-6">
-      {/* Area code selection */}
-      <div className="space-y-3">
-        <Label htmlFor="area-code">Area code</Label>
-        <div className="flex gap-2">
-          <select
-            id="area-code"
-            value={areaCode}
-            onChange={(e) =>
-              dispatch({
-                type: "SET_PHONE_DATA",
-                payload: { areaCode: e.target.value },
-              })
-            }
-            className="h-9 flex-1 rounded-md border bg-background px-3 text-sm"
-          >
-            <option value="">Select area code</option>
-            {AREA_CODES.map((ac) => (
-              <option key={ac.code} value={ac.code}>
-                {ac.code} - {ac.region}
-              </option>
-            ))}
-          </select>
-          <Button
-            variant="outline"
-            onClick={searchNumbers}
-            disabled={!areaCode || searchingNumbers}
-          >
-            {searchingNumbers ? (
-              "Searching..."
-            ) : (
-              <>
-                <Search className="mr-2 h-4 w-4" />
-                Search
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
-
-      {/* Available numbers */}
-      {numberSearchError && (
-        <p className="text-sm text-destructive">{numberSearchError}</p>
-      )}
-      {availableNumbers.length > 0 && (
-        <div className="space-y-3">
-          <Label>Select a number</Label>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {availableNumbers.map((phoneNumber) => {
-              const isSelected = number === phoneNumber;
-              return (
-                <button
-                  key={phoneNumber}
-                  type="button"
-                  onClick={() =>
-                    dispatch({
-                      type: "SET_PHONE_DATA",
-                      payload: { number: phoneNumber },
-                    })
-                  }
-                  className={cn(
-                    "flex items-center justify-between rounded-lg border p-3 text-left transition-all hover:border-primary/50 hover:bg-primary/5",
-                    isSelected &&
-                      "border-primary bg-primary/5 ring-2 ring-primary/20",
-                  )}
-                >
-                  <span className="font-mono">{phoneNumber}</span>
-                  {isSelected && <Check className="h-4 w-4 text-primary" />}
-                </button>
-              );
-            })}
+  const renderNewNumberFlow = () => {
+    // Once purchased, show locked state
+    if (numberProvisioned) {
+      return (
+        <div className="space-y-4">
+          <div className="rounded-lg border border-green-500/30 bg-green-50/50 p-4 dark:bg-green-950/20">
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+              <span className="font-medium text-green-800 dark:text-green-200">
+                Phone number purchased
+              </span>
+            </div>
+            <p className="font-mono text-lg font-semibold">{number}</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              This number is active and ready to receive calls. You can purchase
+              additional numbers from your dashboard settings after setup.
+            </p>
           </div>
         </div>
-      )}
+      );
+    }
 
-      {/* Provision button */}
-      {number && availableNumbers.includes(number) && !numberProvisioned && (
+    return (
+      <div className="space-y-6">
+        {/* Area code selection */}
         <div className="space-y-3">
-          {provisionError && (
-            <p className="text-sm text-destructive">{provisionError}</p>
-          )}
-          <Button onClick={handleProvisionNumber} disabled={provisioningNumber}>
-            {provisioningNumber ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Provisioning...
-              </>
-            ) : (
-              "Provision this number"
-            )}
-          </Button>
+          <Label htmlFor="area-code">Area code</Label>
+          <div className="flex gap-2">
+            <select
+              id="area-code"
+              value={areaCode}
+              onChange={(e) =>
+                dispatch({
+                  type: "SET_PHONE_DATA",
+                  payload: { areaCode: e.target.value },
+                })
+              }
+              className="h-9 flex-1 rounded-md border bg-background px-3 text-sm"
+            >
+              <option value="">Select area code</option>
+              {AREA_CODES.map((ac) => (
+                <option key={ac.code} value={ac.code}>
+                  {ac.code} - {ac.region}
+                </option>
+              ))}
+            </select>
+            <Button
+              variant="outline"
+              onClick={searchNumbers}
+              disabled={!areaCode || searchingNumbers}
+            >
+              {searchingNumbers ? (
+                "Searching..."
+              ) : (
+                <>
+                  <Search className="mr-2 h-4 w-4" />
+                  Search
+                </>
+              )}
+            </Button>
+          </div>
         </div>
-      )}
 
-      {/* Success state */}
-      {numberProvisioned && (
-        <div className="flex items-center gap-2 rounded-lg border border-green-500/50 bg-green-50 p-3 dark:bg-green-950/20">
-          <CheckCircle className="h-5 w-5 text-green-600" />
-          <span className="text-sm font-medium text-green-800 dark:text-green-200">
-            Number {number} is now active and ready to receive calls
-          </span>
-        </div>
-      )}
-    </div>
-  );
+        {/* Available numbers */}
+        {numberSearchError && (
+          <p className="text-sm text-destructive">{numberSearchError}</p>
+        )}
+        {availableNumbers.length > 0 && (
+          <div className="space-y-3">
+            <Label>Select a number</Label>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {availableNumbers.map((phoneNumber) => {
+                const isSelected = number === phoneNumber;
+                return (
+                  <button
+                    key={phoneNumber}
+                    type="button"
+                    onClick={() =>
+                      dispatch({
+                        type: "SET_PHONE_DATA",
+                        payload: { number: phoneNumber },
+                      })
+                    }
+                    className={cn(
+                      "flex items-center justify-between rounded-lg border p-3 text-left transition-all hover:border-primary/50 hover:bg-primary/5",
+                      isSelected &&
+                        "border-primary bg-primary/5 ring-2 ring-primary/20",
+                    )}
+                  >
+                    <span className="font-mono">{phoneNumber}</span>
+                    {isSelected && <Check className="h-4 w-4 text-primary" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Purchase notice */}
+        {number && availableNumbers.includes(number) && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-50/50 p-3 dark:bg-amber-950/20">
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              Clicking Continue will purchase{" "}
+              <span className="font-mono font-semibold">{number}</span> for your
+              account. This number will be billed to your subscription.
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ---- Render: Port Number ----
 
