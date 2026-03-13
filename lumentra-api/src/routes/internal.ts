@@ -47,9 +47,12 @@ function allHoursDisabled(
   hours: Record<string, unknown> | null | undefined,
 ): boolean {
   if (!hours || typeof hours !== "object") return false;
-  const entries = Object.values(hours);
-  if (entries.length === 0) return false;
-  return entries.every((day) => {
+  // hours is {schedule: [{day, enabled, openTime, closeTime}, ...]}
+  const schedule = Array.isArray(hours.schedule)
+    ? hours.schedule
+    : Object.values(hours);
+  if (schedule.length === 0) return false;
+  return schedule.every((day) => {
     if (day && typeof day === "object" && "enabled" in day) {
       return (day as { enabled: boolean }).enabled === false;
     }
@@ -269,8 +272,10 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
       sunday: null,
     },
     escalation_enabled:
-      tenant.escalation_enabled && escalationPhone ? true : false,
+      tenant.escalation_enabled &&
+      (!!escalationPhone || escalationContacts.length > 0),
     escalation_phone: escalationPhone,
+    escalation_contacts: escalationContacts,
     escalation_triggers: tenant.escalation_triggers,
     transfer_behavior: t.transfer_behavior || {
       type: "warm",
