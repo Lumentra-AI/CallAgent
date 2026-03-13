@@ -659,7 +659,7 @@ setupRoutes.post("/complete", async (c) => {
     if (errors.length > 0) {
       return c.json(
         {
-          error: "Setup incomplete",
+          error: `Setup incomplete: ${errors.join(". ")}`,
           missing: errors,
           incompleteSteps,
         },

@@ -412,7 +412,11 @@ export function PhoneStep() {
     };
   }, [setupType]);
 
-  const canContinue = setupType !== null;
+  const canContinue =
+    (setupType === "new" && numberProvisioned) ||
+    (setupType === "port" && (portSubmitted || !!existingPortRequest)) ||
+    (setupType === "forward" &&
+      (forwardStatus === "provisioned" || forwardStatus === "verified"));
 
   const handleSetupTypeSelect = (type: PhoneSetupType) => {
     dispatch({

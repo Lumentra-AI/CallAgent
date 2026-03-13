@@ -117,7 +117,9 @@ export function ReviewStep() {
     },
     {
       label: "Phone number configured",
-      complete: !!state.phoneData.setupType,
+      complete:
+        !!state.phoneData.number &&
+        !state.phoneData.number.startsWith("pending_"),
     },
     {
       label: "Emergency contact added",
@@ -162,7 +164,9 @@ export function ReviewStep() {
       if (success) {
         router.push("/dashboard?setup=complete");
       } else {
-        setLaunchError("Failed to launch. Please try again.");
+        setLaunchError(
+          state.error || "Setup incomplete. Please check all required steps.",
+        );
       }
     } catch (err) {
       setLaunchError(
@@ -272,7 +276,10 @@ export function ReviewStep() {
           icon={Phone}
           step="phone"
           onEdit={() => handleEditStep("phone")}
-          configured={!!state.phoneData.setupType}
+          configured={
+            !!state.phoneData.number &&
+            !state.phoneData.number.startsWith("pending_")
+          }
           items={[
             {
               label: "Setup type",
