@@ -10,16 +10,25 @@ from api_client import get_client
 
 logger = logging.getLogger("lumentra-agent.tools")
 
-# LiveKit API for outbound SIP (consultation transfer)
+# LiveKit API for SIP transfers and outbound SIP (consultation transfer)
 try:
     from livekit import api as lkapi
-    from livekit.protocol.sip import CreateSIPParticipantRequest
+    from livekit.protocol.sip import CreateSIPParticipantRequest, TransferSIPParticipantRequest
     from livekit.protocol.room import RoomParticipantIdentity
 except ImportError:
     lkapi = None
     CreateSIPParticipantRequest = None  # type: ignore[assignment,misc]
+    TransferSIPParticipantRequest = None  # type: ignore[assignment,misc]
     RoomParticipantIdentity = None  # type: ignore[assignment,misc]
-    logger.warning("livekit.api not available -- consultation transfers will fall back to warm")
+    logger.warning("livekit.api not available -- SIP transfers will fall back to callback")
+
+# Hold music imports (path changed in livekit-agents 1.4.5)
+try:
+    from livekit.agents.voice.background_audio import AudioConfig, BuiltinAudioClip
+except ImportError:
+    AudioConfig = None  # type: ignore[assignment,misc]
+    BuiltinAudioClip = None  # type: ignore[assignment,misc]
+    logger.warning("AudioConfig/BuiltinAudioClip not available -- hold music disabled")
 
 
 async def _call_tool(context: RunContext, action: str, args: dict) -> str:
@@ -84,16 +93,26 @@ def _get_sip_participant(room: rtc.Room) -> rtc.RemoteParticipant | None:
 
 
 async def _attempt_transfer(room: rtc.Room, phone: str) -> bool:
-    """Attempt SIP REFER to a single phone number. Returns True on success."""
+    """Attempt SIP transfer to a phone number via server-side API. Returns True on success."""
+    if not lkapi or not TransferSIPParticipantRequest:
+        logger.error("livekit.api not available for SIP transfer")
+        return False
+
     sip_participant = _get_sip_participant(room)
     if not sip_participant:
         logger.warning("No SIP participant found for transfer")
         return False
 
-    sip_uri = f"sip:{phone}@sip.signalwire.com"
+    lk = lkapi.LiveKitAPI()
     try:
+        transfer_req = TransferSIPParticipantRequest(
+            participant_identity=sip_participant.identity,
+            room_name=room.name,
+            transfer_to=f"tel:{phone}",
+            play_dialtone=True,
+        )
         await asyncio.wait_for(
-            sip_participant.transfer_sip_call(sip_uri),
+            lk.sip.transfer_sip_participant(transfer_req),
             timeout=35.0,
         )
         logger.info("SIP transfer succeeded to %s", phone)
@@ -104,6 +123,8 @@ async def _attempt_transfer(room: rtc.Room, phone: str) -> bool:
     except Exception as e:
         logger.error("SIP transfer to %s failed: %s", phone, e)
         return False
+    finally:
+        await lk.aclose()
 
 
 async def _attempt_transfers(room: rtc.Room, phones: list[str]) -> bool:
@@ -140,9 +161,8 @@ async def _warm_transfer_sequence(
 
         # Play hold music if player is available
         hold_handle = None
-        if agent.hold_player:
+        if agent.hold_player and AudioConfig and BuiltinAudioClip:
             try:
-                from livekit.agents.voice import AudioConfig, BuiltinAudioClip
                 hold_handle = agent.hold_player.play(
                     AudioConfig(BuiltinAudioClip.HOLD_MUSIC, volume=0.5),
                     loop=True,
@@ -313,9 +333,8 @@ async def _consultation_transfer_sequence(
 
         # Play hold music
         hold_handle = None
-        if agent.hold_player:
+        if agent.hold_player and AudioConfig and BuiltinAudioClip:
             try:
-                from livekit.agents.voice import AudioConfig, BuiltinAudioClip
                 hold_handle = agent.hold_player.play(
                     AudioConfig(BuiltinAudioClip.HOLD_MUSIC, volume=0.5),
                     loop=True,
@@ -461,9 +480,8 @@ async def _consultation_transfer_sequence(
 
                     # Disable output, restart hold music for next attempt
                     session.output.set_audio_enabled(False)
-                    if agent.hold_player and i < len(contacts) - 1:
+                    if agent.hold_player and AudioConfig and BuiltinAudioClip and i < len(contacts) - 1:
                         try:
-                            from livekit.agents.voice import AudioConfig, BuiltinAudioClip
                             hold_handle = agent.hold_player.play(
                                 AudioConfig(BuiltinAudioClip.HOLD_MUSIC, volume=0.5),
                                 loop=True,
