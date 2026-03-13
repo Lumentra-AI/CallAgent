@@ -18,6 +18,45 @@ import { internalAuth } from "../middleware/internal-auth.js";
 
 export const internalRoutes = new Hono();
 
+/**
+ * Normalize a US phone number to E.164 format (+1XXXXXXXXXX).
+ * Defense-in-depth: ensures agent always gets properly formatted numbers.
+ */
+function normalizePhoneE164(phone: string): string {
+  const hasPlus = phone.startsWith("+");
+  const digits = phone.replace(/\D/g, "");
+
+  if (hasPlus && digits.length === 11 && digits.startsWith("1")) {
+    return `+${digits}`;
+  }
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+${digits}`;
+  }
+  if (digits.length === 10) {
+    return `+1${digits}`;
+  }
+  if (hasPlus) return `+${digits}`;
+  return phone;
+}
+
+/**
+ * Check if ALL operating hours days are disabled (enabled: false).
+ * If so, the tenant effectively has no schedule -- treat as 24/7.
+ */
+function allHoursDisabled(
+  hours: Record<string, unknown> | null | undefined,
+): boolean {
+  if (!hours || typeof hours !== "object") return false;
+  const entries = Object.values(hours);
+  if (entries.length === 0) return false;
+  return entries.every((day) => {
+    if (day && typeof day === "object" && "enabled" in day) {
+      return (day as { enabled: boolean }).enabled === false;
+    }
+    return false;
+  });
+}
+
 // Build STT keyword hints for Deepgram based on industry
 const INDUSTRY_STT_KEYWORDS: Record<string, string[]> = {
   dental: [
@@ -165,6 +204,19 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
     [tenant.id],
   );
 
+  // Normalize escalation phone for E.164
+  const escalationPhone = tenant.escalation_phone
+    ? normalizePhoneE164(tenant.escalation_phone)
+    : null;
+
+  // If ALL operating_hours days are disabled, treat as 24/7 (null = always open)
+  const rawHours = tenant.operating_hours;
+  const effectiveHours = allHoursDisabled(
+    rawHours as unknown as Record<string, unknown>,
+  )
+    ? null
+    : rawHours;
+
   // Build the system prompt using defaulted values
   const systemPrompt = buildSystemPrompt(
     agentName,
@@ -176,11 +228,11 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
       empathy: "high",
     },
     {
-      operatingHours: t.operating_hours,
+      operatingHours: effectiveHours,
       locationAddress: t.location_address || undefined,
       locationCity: t.location_city || undefined,
       customInstructions: t.custom_instructions || undefined,
-      escalationPhone: tenant.escalation_phone || undefined,
+      escalationPhone: escalationPhone || undefined,
       timezone: tz,
       transferBehavior: t.transfer_behavior || undefined,
       escalationContacts: escalationContacts || undefined,
@@ -207,7 +259,7 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
       `Thank you for calling ${businessName}. We're currently closed, but I can still help you with general questions or take a message.`,
     greeting_returning: tenant.greeting_returning,
     timezone: tz,
-    operating_hours: tenant.operating_hours || {
+    operating_hours: effectiveHours || {
       monday: { open: "09:00", close: "17:00" },
       tuesday: { open: "09:00", close: "17:00" },
       wednesday: { open: "09:00", close: "17:00" },
@@ -217,8 +269,8 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
       sunday: null,
     },
     escalation_enabled:
-      tenant.escalation_enabled && tenant.escalation_phone ? true : false,
-    escalation_phone: tenant.escalation_phone,
+      tenant.escalation_enabled && escalationPhone ? true : false,
+    escalation_phone: escalationPhone,
     escalation_triggers: tenant.escalation_triggers,
     transfer_behavior: t.transfer_behavior || {
       type: "warm",

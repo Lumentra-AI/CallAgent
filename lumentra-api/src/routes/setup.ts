@@ -14,6 +14,35 @@ export const setupRoutes = new Hono();
 export const EMAIL_VERIFICATION_REQUIRED_MESSAGE =
   "Email verification required";
 
+/**
+ * Normalize a US phone number to E.164 format (+1XXXXXXXXXX).
+ * Strips non-digit characters, then applies country code rules.
+ */
+function normalizePhoneE164(phone: string): string {
+  // Strip everything except digits and leading +
+  const hasPlus = phone.startsWith("+");
+  const digits = phone.replace(/\D/g, "");
+
+  // Already E.164 with +1 prefix
+  if (hasPlus && digits.length === 11 && digits.startsWith("1")) {
+    return `+${digits}`;
+  }
+
+  // Already has country code but no +
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+${digits}`;
+  }
+
+  // 10-digit US number
+  if (digits.length === 10) {
+    return `+1${digits}`;
+  }
+
+  // International or already correct -- return with + prefix if missing
+  if (hasPlus) return `+${digits}`;
+  return phone; // Can't safely normalize non-US formats, return as-is
+}
+
 export function requireVerifiedEmail(): MiddlewareHandler {
   return async (c, next) => {
     const auth = getAuthContext(c);
@@ -526,6 +555,9 @@ setupRoutes.put("/step/:step", async (c) => {
             // Insert new contacts
             for (let idx = 0; idx < body.contacts.length; idx++) {
               const contact = body.contacts[idx];
+              const normalizedPhone = contact.phone
+                ? normalizePhoneE164(contact.phone)
+                : "";
               await client.query(
                 `INSERT INTO escalation_contacts
                    (tenant_id, name, phone, role, is_primary, availability, availability_hours, sort_order)
@@ -533,7 +565,7 @@ setupRoutes.put("/step/:step", async (c) => {
                 [
                   tenantId,
                   contact.name,
-                  contact.phone,
+                  normalizedPhone,
                   contact.role || null,
                   contact.is_primary || idx === 0,
                   contact.availability || "business_hours",

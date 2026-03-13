@@ -78,6 +78,27 @@ const AVAILABILITY_OPTIONS = [
   { value: "custom", label: "Custom schedule" },
 ];
 
+/**
+ * Normalize a US phone number to E.164 format (+1XXXXXXXXXX).
+ * Strips non-digit characters, then applies country code rules.
+ */
+function normalizePhoneE164(phone: string): string {
+  const hasPlus = phone.startsWith("+");
+  const digits = phone.replace(/\D/g, "");
+
+  if (hasPlus && digits.length === 11 && digits.startsWith("1")) {
+    return `+${digits}`;
+  }
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+${digits}`;
+  }
+  if (digits.length === 10) {
+    return `+1${digits}`;
+  }
+  if (hasPlus) return `+${digits}`;
+  return phone;
+}
+
 export function EscalationStep() {
   const router = useRouter();
   const { state, dispatch, saveStep, goToNextStep, goToPreviousStep } =
@@ -278,6 +299,16 @@ export function EscalationStep() {
                       onChange={(e) =>
                         updateContact(contact.id, "phone", e.target.value)
                       }
+                      onBlur={(e) => {
+                        const val = e.target.value.trim();
+                        if (val) {
+                          updateContact(
+                            contact.id,
+                            "phone",
+                            normalizePhoneE164(val),
+                          );
+                        }
+                      }}
                     />
                   </div>
                   <div className="space-y-2">
