@@ -131,7 +131,7 @@ async def entrypoint(ctx: JobContext):
         try:
             _reject_tts = cartesia.TTS(
                 model="sonic-3",
-                voice="a0e99841-438c-4a64-b679-ae501e7d6091",
+                voice="694f9389-aac1-45b6-b726-9d9369183238",
             )
             _reject_session = AgentSession(
                 tts=_reject_tts,
@@ -164,7 +164,7 @@ async def entrypoint(ctx: JobContext):
         llm=llm,
         tts=cartesia.TTS(
             model="sonic-3",
-            voice=tenant_config.get("voice_config", {}).get("voice_id", "a0e99841-438c-4a64-b679-ae501e7d6091"),
+            voice=tenant_config.get("voice_config", {}).get("voice_id", "694f9389-aac1-45b6-b726-9d9369183238"),
             speed=0.95,
             emotion=["Content"],
         ),

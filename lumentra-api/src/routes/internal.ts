@@ -252,7 +252,14 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
     industry,
     agent_name: agentName,
     phone_number: tenant.phone_number,
-    voice_config: tenant.voice_config,
+    voice_config: {
+      // Normalize camelCase (dashboard) to snake_case (agent)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      voice_id:
+        (tenant.voice_config as any)?.voiceId ??
+        (tenant.voice_config as any)?.voice_id ??
+        null,
+    },
     agent_personality: tenant.agent_personality || "friendly",
     greeting_standard:
       tenant.greeting_standard ||
