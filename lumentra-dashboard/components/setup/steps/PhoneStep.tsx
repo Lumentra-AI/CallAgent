@@ -413,7 +413,7 @@ export function PhoneStep() {
   }, [setupType]);
 
   const canContinue =
-    (setupType === "new" && numberProvisioned) ||
+    (setupType === "new" && !!number) ||
     (setupType === "port" && (portSubmitted || !!existingPortRequest)) ||
     (setupType === "forward" &&
       (forwardStatus === "provisioned" || forwardStatus === "verified"));
@@ -587,15 +587,40 @@ export function PhoneStep() {
   // ---- Navigation ----
 
   const handleContinue = async () => {
-    if (!canContinue) return;
-
     setIsSubmitting(true);
-    const success = await saveStep("phone");
-    if (success) {
-      goToNextStep();
-      router.push("/setup/hours");
+    setProvisionError(null);
+
+    try {
+      // Auto-provision if user selected a new number but hasn't provisioned yet
+      if (setupType === "new" && number && !numberProvisioned) {
+        setProvisioningNumber(true);
+        const data = await post<{ success: boolean; phoneNumber: string }>(
+          "/api/phone/provision",
+          { phoneNumber: number },
+        );
+        setProvisioningNumber(false);
+        if (!data.success) {
+          setProvisionError("Failed to provision number. Please try again.");
+          return;
+        }
+        setNumberProvisioned(true);
+        dispatch({
+          type: "SET_PHONE_DATA",
+          payload: { number: data.phoneNumber },
+        });
+      }
+
+      const success = await saveStep("phone");
+      if (success) {
+        goToNextStep();
+        router.push("/setup/hours");
+      }
+    } catch {
+      setProvisionError("Failed to set up phone number. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+      setProvisioningNumber(false);
     }
-    setIsSubmitting(false);
   };
 
   const handleBack = () => {
@@ -1083,6 +1108,11 @@ export function PhoneStep() {
         {setupType === "forward" && renderForwardFlow()}
       </div>
 
+      {/* Provision error (shown near Continue for auto-provision failures) */}
+      {provisionError && (
+        <p className="text-sm text-destructive">{provisionError}</p>
+      )}
+
       {/* Navigation buttons */}
       <div className="flex justify-between pt-4">
         <Button variant="outline" onClick={handleBack}>
@@ -1091,10 +1121,14 @@ export function PhoneStep() {
         </Button>
         <Button
           onClick={handleContinue}
-          disabled={!canContinue || isSubmitting}
+          disabled={!canContinue || isSubmitting || provisioningNumber}
           size="lg"
         >
-          {isSubmitting ? "Saving..." : "Continue"}
+          {provisioningNumber
+            ? "Setting up number..."
+            : isSubmitting
+              ? "Saving..."
+              : "Continue"}
         </Button>
       </div>
     </div>
