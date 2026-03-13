@@ -464,30 +464,6 @@ export function PhoneStep() {
     }
   };
 
-  const handleProvisionNumber = async () => {
-    if (!number) return;
-
-    setProvisioningNumber(true);
-    setProvisionError(null);
-    try {
-      const data = await post<{ success: boolean; phoneNumber: string }>(
-        "/api/phone/provision",
-        { phoneNumber: number },
-      );
-      if (data.success) {
-        setNumberProvisioned(true);
-        dispatch({
-          type: "SET_PHONE_DATA",
-          payload: { number: data.phoneNumber },
-        });
-      }
-    } catch {
-      setProvisionError("Failed to provision number. Please try again.");
-    } finally {
-      setProvisioningNumber(false);
-    }
-  };
-
   // ---- Port Number Flow ----
 
   const handleSubmitPort = async () => {
