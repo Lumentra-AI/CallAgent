@@ -48,13 +48,27 @@ function isSipForwardRequest(c: Context): boolean {
   return c.req.path === "/sip/forward";
 }
 
-function sipForwardHandler(c: Context) {
+async function sipForwardHandler(c: Context) {
   const livekitSipHost = process.env.LIVEKIT_SIP_HOST || "178.156.205.145";
   const livekitSipPort = process.env.LIVEKIT_SIP_PORT || "5060";
+
+  // Extract dialed number from SignalWire webhook body (form-encoded)
+  let dialedNumber = "";
+  try {
+    const body = await c.req.parseBody();
+    dialedNumber = (body["To"] as string) || (body["Called"] as string) || "";
+    // Strip non-digit/+ chars for safety, keep E.164 format
+    dialedNumber = dialedNumber.replace(/[^\d+]/g, "");
+  } catch {
+    console.warn("[SIP] Could not parse webhook body for dialed number");
+  }
+
+  // Include dialed number as SIP URI user part so LiveKit can identify the tenant
+  const sipUser = dialedNumber ? `${dialedNumber}@` : "";
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial>
-    <Sip>sip:${livekitSipHost}:${livekitSipPort};transport=udp</Sip>
+    <Sip>sip:${sipUser}${livekitSipHost}:${livekitSipPort};transport=udp</Sip>
   </Dial>
 </Response>`;
 
