@@ -184,6 +184,8 @@ async def entrypoint(ctx: JobContext):
         false_interruption_timeout=1.5,
         min_endpointing_delay=0.8,
         max_endpointing_delay=2.5,
+        # Idle detection: mark user as "away" after 10s of silence
+        user_away_timeout=10.0,
     )
 
     # Track call start time for accurate duration
@@ -203,6 +205,34 @@ async def entrypoint(ctx: JobContext):
     def _on_metrics_collected(ev):
         metrics.log_metrics(ev.metrics)
         usage_collector.collect(ev.metrics)
+
+    # Idle watchdog: nudge caller on silence, hang up after 3 consecutive away events
+    idle_away_count = 0
+    _IDLE_NUDGES = [
+        "Hello? Are you still there?",
+        "I'm still here if you need anything. Otherwise, I'll let you go.",
+    ]
+
+    @session.on("user_state_changed")
+    def _on_user_state_changed(ev):
+        nonlocal idle_away_count
+        if ev.new_state == "away":
+            idle_away_count += 1
+            logger.info("User idle (away count: %d)", idle_away_count)
+            if idle_away_count <= len(_IDLE_NUDGES):
+                session.generate_reply(
+                    instructions=f"The caller has been silent. Say exactly: '{_IDLE_NUDGES[idle_away_count - 1]}'"
+                )
+            else:
+                # 3rd silence -- say goodbye and hang up
+                logger.info("User idle too long, ending call")
+                session.generate_reply(
+                    instructions="The caller hasn't responded after multiple prompts. "
+                    "Say 'Alright, feel free to call back anytime. Goodbye!' and then call the end_call tool with reason 'conversation_complete'."
+                )
+        elif ev.new_state == "speaking":
+            # Reset counter when user speaks
+            idle_away_count = 0
 
     async def on_shutdown():
         # Cancel the duration watchdog if still running
