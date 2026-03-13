@@ -132,6 +132,8 @@ async def entrypoint(ctx: JobContext):
             _reject_tts = cartesia.TTS(
                 model="sonic-3",
                 voice="694f9389-aac1-45b6-b726-9d9369183238",
+                speed="normal",
+                emotion=["Calm", "Apologetic"],
             )
             _reject_session = AgentSession(
                 tts=_reject_tts,
@@ -153,6 +155,17 @@ async def entrypoint(ctx: JobContext):
     )
     logger.info("Using OpenAI gpt-4.1-mini")
 
+    # Configure TTS -- Cartesia Sonic-3 is the production choice for phone calls:
+    # streaming support (40-90ms TTFB), native SIP codecs, 56 emotion controls
+    voice_id = tenant_config.get("voice_config", {}).get("voice_id", "694f9389-aac1-45b6-b726-9d9369183238")
+    tts_instance = cartesia.TTS(
+        model="sonic-3",
+        voice=voice_id,
+        speed="normal",
+        emotion=["Confident", "Calm", "Curious"],
+    )
+    logger.info("TTS: Cartesia sonic-3 voice=%s", voice_id)
+
     # Configure the voice pipeline with explicit plugin instances (self-hosted, BYOK)
     session = AgentSession(
         stt=deepgram.STT(
@@ -162,12 +175,7 @@ async def entrypoint(ctx: JobContext):
             keyterm=[tenant_config["business_name"]] + tenant_config.get("stt_keywords", []),
         ),
         llm=llm,
-        tts=cartesia.TTS(
-            model="sonic-3",
-            voice=tenant_config.get("voice_config", {}).get("voice_id", "694f9389-aac1-45b6-b726-9d9369183238"),
-            speed=0.95,
-            emotion=["Content"],
-        ),
+        tts=tts_instance,
         vad=ctx.proc.userdata["vad"],
         turn_detection=MultilingualModel(),
         # Production tuning -- patient turn-taking for natural conversation
