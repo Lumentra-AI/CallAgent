@@ -161,7 +161,7 @@ async def entrypoint(ctx: JobContext):
     tts_instance = cartesia.TTS(
         model="sonic-3",
         voice=voice_id,
-        speed=1.0,
+        speed=1.05,
         emotion=["Confident", "Calm", "Curious"],
     )
     logger.info("TTS: Cartesia sonic-3 voice=%s", voice_id)

@@ -208,9 +208,27 @@ internalRoutes.get("/tenants/by-phone/:phone", async (c) => {
   );
 
   // Normalize escalation phone for E.164
-  const escalationPhone = tenant.escalation_phone
+  // If tenant has no explicit escalation_phone but has contacts with phones,
+  // derive it from the primary contact so transfers actually work.
+  let escalationPhone = tenant.escalation_phone
     ? normalizePhoneE164(tenant.escalation_phone)
     : null;
+
+  if (!escalationPhone && escalationContacts.length > 0) {
+    // Query the primary contact's phone number as fallback
+    const primaryContact = await queryAll<{ phone: string }>(
+      `SELECT phone FROM escalation_contacts
+       WHERE tenant_id = $1 AND phone IS NOT NULL AND phone != ''
+       ORDER BY is_primary DESC, sort_order ASC LIMIT 1`,
+      [tenant.id],
+    );
+    if (primaryContact.length > 0 && primaryContact[0].phone) {
+      escalationPhone = normalizePhoneE164(primaryContact[0].phone);
+      console.log(
+        `[INTERNAL] Derived escalation_phone from primary contact: ${escalationPhone}`,
+      );
+    }
+  }
 
   // If ALL operating_hours days are disabled, treat as 24/7 (null = always open)
   const rawHours = tenant.operating_hours;

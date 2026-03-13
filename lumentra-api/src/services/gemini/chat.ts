@@ -341,7 +341,7 @@ Today's Date: ${new Date().toISOString().split("T")[0]}
 
   prompt += `\n## Transfer & Escalation\n`;
 
-  if (hasContacts && options?.escalationPhone) {
+  if (hasContacts) {
     // List team members by name and role for targeted transfer
     const contactList = options
       .escalationContacts!.map((c) =>

@@ -733,8 +733,8 @@ async def transfer_to_human(
     if transfer_type == "callback" or not contacts:
         logger.info("Transfer routed to callback mode (type=%s, contacts=%d)", transfer_type, len(contacts))
         return (
-            "I'd be happy to have someone call you back. "
-            "Can I get your name and a brief message to pass along?"
+            "No one's available right now, but I can take a message and "
+            "have someone call you back. What's your name and message?"
         )
 
     contact_name = contacts[0].get("name", "a team member")

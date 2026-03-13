@@ -6,6 +6,23 @@ from api_client import get_client
 
 logger = logging.getLogger("lumentra-agent.call_logger")
 
+# Regex to strip Cartesia SSML / TTS markers from transcript text
+_SSML_TAG_RE = re.compile(
+    r"</?(?:spell|speed|break|emotion|phoneme|lang|say-as|prosody|voice|sub)"
+    r"(?:\s[^>]*)?\s*/?>",
+    re.IGNORECASE,
+)
+_LAUGHTER_RE = re.compile(r"\[laughter\]", re.IGNORECASE)
+
+
+def _strip_ssml(text: str) -> str:
+    """Remove SSML/TTS markup so transcripts contain only spoken words."""
+    text = _SSML_TAG_RE.sub("", text)
+    text = _LAUGHTER_RE.sub("", text)
+    # Collapse multiple spaces left by removed tags
+    text = re.sub(r"  +", " ", text).strip()
+    return text
+
 
 def _detect_outcome(transcript: str) -> str:
     """Detect call outcome from transcript text."""
@@ -68,7 +85,9 @@ async def log_call(
                     text = msg.text_content
                     if text and role in ("user", "assistant"):
                         speaker = "Customer" if role == "user" else "Agent"
-                        lines.append(f"{speaker}: {text}")
+                        clean = _strip_ssml(text)
+                        if clean:
+                            lines.append(f"{speaker}: {clean}")
             transcript = "\n".join(lines)
     except Exception as e:
         logger.warning("Failed to extract transcript: %s", e)

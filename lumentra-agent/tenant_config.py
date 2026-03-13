@@ -54,11 +54,20 @@ def apply_defaults(config: dict) -> dict:
         logger.warning("[TENANT %s] Missing operating_hours, using default", tenant_id)
 
     if config.get("escalation_enabled") and not config.get("escalation_phone"):
-        config["escalation_enabled"] = False
-        logger.warning(
-            "[TENANT %s] Escalation enabled but no phone number, disabling",
-            tenant_id,
-        )
+        # Check if there are escalation contacts with phone numbers before disabling
+        contacts = config.get("escalation_contacts", [])
+        if not contacts:
+            config["escalation_enabled"] = False
+            logger.warning(
+                "[TENANT %s] Escalation enabled but no phone number or contacts, disabling",
+                tenant_id,
+            )
+        else:
+            logger.info(
+                "[TENANT %s] No explicit escalation_phone but %d contacts exist, keeping escalation enabled",
+                tenant_id,
+                len(contacts),
+            )
 
     if not config.get("transfer_behavior"):
         config["transfer_behavior"] = {"type": "warm", "no_answer": "message"}
