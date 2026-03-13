@@ -73,6 +73,8 @@ export interface SetupState {
     number: string;
     areaCode: string;
     portRequest: Partial<PortRequest> | null;
+    /** True only when the number exists in phone_configurations (loaded from API or just provisioned) */
+    provisioned: boolean;
   };
   hoursData: {
     timezone: string;
@@ -174,6 +176,7 @@ const initialState: SetupState = {
     number: "",
     areaCode: "",
     portRequest: null,
+    provisioned: false,
   },
   hoursData: {
     timezone:
@@ -461,6 +464,11 @@ function mapApiToState(data: ApiProgressResponse): Partial<SetupState> {
       number: data.data.phone_config?.phone_number || "",
       areaCode: "",
       portRequest: null,
+      provisioned:
+        !!data.data.phone_config?.phone_number &&
+        ["active", "porting_with_temp", "pending"].includes(
+          data.data.phone_config?.status || "",
+        ),
     },
     hoursData: {
       timezone:

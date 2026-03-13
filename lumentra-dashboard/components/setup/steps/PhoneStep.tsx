@@ -327,7 +327,10 @@ export function PhoneStep() {
     null,
   );
   const [provisioningNumber, setProvisioningNumber] = useState(false);
-  const [numberProvisioned, setNumberProvisioned] = useState(false);
+  // Initialize from context flag (set by API load or successful provision)
+  const [numberProvisioned, setNumberProvisioned] = useState(
+    state.phoneData.provisioned,
+  );
   const [provisionError, setProvisionError] = useState<string | null>(null);
 
   // Port state
@@ -360,16 +363,20 @@ export function PhoneStep() {
   // Separate state for the business number input (not persisted -- only used to call the API)
   const [businessNumber, setBusinessNumber] = useState("");
 
-  // Restore state from loaded config (runs after loadProgress completes)
+  // Restore forward state from loaded config (runs after loadProgress completes)
   useEffect(() => {
     if (setupType === "forward" && number !== "" && forwardStatus === "idle") {
       setForwardNumber(number);
       setForwardStatus("provisioned");
     }
-    if (setupType === "new" && number !== "" && !numberProvisioned) {
+  }, [setupType, number]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync numberProvisioned when the context provisioned flag changes (e.g. after loadProgress)
+  useEffect(() => {
+    if (state.phoneData.provisioned && !numberProvisioned) {
       setNumberProvisioned(true);
     }
-  }, [setupType, number]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.phoneData.provisioned]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch existing port request status on mount
   useEffect(() => {
@@ -421,7 +428,7 @@ export function PhoneStep() {
   const handleSetupTypeSelect = (type: PhoneSetupType) => {
     dispatch({
       type: "SET_PHONE_DATA",
-      payload: { setupType: type },
+      payload: { setupType: type, provisioned: false },
     });
     // Reset other fields when changing type
     setAvailableNumbers([]);
@@ -501,7 +508,7 @@ export function PhoneStep() {
         if (data.temporaryNumber) {
           dispatch({
             type: "SET_PHONE_DATA",
-            payload: { number: data.temporaryNumber },
+            payload: { number: data.temporaryNumber, provisioned: true },
           });
         }
       }
@@ -533,7 +540,7 @@ export function PhoneStep() {
         // (the backend already saved it to phone_configurations + tenants.phone_number)
         dispatch({
           type: "SET_PHONE_DATA",
-          payload: { number: data.forwardTo },
+          payload: { number: data.forwardTo, provisioned: true },
         });
       } else {
         setForwardStatus("error");
@@ -582,7 +589,7 @@ export function PhoneStep() {
         setNumberProvisioned(true);
         dispatch({
           type: "SET_PHONE_DATA",
-          payload: { number: data.phoneNumber },
+          payload: { number: data.phoneNumber, provisioned: true },
         });
       }
 
