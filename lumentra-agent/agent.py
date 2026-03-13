@@ -72,9 +72,9 @@ class LumentraAgent(Agent):
             f"Thank you for calling {self.tenant_config.get('business_name', 'our business')}. "
             "How can I help you today?"
         )
-        self.session.generate_reply(
-            instructions=f"Greet the caller: {greeting}"
-        )
+        # Speak greeting directly via TTS -- skips the LLM round-trip (~1s)
+        # since the greeting text is already known from tenant config
+        self.session.say(greeting)
 
 
 server = AgentServer()
