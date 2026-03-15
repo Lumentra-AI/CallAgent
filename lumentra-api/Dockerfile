@@ -1,19 +1,20 @@
 # Lumentra API Dockerfile
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 
-# Install dependencies only when needed
+# Install production dependencies only
 FROM base AS deps
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Explicitly omit dev deps (--omit=dev replaces deprecated --only=production)
+RUN npm ci --omit=dev
 
-# Build stage
+# Build stage (force NODE_ENV=development so devDependencies like esbuild are installed)
 FROM base AS builder
 WORKDIR /app
+ENV NODE_ENV=development
 
 # Cache bust - change this value to force rebuild
 ARG CACHE_BUST=2026-01-27-v4

@@ -9,7 +9,7 @@
     "dev:gptoss": "GROQ_MODEL=gpt-oss-20b-128k tsx watch src/index.ts",
     "dev:qwen": "GROQ_MODEL=qwen3-32b-131k tsx watch src/index.ts",
     "dev:llama70b": "GROQ_MODEL=llama-3.3-70b-versatile tsx watch src/index.ts",
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --outfile=dist/index.js --format=esm --packages=external",
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --outfile=dist/index.js --format=esm --packages=external",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test:sip-forward": "node --import tsx --test tests/sip-forward.test.ts",
