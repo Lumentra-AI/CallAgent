@@ -30,6 +30,7 @@ jobs:
           scp -i ~/.ssh/deploy_key \
             lumentra-agent/*.py \
             lumentra-agent/Dockerfile \
+            lumentra-agent/requirements.txt \
             ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }}:${{ env.AGENT_DIR }}/
 
       - name: Rebuild and restart agent

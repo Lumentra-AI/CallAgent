@@ -45,21 +45,10 @@ export async function processCallbacks(): Promise<void> {
         { id: callback.id },
       );
 
-      // TODO: Initiate outbound call via SignalWire API
+      // Outbound calls not yet implemented -- leave in_progress for dashboard staff to handle manually.
+      // Do NOT mark as completed: that lies to both the system and the customer.
       console.log(
-        `[CALLBACKS] Would call ${callback.phone_number} for tenant ${callback.tenant_id}`,
-      );
-
-      // Mark as completed (in production, this would be after successful call)
-      // For now, mark as completed after logging
-      await updateOne(
-        "callback_queue",
-        {
-          status: "completed",
-          completed_at: new Date().toISOString(),
-          notes: "Auto-processed (outbound calls not yet implemented)",
-        },
-        { id: callback.id },
+        `[CALLBACKS] Queued for manual handling: ${callback.phone_number} for tenant ${callback.tenant_id} (attempt ${callback.attempts + 1})`,
       );
     } catch (err) {
       console.error(`[CALLBACKS] Failed for ${callback.id}:`, err);

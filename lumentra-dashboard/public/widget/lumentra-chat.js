@@ -459,7 +459,7 @@
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 10000);
         const res = await fetch(
-          `${this.apiUrl}/api/chat/history/${encodeURIComponent(this.sessionId)}`,
+          `${this.apiUrl}/api/chat/history/${encodeURIComponent(this.sessionId)}?tenant_id=${encodeURIComponent(this.tenantId)}`,
           { signal: controller.signal },
         );
         clearTimeout(timeout);

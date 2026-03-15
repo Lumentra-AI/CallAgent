@@ -63,11 +63,13 @@ export async function getOrCreateSession(
  */
 export async function getConversationHistory(
   sessionId: string,
+  tenantId?: string,
 ): Promise<ConversationMessage[]> {
-  const row = await queryOne<{ messages: ConversationMessage[] }>(
-    `SELECT messages FROM chat_sessions WHERE session_id = $1`,
-    [sessionId],
-  );
+  const sql = tenantId
+    ? `SELECT messages FROM chat_sessions WHERE session_id = $1 AND tenant_id = $2`
+    : `SELECT messages FROM chat_sessions WHERE session_id = $1`;
+  const params = tenantId ? [sessionId, tenantId] : [sessionId];
+  const row = await queryOne<{ messages: ConversationMessage[] }>(sql, params);
 
   return row?.messages || [];
 }

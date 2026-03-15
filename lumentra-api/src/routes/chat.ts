@@ -334,11 +334,15 @@ chatRoutes.get("/config/:tenant_id", async (c) => {
 chatRoutes.get("/history/:session_id", async (c) => {
   try {
     const sessionId = c.req.param("session_id");
+    const tenantId = c.req.query("tenant_id");
     if (!sessionId || sessionId.length > 256) {
       return c.json({ error: "Invalid session" }, 400);
     }
+    if (!tenantId || tenantId.length > 256) {
+      return c.json({ error: "tenant_id required" }, 400);
+    }
 
-    const messages = await getConversationHistory(sessionId);
+    const messages = await getConversationHistory(sessionId, tenantId);
     return c.json({ messages });
   } catch (err) {
     console.error("[CHAT] History error:", err);

@@ -121,7 +121,19 @@ export async function listResources(
 ): Promise<PaginatedResult<Resource>> {
   const limit = pagination.limit || 50;
   const offset = pagination.offset || 0;
-  const sortBy = pagination.sort_by || "sort_order";
+  // Allowlist to prevent SQL injection via ORDER BY interpolation
+  const ALLOWED_SORT_COLUMNS = [
+    "sort_order",
+    "name",
+    "type",
+    "created_at",
+    "updated_at",
+    "capacity",
+    "is_active",
+  ];
+  const sortBy = ALLOWED_SORT_COLUMNS.includes(pagination.sort_by || "")
+    ? pagination.sort_by!
+    : "sort_order";
   const sortOrder = pagination.sort_order || "asc";
 
   // Build WHERE clause dynamically
