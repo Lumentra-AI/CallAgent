@@ -33,6 +33,12 @@ import {
   getProviderStatus,
   type LLMResponse,
 } from "../services/llm/multi-provider.js";
+import {
+  chatWithFallbackStream,
+  sendToolResultsStream,
+  type StreamCallbacks,
+} from "../services/llm/stream-provider.js";
+import { queryAll } from "../services/database/client.js";
 
 export const chatRoutes = new Hono();
 
@@ -168,6 +174,21 @@ chatRoutes.post("/", async (c) => {
       return c.json({ error: "Chat widget is not enabled" }, 403);
     }
 
+    // Per-tenant origin enforcement
+    const chatConfig = tenant.chat_config || {};
+    const allowedOrigins = chatConfig.allowed_origins;
+    if (
+      !marketing_mode &&
+      allowedOrigins &&
+      Array.isArray(allowedOrigins) &&
+      allowedOrigins.length > 0
+    ) {
+      const requestOrigin = c.req.header("origin") || "";
+      if (!allowedOrigins.includes(requestOrigin)) {
+        return c.json({ error: "Origin not allowed" }, 403);
+      }
+    }
+
     // Get or create session (persisted to DB)
     await getOrCreateSession(session_id, tenant_id, source_url);
 
@@ -184,6 +205,8 @@ chatRoutes.post("/", async (c) => {
     const disabledFeatures = ALL_FEATURES.filter((f) => !tenantFeatures.has(f));
 
     // Build system prompt - use Lumentra marketing prompt if in marketing mode
+    // Cast to access extended columns (SELECT * includes all columns)
+    const t = tenant as unknown as Record<string, unknown>;
     const systemPrompt = marketing_mode
       ? LUMENTRA_MARKETING_PROMPT
       : buildChatSystemPrompt(
@@ -195,8 +218,34 @@ chatRoutes.post("/", async (c) => {
             verbosity: "balanced",
             empathy: "medium",
           },
-          { timezone, disabledFeatures },
+          {
+            timezone,
+            disabledFeatures,
+            operatingHours: tenant.operating_hours || undefined,
+            locationAddress: (t.location_address as string) || undefined,
+            locationCity: (t.location_city as string) || undefined,
+            customInstructions: (t.custom_instructions as string) || undefined,
+          },
         );
+
+    // Inject knowledge base Q&A into system prompt
+    let finalPrompt = systemPrompt;
+    try {
+      const kbItems = await queryAll<{ question: string; answer: string }>(
+        `SELECT question, answer FROM knowledge_base
+         WHERE tenant_id = $1 AND is_active = true
+         ORDER BY sort_order ASC LIMIT 20`,
+        [tenant_id],
+      );
+      if (kbItems.length > 0) {
+        finalPrompt += "\n\n## Business Knowledge Base\n";
+        for (const item of kbItems) {
+          finalPrompt += `Q: ${item.question}\nA: ${item.answer}\n\n`;
+        }
+      }
+    } catch {
+      // Knowledge base table may not exist yet -- non-fatal
+    }
 
     // Get conversation history
     const history = await getConversationHistory(session_id);
@@ -215,7 +264,7 @@ chatRoutes.post("/", async (c) => {
     const chatResult = await chatWithMultiProvider(
       message,
       history,
-      systemPrompt,
+      finalPrompt,
       context,
     );
 
@@ -278,6 +327,245 @@ chatRoutes.post("/", async (c) => {
 });
 
 // ============================================================================
+// POST /api/chat/stream - SSE streaming chat endpoint
+// ============================================================================
+
+chatRoutes.post("/stream", async (c) => {
+  const rawBody = await c.req.json();
+  const parsed = chatRequestSchema.safeParse(rawBody);
+
+  if (!parsed.success) {
+    const firstError = parsed.error.issues[0]?.message || "Invalid request";
+    return c.json({ error: firstError }, 400);
+  }
+
+  const {
+    tenant_id,
+    session_id,
+    message,
+    visitor_info,
+    marketing_mode,
+    source_url,
+    timezone,
+  } = parsed.data;
+
+  // Restrict marketing_mode to Lumentra's own tenant
+  const lumentraTenantId = process.env.LUMENTRA_TENANT_ID;
+  if (marketing_mode && tenant_id !== lumentraTenantId) {
+    return c.json({ error: "Unauthorized marketing mode" }, 403);
+  }
+
+  const tenant = await getTenantById(tenant_id);
+  if (!tenant) {
+    return c.json({ error: "Invalid tenant" }, 404);
+  }
+
+  if (!marketing_mode && !tenant.chat_widget_enabled) {
+    return c.json({ error: "Chat widget is not enabled" }, 403);
+  }
+
+  // Per-tenant origin enforcement
+  const chatCfg = tenant.chat_config || {};
+  const allowedOrig = chatCfg.allowed_origins;
+  if (
+    !marketing_mode &&
+    allowedOrig &&
+    Array.isArray(allowedOrig) &&
+    allowedOrig.length > 0
+  ) {
+    const requestOrigin = c.req.header("origin") || "";
+    if (!allowedOrig.includes(requestOrigin)) {
+      return c.json({ error: "Origin not allowed" }, 403);
+    }
+  }
+
+  await getOrCreateSession(session_id, tenant_id, source_url);
+  if (visitor_info) {
+    await updateVisitorInfo(session_id, visitor_info);
+  }
+
+  const tenantFeatures = await resolveFeatures(
+    tenant.subscription_tier || "starter",
+    tenant_id,
+  );
+  const disabledFeatures = ALL_FEATURES.filter((f) => !tenantFeatures.has(f));
+
+  const t = tenant as unknown as Record<string, unknown>;
+  const systemPrompt = marketing_mode
+    ? LUMENTRA_MARKETING_PROMPT
+    : buildChatSystemPrompt(
+        tenant.agent_name || "Assistant",
+        tenant.business_name,
+        tenant.industry,
+        tenant.agent_personality || {
+          tone: "friendly",
+          verbosity: "balanced",
+          empathy: "medium",
+        },
+        {
+          timezone,
+          disabledFeatures,
+          operatingHours: tenant.operating_hours || undefined,
+          locationAddress: (t.location_address as string) || undefined,
+          locationCity: (t.location_city as string) || undefined,
+          customInstructions: (t.custom_instructions as string) || undefined,
+        },
+      );
+
+  // Inject knowledge base Q&A into system prompt
+  let finalPrompt = systemPrompt;
+  try {
+    const kbItems = await queryAll<{ question: string; answer: string }>(
+      `SELECT question, answer FROM knowledge_base
+       WHERE tenant_id = $1 AND is_active = true
+       ORDER BY sort_order ASC LIMIT 20`,
+      [tenant_id],
+    );
+    if (kbItems.length > 0) {
+      finalPrompt += "\n\n## Business Knowledge Base\n";
+      for (const item of kbItems) {
+        finalPrompt += `Q: ${item.question}\nA: ${item.answer}\n\n`;
+      }
+    }
+  } catch {
+    // Knowledge base table may not exist yet -- non-fatal
+  }
+
+  const history = await getConversationHistory(session_id);
+
+  const currentVisitorInfo = await getVisitorInfo(session_id);
+  const context: ToolExecutionContext & { sessionId: string } = {
+    tenantId: tenant_id,
+    callSid: session_id,
+    callerPhone: visitor_info?.phone || currentVisitorInfo?.phone,
+    sessionId: session_id,
+    disabledFeatures,
+  };
+
+  // Return SSE stream
+  return c.newResponse(
+    new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+        const send = (event: string, data: unknown) => {
+          controller.enqueue(
+            encoder.encode(
+              `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
+            ),
+          );
+        };
+
+        let fullText = "";
+        let usedProvider = "";
+
+        const callbacks: StreamCallbacks = {
+          onToken(text) {
+            fullText += text;
+            send("token", { text });
+          },
+          onToolStart(tool, args) {
+            send("tool_start", { tool, args });
+          },
+          onToolResult(tool, result) {
+            send("tool_result", { tool, result });
+          },
+          onDone(finalText, provider) {
+            fullText = finalText;
+            usedProvider = provider;
+          },
+          onError(msg) {
+            send("error", { message: msg });
+          },
+        };
+
+        try {
+          const options = {
+            userMessage: message,
+            conversationHistory: history,
+            systemPrompt: finalPrompt,
+            tools: chatAgentFunctions,
+          };
+
+          const toolRequest = await chatWithFallbackStream(options, callbacks);
+
+          // Handle tool calls if any
+          if (toolRequest && toolRequest.toolCalls.length > 0) {
+            const toolResults: Array<{
+              id: string;
+              name: string;
+              result: unknown;
+            }> = [];
+
+            for (const tc of toolRequest.toolCalls) {
+              callbacks.onToolStart(tc.name, tc.args);
+              const result = await executeChatTool(tc.name, tc.args, context);
+              callbacks.onToolResult(tc.name, result);
+              toolResults.push({
+                id: tc.id,
+                name: tc.name,
+                result,
+              });
+            }
+
+            // Stream the post-tool response
+            fullText = "";
+            await sendToolResultsStream(
+              toolRequest.provider,
+              options,
+              toolResults,
+              callbacks,
+            );
+          }
+
+          // Save to history
+          if (fullText) {
+            await saveToHistory(session_id, message, fullText);
+          }
+
+          // CRM contact upsert
+          const latestVisitor = await getVisitorInfo(session_id);
+          if (latestVisitor?.phone || latestVisitor?.email) {
+            try {
+              await findOrCreateByPhone(
+                tenant_id,
+                latestVisitor.phone || latestVisitor.email || "",
+                {
+                  name: latestVisitor.name,
+                  email: latestVisitor.email,
+                  source: "web",
+                },
+              );
+            } catch {
+              // non-fatal
+            }
+          }
+
+          send("done", {
+            session_id,
+            provider: usedProvider,
+            full_response: fullText,
+          });
+        } catch (err) {
+          const msg =
+            err instanceof Error ? err.message : "An unexpected error occurred";
+          send("error", { message: msg });
+        } finally {
+          controller.close();
+        }
+      },
+    }),
+    {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    },
+  );
+});
+
+// ============================================================================
 // GET /api/chat/config/:tenant_id - Get widget configuration
 // ============================================================================
 
@@ -288,6 +576,8 @@ interface WidgetConfig {
   industry: string;
   theme_color: string;
   position: string;
+  logo_url: string | null;
+  contact_collection: string;
 }
 
 chatRoutes.get("/config/:tenant_id", async (c) => {
@@ -318,6 +608,8 @@ chatRoutes.get("/config/:tenant_id", async (c) => {
       industry: tenant.industry,
       theme_color: chatConfig.theme_color || "#6366f1",
       position: chatConfig.position || "bottom-right",
+      logo_url: chatConfig.logo_url || null,
+      contact_collection: chatConfig.contact_collection || "soft",
     };
 
     return c.json(config);

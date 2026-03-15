@@ -10,6 +10,7 @@ import {
   type VisitorInfo,
 } from "./conversation-store.js";
 import { insertOne } from "../database/query-helpers.js";
+import { escalationEvents } from "../escalation/events.js";
 
 // Shared tool declarations (used by both voice agent and chat widget)
 const sharedFunctions: FunctionDeclaration[] = [
@@ -232,14 +233,34 @@ async function executeRequestCallback(
       .filter(Boolean)
       .join(". ");
 
-    await insertOne("callback_queue", {
+    const row = await insertOne<{ id: string }>("callback_queue", {
       tenant_id: context.tenantId,
       phone_number: visitor?.phone || context.callerPhone || "chat-no-phone",
       reason,
       priority: "medium",
       status: "pending",
       notes,
+      caller_name: visitor?.name || null,
     });
+
+    // Emit to escalation event bus so dashboard staff see it in real time
+    if (row?.id) {
+      escalationEvents.publish({
+        type: "callback_queued",
+        tenantId: context.tenantId,
+        queueId: row.id,
+        data: {
+          source: "chat",
+          sessionId: context.sessionId,
+          reason,
+          visitorName: visitor?.name || null,
+          visitorEmail: visitor?.email || null,
+          visitorPhone: visitor?.phone || null,
+          preferredTime: preferredTime || null,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    }
   } catch (err) {
     console.error("[CHAT] Failed to persist callback request:", err);
   }

@@ -31,7 +31,7 @@ console.log(`  - Groq: ${groqClient ? "READY" : "NOT CONFIGURED"}`);
 // Rate limit cooldown (5 minutes)
 const RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000;
 
-function isProviderAvailable(provider: string): boolean {
+export function isProviderAvailable(provider: string): boolean {
   const status = providerStatus[provider];
   if (!status) return false;
   if (status.status === "available") return true;
@@ -44,7 +44,7 @@ function isProviderAvailable(provider: string): boolean {
   return false;
 }
 
-function markProviderRateLimited(provider: string): void {
+export function markProviderRateLimited(provider: string): void {
   providerStatus[provider] = {
     status: "rate_limited",
     until: Date.now() + RATE_LIMIT_COOLDOWN_MS,
@@ -52,7 +52,7 @@ function markProviderRateLimited(provider: string): void {
   console.log(`[LLM] ${provider} rate limited, cooling down for 5 minutes`);
 }
 
-function markProviderError(provider: string): void {
+export function markProviderError(provider: string): void {
   providerStatus[provider] = {
     status: "error",
     until: Date.now() + 60000, // 1 minute cooldown for errors
@@ -61,7 +61,7 @@ function markProviderError(provider: string): void {
 }
 
 // Convert Gemini function declarations to OpenAI/Groq format
-function toOpenAITools(
+export function toOpenAITools(
   geminiTools: FunctionDeclaration[],
 ): ChatCompletionTool[] {
   return geminiTools.map((tool) => ({
@@ -126,7 +126,7 @@ function convertGeminiSchemaToJsonSchema(
 }
 
 // Convert conversation history to OpenAI format
-function toOpenAIMessages(
+export function toOpenAIMessages(
   messages: ConversationMessage[],
   systemPrompt: string,
 ): ChatCompletionMessageParam[] {
@@ -172,7 +172,7 @@ function toOpenAIMessages(
 }
 
 // Convert conversation history to Gemini format
-function toGeminiContents(messages: ConversationMessage[]): Content[] {
+export function toGeminiContents(messages: ConversationMessage[]): Content[] {
   const contents: Content[] = [];
 
   for (const msg of messages) {
@@ -217,7 +217,7 @@ export interface LLMChatOptions {
 }
 
 // Timeout wrapper for LLM calls
-function withTimeout<T>(
+export function withTimeout<T>(
   promise: Promise<T>,
   ms: number,
   label: string,
@@ -234,7 +234,7 @@ function withTimeout<T>(
 }
 
 // Check if provider has initialized client
-function isProviderInitialized(provider: string): boolean {
+export function isProviderInitialized(provider: string): boolean {
   if (provider === "gemini") return genAI !== null;
   if (provider === "openai") return openaiClient !== null;
   if (provider === "groq") return groqClient !== null;

@@ -23,6 +23,7 @@ import { integrationsRoutes } from "./routes/integrations.js";
 import { phoneConfigRoutes } from "./routes/phone-config.js";
 import { escalationRoutes } from "./routes/escalation.js";
 import { escalationEventsRoutes } from "./routes/escalation-events.js";
+import { knowledgeBaseRoutes } from "./routes/knowledge-base.js";
 import { promotionsRoutes } from "./routes/promotions.js";
 import { pendingBookingsRoutes } from "./routes/pending-bookings.js";
 import { dealsRoutes } from "./routes/deals.js";
@@ -190,6 +191,7 @@ export function createApp() {
   app.route("/api/tasks", tasksRoutes);
   app.route("/api/chat-sessions", chatSessionsRoutes);
   app.route("/api/features", featuresRoutes);
+  app.route("/api/knowledge-base", knowledgeBaseRoutes);
   app.route("/api/team", teamRoutes);
   app.route("/api/activity", activityRoutes);
 

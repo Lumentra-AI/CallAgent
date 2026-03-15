@@ -166,6 +166,8 @@ export async function executeCreateBooking(
       callId = callRecord?.id || null;
     }
 
+    const isChat = !callId && context.callSid;
+    const sourceLabel = isChat ? "chat" : "call";
     const data = await insertOne<BookingRow>("bookings", {
       tenant_id: context.tenantId,
       customer_name: args.customer_name,
@@ -174,12 +176,12 @@ export async function executeCreateBooking(
       booking_date: args.date,
       booking_time: args.time,
       notes: args.notes
-        ? `${args.notes} (Call: ${context.callSid})`
-        : `Booked via call ${context.callSid}`,
+        ? `${args.notes} (${sourceLabel}: ${context.callSid})`
+        : `Booked via ${sourceLabel} ${context.callSid}`,
       status: "confirmed",
       confirmation_code: confirmationCode,
       reminder_sent: false,
-      source: "call",
+      source: sourceLabel,
       call_id: callId,
     });
 

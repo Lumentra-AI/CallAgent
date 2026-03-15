@@ -48,8 +48,13 @@ export interface Tenant {
 export interface ChatWidgetConfig {
   theme_color?: string;
   greeting?: string;
-  position?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
+  position?: "bottom-right" | "bottom-left";
   allowed_origins?: string[];
+  logo_url?: string;
+  contact_collection?: "soft" | "persistent";
+  escalation_triggers?: string[];
+  offline_message?: string;
+  max_messages?: number;
 }
 
 export interface AgentPersonality {
