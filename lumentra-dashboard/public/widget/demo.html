@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lumentra Chat Widget Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+    }
+    .hero {
+      max-width: 800px;
+      margin: 80px auto;
+      padding: 0 24px;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: #0f172a;
+    }
+    .hero p {
+      font-size: 18px;
+      color: #64748b;
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 6px 16px;
+      background: #eff6ff;
+      color: #2563eb;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 32px;
+    }
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+      text-align: left;
+      margin-top: 48px;
+    }
+    .feature {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .feature h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .feature p {
+      font-size: 14px;
+      color: #64748b;
+      line-height: 1.5;
+    }
+    .hint {
+      margin-top: 48px;
+      padding: 16px 24px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      display: inline-block;
+    }
+    .hint p {
+      font-size: 14px;
+      color: #475569;
+    }
+    .hint strong {
+      color: #2563eb;
+    }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <div class="badge">Live Demo</div>
+    <h1>Bright Smile Dental</h1>
+    <p>Welcome to our dental practice. We provide comprehensive dental care for the whole family. Try our AI chat assistant in the bottom-right corner.</p>
+
+    <div class="features">
+      <div class="feature">
+        <h3>Ask about hours</h3>
+        <p>"When are you open?" or "Are you open on Saturday?"</p>
+      </div>
+      <div class="feature">
+        <h3>Book an appointment</h3>
+        <p>"I'd like to schedule a cleaning" or "Can I book for next Tuesday?"</p>
+      </div>
+      <div class="feature">
+        <h3>Ask questions</h3>
+        <p>"Do you accept insurance?" or "What services do you offer?"</p>
+      </div>
+      <div class="feature">
+        <h3>Request a callback</h3>
+        <p>"Can someone call me back?" or "I need to speak with someone"</p>
+      </div>
+    </div>
+
+    <div class="hint">
+      <p>Click the <strong>chat bubble</strong> in the bottom-right corner to start chatting.</p>
+    </div>
+  </div>
+
+  <!-- Lumentra Chat Widget -->
+  <script src="/widget/lumentra-chat.js"></script>
+  <script>
+    new LumentraChat({
+      tenantId: '042a0e7a-e4a2-4114-abbe-b0cca9c4ef23',
+      apiUrl: 'https://api.lumentraai.com'
+    });
+  </script>
+</body>
+</html>
