@@ -869,6 +869,7 @@
     var aiEl = this._addAssistantMessage("", false);
     var fullText = "";
     var toolStatusEl = null;
+    var hadToolResult = false;
     var self = this;
 
     try {
@@ -978,6 +979,7 @@
 
           // -- tool_result: structured card --
           else if (eventType === "tool_result") {
+            hadToolResult = true;
             if (toolStatusEl) {
               toolStatusEl.remove();
               toolStatusEl = null;
@@ -1008,10 +1010,12 @@
               if (self.messages.length > 0) {
                 self.messages[self.messages.length - 1].content = finalText;
               }
-            } else if (!fullText) {
-              // Tool-only response with no text
+            } else if (!fullText && !hadToolResult) {
+              // No text AND no tool result -- remove empty bubble
               aiEl.remove();
             }
+            // If had tool result but no text, keep aiEl (may be empty but
+            // tool cards / info pills were already rendered separately)
             self._scroll();
           }
 
