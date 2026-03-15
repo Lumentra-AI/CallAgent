@@ -10,6 +10,7 @@ import {
   type VisitorInfo,
 } from "./conversation-store.js";
 import { insertOne } from "../database/query-helpers.js";
+import { queryAll } from "../database/client.js";
 import { escalationEvents } from "../escalation/events.js";
 
 // Shared tool declarations (used by both voice agent and chat widget)
@@ -150,6 +151,22 @@ const chatOnlyFunctions: FunctionDeclaration[] = [
       required: ["reason"],
     },
   },
+  {
+    name: "search_knowledge_base",
+    description:
+      "Search the business knowledge base for answers. Use when the visitor asks a question about the business that you cannot answer from the information already in your system prompt. Examples: policies, services, pricing, FAQs.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        query: {
+          type: SchemaType.STRING,
+          description:
+            "The search query. Use keywords from the visitor's question. Example: 'return policy', 'parking', 'insurance accepted'",
+        },
+      },
+      required: ["query"],
+    },
+  },
 ];
 
 // Combined chat tools: shared tools + chat-specific
@@ -171,6 +188,10 @@ export async function executeChatTool(
 
   if (toolName === "request_callback") {
     return executeRequestCallback(args, context);
+  }
+
+  if (toolName === "search_knowledge_base") {
+    return executeSearchKnowledgeBase(args, context);
   }
 
   // Delegate to voice tool executor for shared tools
@@ -271,4 +292,39 @@ async function executeRequestCallback(
       ? `We'll call you ${preferredTime}. A team member will reach out soon.`
       : "We'll have someone call you back as soon as possible.",
   };
+}
+
+// Search knowledge base handler
+async function executeSearchKnowledgeBase(
+  args: Record<string, unknown>,
+  context: ToolExecutionContext,
+): Promise<{
+  success: boolean;
+  results: Array<{ question: string; answer: string }>;
+}> {
+  const query = (args.query as string) || "";
+  if (!query.trim()) {
+    return { success: false, results: [] };
+  }
+
+  try {
+    const pattern = `%${query.trim()}%`;
+    const results = await queryAll<{ question: string; answer: string }>(
+      `SELECT question, answer FROM knowledge_base
+       WHERE tenant_id = $1 AND is_active = true
+         AND (question ILIKE $2 OR answer ILIKE $2)
+       ORDER BY sort_order ASC
+       LIMIT 5`,
+      [context.tenantId, pattern],
+    );
+
+    console.log(
+      `[CHAT] Knowledge base search "${query}" for tenant ${context.tenantId}: ${results.length} results`,
+    );
+
+    return { success: true, results };
+  } catch (err) {
+    console.error("[CHAT] Knowledge base search failed:", err);
+    return { success: false, results: [] };
+  }
 }

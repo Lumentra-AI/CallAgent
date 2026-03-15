@@ -145,9 +145,9 @@
           max-width: calc(100vw - 40px);
           height: 520px;
           max-height: calc(100vh - 120px);
-          background: #18181b;
+          background: #ffffff;
           border-radius: 16px;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+          box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
           display: flex;
           flex-direction: column;
           overflow: hidden;
@@ -162,8 +162,8 @@
         }
         .lumentra-chat-header {
           padding: 16px;
-          background: #27272a;
-          border-bottom: 1px solid #3f3f46;
+          background: ${this.config?.theme_color || "#6366f1"};
+          border-bottom: 1px solid rgba(0,0,0,0.1);
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -186,12 +186,12 @@
           font-size: 16px;
         }
         .lumentra-chat-name {
-          color: #fafafa;
+          color: #ffffff;
           font-weight: 600;
           font-size: 15px;
         }
         .lumentra-chat-status {
-          color: #a1a1aa;
+          color: rgba(255,255,255,0.8);
           font-size: 12px;
           display: flex;
           align-items: center;
@@ -207,15 +207,16 @@
         .lumentra-chat-close {
           background: none;
           border: none;
-          color: #a1a1aa;
+          color: rgba(255,255,255,0.8);
           cursor: pointer;
           padding: 4px;
           border-radius: 4px;
+          font-size: 20px;
           transition: background 0.2s;
         }
         .lumentra-chat-close:hover {
-          background: #3f3f46;
-          color: #fafafa;
+          background: rgba(255,255,255,0.15);
+          color: #ffffff;
         }
         .lumentra-chat-messages {
           flex: 1;
@@ -245,46 +246,42 @@
         }
         .lumentra-message.assistant {
           align-self: flex-start;
-          background: #27272a;
-          color: #fafafa;
+          background: #f4f4f5;
+          color: #18181b;
           border-bottom-left-radius: 4px;
+          border-left: 2px solid ${this.config?.theme_color || "#6366f1"};
         }
-        .lumentra-typing {
-          align-self: flex-start;
-          background: #27272a;
-          padding: 12px 16px;
-          border-radius: 16px;
-          border-bottom-left-radius: 4px;
-          display: flex;
-          gap: 4px;
+        .lumentra-message.assistant a {
+          color: ${this.config?.theme_color || "#6366f1"};
         }
-        .lumentra-typing span {
-          width: 8px;
-          height: 8px;
-          background: #71717a;
-          border-radius: 50%;
-          animation: lumentra-typing 1.4s infinite;
+        .lumentra-message.assistant strong {
+          font-weight: 600;
         }
-        .lumentra-typing span:nth-child(2) { animation-delay: 0.2s; }
-        .lumentra-typing span:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes lumentra-typing {
-          0%, 60%, 100% { transform: translateY(0); }
-          30% { transform: translateY(-4px); }
+        .lumentra-message.assistant ul {
+          margin: 4px 0;
+          padding-left: 16px;
         }
+        .lumentra-message.assistant code {
+          background: #e4e4e7;
+          padding: 1px 4px;
+          border-radius: 3px;
+          font-size: 13px;
+        }
+        /* No typing indicator -- SSE streaming text IS the feedback */
         .lumentra-chat-input-container {
           padding: 12px 16px;
-          background: #27272a;
-          border-top: 1px solid #3f3f46;
+          background: #ffffff;
+          border-top: 1px solid #e4e4e7;
           display: flex;
           gap: 8px;
         }
         .lumentra-chat-input {
           flex: 1;
           padding: 10px 14px;
-          background: #18181b;
-          border: 1px solid #3f3f46;
+          background: #f4f4f5;
+          border: 1px solid #e4e4e7;
           border-radius: 8px;
-          color: #fafafa;
+          color: #18181b;
           font-size: 14px;
           outline: none;
           transition: border-color 0.2s;
@@ -427,27 +424,57 @@
       }
     }
 
-    addMessage(role, content) {
+    // Lightweight markdown: bold, italic, code, bullets, links. XSS-safe.
+    renderMarkdown(text) {
+      // Escape HTML first
+      let html = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+      // Bold
+      html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      // Italic
+      html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+      // Inline code
+      html = html.replace(/`(.+?)`/g, "<code>$1</code>");
+      // Links
+      html = html.replace(
+        /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener">$1</a>',
+      );
+      // Bullet lists (lines starting with - or *)
+      html = html.replace(/^[\-\*] (.+)$/gm, "<li>$1</li>");
+      if (html.includes("<li>")) {
+        html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, "<ul>$1</ul>");
+      }
+      // Line breaks
+      html = html.replace(/\n/g, "<br>");
+      return html;
+    }
+
+    addMessage(role, content, useMarkdown) {
       if (!content || !content.trim()) return;
       const div = document.createElement("div");
       div.className = `lumentra-message ${role}`;
-      div.textContent = content;
+      if (role === "assistant" && useMarkdown !== false) {
+        div.innerHTML = this.renderMarkdown(content);
+      } else {
+        div.textContent = content;
+      }
       this.messagesContainer.appendChild(div);
       this.scrollToBottom();
+      return div;
     }
 
-    showTyping() {
-      const typing = document.createElement("div");
-      typing.className = "lumentra-typing";
-      typing.id = "lumentra-typing";
-      typing.innerHTML = "<span></span><span></span><span></span>";
-      this.messagesContainer.appendChild(typing);
+    // Create an empty AI message bubble for streaming
+    createStreamBubble() {
+      const div = document.createElement("div");
+      div.className = "lumentra-message assistant";
+      div.textContent = "";
+      this.messagesContainer.appendChild(div);
       this.scrollToBottom();
-    }
-
-    hideTyping() {
-      const typing = document.getElementById("lumentra-typing");
-      if (typing) typing.remove();
+      return div;
     }
 
     scrollToBottom() {
@@ -481,24 +508,24 @@
       const message = this.input.value.trim();
       if (!message || this.isLoading) return;
 
-      // Clear input and add user message
       this.input.value = "";
-      this.addMessage("user", message);
+      this.addMessage("user", message, false);
 
-      // Show typing indicator
       this.isLoading = true;
       this.sendButton.disabled = true;
-      this.showTyping();
+      this.input.disabled = true;
+
+      // Create empty bubble for streaming
+      const bubble = this.createStreamBubble();
+      let fullText = "";
 
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000);
+        const timeout = setTimeout(() => controller.abort(), 45000);
 
-        const response = await fetch(`${this.apiUrl}/api/chat`, {
+        const response = await fetch(`${this.apiUrl}/api/chat/stream`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           signal: controller.signal,
           body: JSON.stringify({
             tenant_id: this.tenantId,
@@ -515,59 +542,89 @@
 
         clearTimeout(timeout);
 
-        let data;
-        try {
-          data = await response.json();
-        } catch (parseErr) {
-          throw new Error("Invalid response from server");
+        if (!response.ok) {
+          let errData;
+          try {
+            errData = await response.json();
+          } catch {
+            errData = {};
+          }
+          bubble.textContent =
+            errData.error || "Sorry, something went wrong. Please try again.";
+          return;
         }
 
-        this.hideTyping();
+        // Read SSE stream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
 
-        if (response.ok && data.response) {
-          this.addMessage("assistant", data.response);
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-          // Handle tool results (booking confirmations, etc.)
-          if (data.tool_calls) {
-            this.handleToolResults(data.tool_calls);
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          let eventType = "";
+          for (const line of lines) {
+            if (line.startsWith("event: ")) {
+              eventType = line.slice(7).trim();
+            } else if (line.startsWith("data: ")) {
+              const dataStr = line.slice(6);
+              try {
+                const data = JSON.parse(dataStr);
+                if (eventType === "token" && data.text) {
+                  fullText += data.text;
+                  bubble.textContent = fullText;
+                  this.scrollToBottom();
+                } else if (eventType === "tool_start") {
+                  bubble.textContent = fullText || "Looking that up for you...";
+                } else if (eventType === "tool_result") {
+                  if (
+                    data.tool === "collect_contact_info" &&
+                    data.result?.info
+                  ) {
+                    this.visitorInfo = {
+                      ...this.visitorInfo,
+                      ...data.result.info,
+                    };
+                  }
+                } else if (eventType === "done") {
+                  fullText = data.full_response || fullText;
+                  // Apply markdown on final text
+                  bubble.innerHTML = this.renderMarkdown(fullText);
+                  this.scrollToBottom();
+                } else if (eventType === "error") {
+                  bubble.textContent =
+                    data.message ||
+                    "Sorry, something went wrong. Please try again.";
+                }
+              } catch {
+                // Skip malformed JSON
+              }
+              eventType = "";
+            }
           }
-        } else {
-          this.addMessage(
-            "assistant",
-            "Sorry, I encountered an issue. Please try again.",
-          );
-          console.error("[LumentraChat] API error:", data);
+        }
+
+        // Fallback: if no done event received, render what we have
+        if (fullText && !bubble.innerHTML.includes("<")) {
+          bubble.innerHTML = this.renderMarkdown(fullText);
         }
       } catch (err) {
-        this.hideTyping();
         const msg =
           err.name === "AbortError"
             ? "The request took too long. Please try again."
             : "Sorry, I'm having trouble connecting. Please try again.";
-        this.addMessage("assistant", msg);
-        console.error("[LumentraChat] Network error:", err);
+        bubble.textContent = fullText || msg;
+        console.error("[LumentraChat] Stream error:", err);
       } finally {
         this.isLoading = false;
         this.sendButton.disabled = false;
+        this.input.disabled = false;
         this.input.focus();
-      }
-    }
-
-    handleToolResults(toolCalls) {
-      for (const tc of toolCalls) {
-        // Handle specific tool results
-        if (tc.name === "collect_contact_info" && tc.result?.info) {
-          // Update local visitor info
-          this.visitorInfo = { ...this.visitorInfo, ...tc.result.info };
-        }
-
-        if (tc.name === "create_booking" && tc.result?.success) {
-          console.log("[LumentraChat] Booking created:", tc.result);
-        }
-
-        if (tc.name === "create_order" && tc.result?.success) {
-          console.log("[LumentraChat] Order created:", tc.result);
-        }
       }
     }
 
