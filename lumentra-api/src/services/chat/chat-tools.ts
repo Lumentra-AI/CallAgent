@@ -133,7 +133,7 @@ const chatOnlyFunctions: FunctionDeclaration[] = [
   {
     name: "request_callback",
     description:
-      "Request a human callback. Use when: (1) visitor explicitly asks to speak with someone, (2) issue is too complex for chat, (3) visitor wants to schedule a call with staff.",
+      "PRIORITY TOOL for callback requests. MUST use this (not collect_contact_info) whenever the visitor says 'call me back', 'have someone call me', 'speak with someone', 'talk to a person', or any variation of requesting a human callback. This queues a real callback with staff. Use when: (1) visitor asks for a callback or to speak with a human, (2) issue needs human follow-up, (3) visitor wants staff to contact them.",
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
