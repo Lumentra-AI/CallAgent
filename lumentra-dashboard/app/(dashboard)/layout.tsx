@@ -105,9 +105,11 @@ function ErrorScreen({ onRetry }: { onRetry: () => void }) {
 
 function DemoModeBanner() {
   const isDemoMode = useDemoMode();
+  const { isLoading: tenantLoading } = useTenant();
   const [dismissed, setDismissed] = useState(false);
 
-  if (!isDemoMode || dismissed) return null;
+  // Don't show demo banner while tenant is still loading (prevents flash)
+  if (tenantLoading || !isDemoMode || dismissed) return null;
 
   return (
     <div className="flex items-center justify-between bg-amber-500/15 border-b border-amber-500/20 px-4 py-2">

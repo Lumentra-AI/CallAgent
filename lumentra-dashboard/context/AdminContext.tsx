@@ -37,6 +37,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Only check admin status if we're on an admin page.
+    // This avoids 403 console errors on every page load for non-admin users.
+    const isAdminPage =
+      typeof window !== "undefined" &&
+      window.location.pathname.startsWith("/admin");
+    if (!isAdminPage) {
+      setProfile(null);
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
