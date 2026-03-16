@@ -168,6 +168,8 @@ export async function executeCreateBooking(
 
     const isChat = !callId && context.callSid;
     const sourceLabel = isChat ? "chat" : "call";
+    // DB constraint: source must be call|web|manual|api
+    const sourceDb = isChat ? "web" : "call";
     const data = await insertOne<BookingRow>("bookings", {
       tenant_id: context.tenantId,
       customer_name: args.customer_name,
@@ -181,7 +183,7 @@ export async function executeCreateBooking(
       status: "confirmed",
       confirmation_code: confirmationCode,
       reminder_sent: false,
-      source: sourceLabel,
+      source: sourceDb,
       call_id: callId,
     });
 
