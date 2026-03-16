@@ -322,6 +322,10 @@
       '<svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
     create_order:
       '<svg viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>',
+    request_callback:
+      '<svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+    search_knowledge_base:
+      '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
     _default:
       '<svg viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   };
@@ -331,6 +335,8 @@
     check_availability: "Available Times",
     collect_contact_info: "Contact Info Saved",
     create_order: "Order Placed",
+    request_callback: "Callback Requested",
+    search_knowledge_base: "Info Found",
     get_business_hours: "Business Hours",
     get_menu: "Menu",
   };
@@ -379,6 +385,13 @@
             (result.slots.length - 5) +
             " more</span></div>";
         }
+      }
+      // Successful tool with just a message -- show message cleanly
+      else if (result.success === true && result.message) {
+        h +=
+          '<div class="lumentra-tool-card-row"><span class="lumentra-tool-card-value">' +
+          escapeHtml(String(result.message)) +
+          "</span></div>";
       }
       // Failed tool call -- show message only
       else if (result.success === false && result.message) {
