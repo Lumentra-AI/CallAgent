@@ -465,7 +465,7 @@ export default function AdminAnalyticsPage() {
             {isLoading || !callData ? (
               <ChartSkeleton />
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minHeight={1}>
                 <BarChart
                   data={hourChartData}
                   margin={{ top: 4, right: 4, left: -16, bottom: 0 }}
@@ -512,7 +512,7 @@ export default function AdminAnalyticsPage() {
                 No outcome data available
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minHeight={1}>
                 <PieChart>
                   <Pie
                     data={outcomeChartData}

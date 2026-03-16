@@ -259,6 +259,24 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
     setIndustryMetrics(generateIndustryMetrics(tenantIndustry));
 
+    // Re-evaluate API availability when tenant loads.
+    // On initial mount, getTenantId() is null so apiEnabled is false.
+    // Once TenantContext sets the tenant ID, we need to re-check.
+    if (!apiEnabled && getTenantId()) {
+      checkApiHealth().then((healthy) => {
+        if (healthy) {
+          setApiEnabled(true);
+          // Fetch real metrics now that API is available
+          fetchDashboardMetrics()
+            .then(setMetrics)
+            .catch(() => setMetrics(generateDashboardMetrics(tenantIndustry)));
+          fetchActivityLog({ limit: 30 })
+            .then((data) => setLogs(data.entries))
+            .catch(() => setLogs(generateInitialLogs(30)));
+        }
+      });
+    }
+
     if (!apiEnabled) {
       setMetrics(generateDashboardMetrics(tenantIndustry));
     }

@@ -409,7 +409,7 @@ export default function AdminOverviewPage() {
               No growth data available for this period.
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minHeight={1}>
               <LineChart
                 data={growthChartData}
                 margin={{ top: 8, right: 8, left: -16, bottom: 0 }}
@@ -487,7 +487,7 @@ export default function AdminOverviewPage() {
             </p>
           ) : (
             <div className="mt-6 h-56">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minHeight={1}>
                 <BarChart
                   data={industryChartData}
                   layout="vertical"
