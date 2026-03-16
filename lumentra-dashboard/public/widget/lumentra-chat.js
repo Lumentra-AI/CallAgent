@@ -340,6 +340,18 @@
 
     var icon = TOOL_ICONS[toolName] || TOOL_ICONS._default;
     var title = TOOL_TITLES[toolName] || "Result";
+
+    // Dynamic title for booking/order based on success
+    if (toolName === "create_booking") {
+      title =
+        result && result.success === false
+          ? "Booking Failed"
+          : "Booking Confirmed";
+    }
+    if (toolName === "create_order") {
+      title =
+        result && result.success === false ? "Order Failed" : "Order Placed";
+    }
     var h =
       '<div class="lumentra-tool-card">' +
       '<div class="lumentra-tool-card-header">' +
@@ -367,6 +379,13 @@
             (result.slots.length - 5) +
             " more</span></div>";
         }
+      }
+      // Failed tool call -- show message only
+      else if (result.success === false && result.message) {
+        h +=
+          '<div class="lumentra-tool-card-row"><span class="lumentra-tool-card-value">' +
+          escapeHtml(String(result.message)) +
+          "</span></div>";
       }
       // Booking confirmation
       else if (result.booking_id || result.confirmation) {
