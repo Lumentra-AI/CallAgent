@@ -486,10 +486,12 @@ chatRoutes.post("/stream", async (c) => {
             tools: chatAgentFunctions,
           };
 
-          const toolRequest = await chatWithFallbackStream(options, callbacks);
+          let toolRequest = await chatWithFallbackStream(options, callbacks);
 
-          // Handle tool calls if any
-          if (toolRequest && toolRequest.toolCalls.length > 0) {
+          // Multi-round tool execution (up to 3 rounds, matching non-streaming)
+          let round = 0;
+          while (toolRequest && toolRequest.toolCalls.length > 0 && round < 3) {
+            round++;
             const toolResults: Array<{
               id: string;
               name: string;
@@ -497,7 +499,7 @@ chatRoutes.post("/stream", async (c) => {
             }> = [];
 
             for (const tc of toolRequest.toolCalls) {
-              callbacks.onToolStart(tc.name, tc.args);
+              // onToolStart already sent by stream provider
               const result = await executeChatTool(tc.name, tc.args, context);
               callbacks.onToolResult(tc.name, result);
               toolResults.push({
@@ -507,9 +509,9 @@ chatRoutes.post("/stream", async (c) => {
               });
             }
 
-            // Stream the post-tool response
+            // Stream the post-tool response (may return more tool calls)
             fullText = "";
-            await sendToolResultsStream(
+            toolRequest = await sendToolResultsStream(
               toolRequest.provider,
               options,
               toolResults,
