@@ -490,6 +490,7 @@ chatRoutes.post("/stream", async (c) => {
 
           // Multi-round tool execution (up to 3 rounds, matching non-streaming)
           let round = 0;
+          let currentOptions = options;
           while (toolRequest && toolRequest.toolCalls.length > 0 && round < 3) {
             round++;
             const toolResults: Array<{
@@ -513,10 +514,42 @@ chatRoutes.post("/stream", async (c) => {
             fullText = "";
             toolRequest = await sendToolResultsStream(
               toolRequest.provider,
-              options,
+              currentOptions,
               toolResults,
               callbacks,
             );
+
+            // Update options with tool history for next round
+            currentOptions = {
+              ...currentOptions,
+              conversationHistory: [
+                ...currentOptions.conversationHistory,
+                {
+                  role: "assistant" as const,
+                  content: "",
+                  timestamp: new Date(),
+                  toolCalls: toolResults.map((r) => ({
+                    id: r.id,
+                    name: r.name,
+                    args: {},
+                  })),
+                },
+                ...toolResults.map((r) => ({
+                  role: "tool" as const,
+                  content:
+                    typeof r.result === "string"
+                      ? r.result
+                      : JSON.stringify(r.result),
+                  toolName: r.name,
+                  toolCallId: r.id,
+                  toolResult:
+                    typeof r.result === "string"
+                      ? r.result
+                      : JSON.stringify(r.result),
+                  timestamp: new Date(),
+                })),
+              ],
+            };
           }
 
           // Save to history
