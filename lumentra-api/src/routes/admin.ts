@@ -6,6 +6,7 @@ import { invalidateTenant } from "../services/database/tenant-cache.js";
 import { notifyAdmin } from "../services/notifications/admin-notify.js";
 import { getPlatformAdminContext } from "../middleware/auth.js";
 import { logActivity } from "../services/audit/logger.js";
+import { parsePlatformAdminEmails } from "../utils/platform-admin.js";
 
 // Tier feature defaults for auto-adjustment on tier change
 const TIER_FEATURE_DEFAULTS: Record<string, Record<string, boolean>> = {
@@ -50,6 +51,154 @@ adminRoutes.get("/me", async (c) => {
         }
       : null,
   });
+});
+
+// ============================================================================
+// PLATFORM ADMIN MANAGEMENT
+// ============================================================================
+
+/**
+ * GET /admin/admins - List all platform admins (DB + env var)
+ */
+adminRoutes.get("/admins", async (c) => {
+  try {
+    // Get DB admins
+    const dbAdmins = await queryAll<{
+      id: string;
+      email: string;
+      added_by: string | null;
+      created_at: string;
+    }>(
+      `SELECT id, email, added_by, created_at FROM platform_admins ORDER BY created_at ASC`,
+    );
+
+    // Get env var admins
+    const envEmails = parsePlatformAdminEmails(
+      process.env.PLATFORM_ADMIN_EMAILS,
+    );
+    const dbEmailSet = new Set(
+      (dbAdmins || []).map((a) => a.email.toLowerCase()),
+    );
+
+    // Merge: DB admins get their full record, env-only admins get a synthetic entry
+    const admins: Array<{
+      id: string;
+      email: string;
+      added_by: string | null;
+      created_at: string;
+      source: "database" | "env" | "both";
+    }> = (dbAdmins || []).map((a) => ({
+      ...a,
+      source: envEmails.has(a.email.toLowerCase())
+        ? ("both" as const)
+        : ("database" as const),
+    }));
+
+    // Add env-only admins that aren't in DB
+    for (const envEmail of envEmails) {
+      if (!dbEmailSet.has(envEmail)) {
+        admins.push({
+          id: `env-${envEmail}`,
+          email: envEmail,
+          added_by: "environment",
+          created_at: "",
+          source: "env" as const,
+        });
+      }
+    }
+
+    return c.json({ admins });
+  } catch (error) {
+    console.error("[ADMIN] Error listing admins:", error);
+    return c.json({ error: "Failed to list admins" }, 500);
+  }
+});
+
+/**
+ * POST /admin/admins - Add a new platform admin
+ */
+adminRoutes.post("/admins", async (c) => {
+  const admin = getPlatformAdminContext(c);
+  const body = await c.req.json();
+
+  const email = body.email?.trim().toLowerCase();
+  if (!email || !email.includes("@")) {
+    return c.json({ error: "Valid email is required" }, 400);
+  }
+
+  try {
+    // Check if already exists
+    const existing = await queryOne<{ id: string }>(
+      `SELECT id FROM platform_admins WHERE email = $1`,
+      [email],
+    );
+
+    if (existing) {
+      return c.json({ error: "This email is already a platform admin" }, 409);
+    }
+
+    const result = await queryOne<{
+      id: string;
+      email: string;
+      added_by: string;
+      created_at: string;
+    }>(
+      `INSERT INTO platform_admins (email, added_by) VALUES ($1, $2) RETURNING id, email, added_by, created_at`,
+      [email, admin.email || "unknown"],
+    );
+
+    console.log(`[ADMIN] Platform admin added: ${email} by ${admin.email}`);
+
+    return c.json({ admin: result }, 201);
+  } catch (error) {
+    console.error("[ADMIN] Error adding admin:", error);
+    return c.json({ error: "Failed to add admin" }, 500);
+  }
+});
+
+/**
+ * DELETE /admin/admins/:email - Remove a platform admin
+ */
+adminRoutes.delete("/admins/:email", async (c) => {
+  const adminCtx = getPlatformAdminContext(c);
+  const email = decodeURIComponent(c.req.param("email")).trim().toLowerCase();
+
+  // Prevent self-removal
+  if (adminCtx.email?.toLowerCase() === email) {
+    return c.json({ error: "You cannot remove yourself" }, 400);
+  }
+
+  // Prevent removing env var admins (they can only be removed by editing env)
+  const envEmails = parsePlatformAdminEmails(process.env.PLATFORM_ADMIN_EMAILS);
+  if (envEmails.has(email)) {
+    return c.json(
+      {
+        error:
+          "This admin is defined in the environment variable and cannot be removed from the UI",
+      },
+      400,
+    );
+  }
+
+  try {
+    const result = await queryOne<{ id: string }>(
+      `DELETE FROM platform_admins WHERE email = $1 RETURNING id`,
+      [email],
+    );
+
+    if (!result) {
+      return c.json({ error: "Admin not found" }, 404);
+    }
+
+    console.log(
+      `[ADMIN] Platform admin removed: ${email} by ${adminCtx.email}`,
+    );
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("[ADMIN] Error removing admin:", error);
+    return c.json({ error: "Failed to remove admin" }, 500);
+  }
 });
 
 // ============================================================================

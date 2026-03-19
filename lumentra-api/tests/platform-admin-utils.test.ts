@@ -18,20 +18,20 @@ test("parsePlatformAdminEmails normalizes whitespace and casing", () => {
   ]);
 });
 
-test("isPlatformAdminEmail matches allowlisted emails case-insensitively", () => {
+test("isPlatformAdminEmail matches allowlisted emails case-insensitively", async () => {
   assert.equal(
-    isPlatformAdminEmail(
+    await isPlatformAdminEmail(
       "ADMIN@example.com",
       "admin@example.com,ops@example.com",
     ),
     true,
   );
   assert.equal(
-    isPlatformAdminEmail(
+    await isPlatformAdminEmail(
       "viewer@example.com",
       "admin@example.com,ops@example.com",
     ),
     false,
   );
-  assert.equal(isPlatformAdminEmail(null, "admin@example.com"), false);
+  assert.equal(await isPlatformAdminEmail(null, "admin@example.com"), false);
 });

@@ -299,7 +299,7 @@ export function platformAdminAuth() {
 
     const email = user.email?.trim().toLowerCase() || null;
 
-    if (!isPlatformAdminEmail(email)) {
+    if (!(await isPlatformAdminEmail(email))) {
       return c.json(
         {
           error: "Forbidden",

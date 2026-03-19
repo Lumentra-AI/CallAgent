@@ -1,7 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import { Settings, ShieldCheck, Mail, Bell, Server } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import {
+  Settings,
+  ShieldCheck,
+  Mail,
+  Bell,
+  Server,
+  Lock,
+  X,
+  Plus,
+  Loader2,
+  AlertCircle,
+} from "lucide-react";
+import {
+  fetchPlatformAdmins,
+  addPlatformAdmin,
+  removePlatformAdmin,
+  type PlatformAdmin,
+} from "@/lib/api/admin";
 
 // ---------------------------------------------------------------------------
 // Toggle switch (inline, no separate file)
@@ -102,6 +119,78 @@ export default function AdminSettingsPage() {
     Object.fromEntries(alertPreferences.map((a) => [a.id, a.defaultOn])),
   );
 
+  // Platform admin management state
+  const [admins, setAdmins] = useState<PlatformAdmin[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newEmail, setNewEmail] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  const loadAdmins = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await fetchPlatformAdmins();
+      setAdmins(data.admins);
+    } catch {
+      setMessage({ type: "error", text: "Failed to load admins" });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAdmins();
+  }, [loadAdmins]);
+
+  // Auto-dismiss success messages after 4 seconds
+  useEffect(() => {
+    if (message?.type === "success") {
+      const timer = setTimeout(() => setMessage(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [message]);
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = newEmail.trim().toLowerCase();
+    if (!email) return;
+
+    try {
+      setAdding(true);
+      setMessage(null);
+      await addPlatformAdmin(email);
+      setNewEmail("");
+      setMessage({ type: "success", text: `${email} added as platform admin` });
+      await loadAdmins();
+    } catch (err: unknown) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to add admin";
+      setMessage({ type: "error", text: errorMessage });
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleRemove = async (email: string) => {
+    try {
+      setRemoving(email);
+      setMessage(null);
+      await removePlatformAdmin(email);
+      setMessage({ type: "success", text: `${email} removed` });
+      await loadAdmins();
+    } catch (err: unknown) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to remove admin";
+      setMessage({ type: "error", text: errorMessage });
+    } finally {
+      setRemoving(null);
+    }
+  };
+
   const handleAlertToggle = (id: string, value: boolean) => {
     setAlerts((prev) => ({ ...prev, [id]: value }));
   };
@@ -125,40 +214,121 @@ export default function AdminSettingsPage() {
       </div>
 
       {/* ----------------------------------------------------------------- */}
-      {/* Platform Admin Configuration                                      */}
+      {/* Platform Admin Management                                         */}
       {/* ----------------------------------------------------------------- */}
       <section className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-zinc-400" />
-          <h2 className="text-lg font-semibold text-zinc-950">
-            Platform Admin Configuration
-          </h2>
-        </div>
-
-        <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-200">
-          <div className="grid gap-1 px-4 py-4">
-            <p className="text-sm font-medium text-zinc-950">
-              Authentication method
-            </p>
-            <p className="text-sm text-zinc-600">JWT allowlist + API key</p>
-          </div>
-          <div className="grid gap-1 border-t border-zinc-200 px-4 py-4">
-            <p className="text-sm font-medium text-zinc-950">
-              Admin email management
-            </p>
-            <p className="text-sm text-zinc-600">
-              Controlled via the{" "}
-              <code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-mono text-zinc-800">
-                PLATFORM_ADMIN_EMAILS
-              </code>{" "}
-              environment variable on the API server.
+          <div>
+            <h2 className="text-lg font-semibold text-zinc-950">
+              Platform Admins
+            </h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Manage who has access to this admin panel.
             </p>
           </div>
         </div>
 
-        <p className="mt-4 text-sm text-zinc-500">
-          To add or remove admins, update the PLATFORM_ADMIN_EMAILS environment
-          variable on the API server.
+        {/* Status message */}
+        {message && (
+          <div
+            className={`mt-4 flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm ${
+              message.type === "error"
+                ? "border border-red-200 bg-red-50 text-red-700"
+                : "border border-emerald-200 bg-emerald-50 text-emerald-700"
+            }`}
+          >
+            {message.type === "error" && (
+              <AlertCircle className="h-4 w-4 shrink-0" />
+            )}
+            {message.text}
+          </div>
+        )}
+
+        {/* Admin list */}
+        {loading ? (
+          <div className="mt-4 flex items-center gap-2 text-sm text-zinc-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading admins...
+          </div>
+        ) : (
+          <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-200">
+            {admins.map((admin, index) => (
+              <div
+                key={admin.id}
+                className={`flex items-center justify-between gap-4 px-4 py-3 ${
+                  index > 0 ? "border-t border-zinc-100" : ""
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-medium text-zinc-950">
+                      {admin.email}
+                    </p>
+                    {(admin.source === "env" || admin.source === "both") && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500"
+                        title="Defined in environment variable"
+                      >
+                        <Lock className="h-3 w-3" />
+                        env
+                      </span>
+                    )}
+                  </div>
+                  {admin.added_by && admin.added_by !== "environment" && (
+                    <p className="mt-0.5 text-xs text-zinc-400">
+                      Added by {admin.added_by}
+                      {admin.created_at &&
+                        ` on ${new Date(admin.created_at).toLocaleDateString()}`}
+                    </p>
+                  )}
+                </div>
+                {admin.source === "database" && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(admin.email)}
+                    disabled={removing === admin.email}
+                    className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                    title="Remove admin"
+                  >
+                    {removing === admin.email ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <X className="h-4 w-4" />
+                    )}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add admin form */}
+        <form onSubmit={handleAdd} className="mt-4 flex gap-2">
+          <input
+            type="email"
+            value={newEmail}
+            onChange={(e) => setNewEmail(e.target.value)}
+            placeholder="admin@example.com"
+            className="flex-1 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm text-zinc-950 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+          />
+          <button
+            type="submit"
+            disabled={!newEmail.trim() || adding}
+            className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-50"
+          >
+            {adding ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            Add
+          </button>
+        </form>
+
+        <p className="mt-3 text-xs text-zinc-400">
+          Admins defined via the PLATFORM_ADMIN_EMAILS environment variable
+          cannot be removed from the UI.
         </p>
       </section>
 

@@ -558,3 +558,33 @@ export function fetchTenantActivity(
     Object.keys(queryParams).length > 0 ? queryParams : undefined,
   );
 }
+
+// ============================================================================
+// Platform Admin Management Types & Functions
+// ============================================================================
+
+export interface PlatformAdmin {
+  id: string;
+  email: string;
+  added_by: string | null;
+  created_at: string;
+  source: "database" | "env" | "both";
+}
+
+export function fetchPlatformAdmins(): Promise<{ admins: PlatformAdmin[] }> {
+  return get<{ admins: PlatformAdmin[] }>("/admin/admins");
+}
+
+export function addPlatformAdmin(
+  email: string,
+): Promise<{ admin: PlatformAdmin }> {
+  return post<{ admin: PlatformAdmin }>("/admin/admins", { email });
+}
+
+export function removePlatformAdmin(
+  email: string,
+): Promise<{ success: boolean }> {
+  return del<{ success: boolean }>(
+    `/admin/admins/${encodeURIComponent(email)}`,
+  );
+}
