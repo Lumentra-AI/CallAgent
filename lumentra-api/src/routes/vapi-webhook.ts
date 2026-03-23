@@ -88,12 +88,26 @@ vapiWebhook.post("/", async (c) => {
 // Resolve tenant from Vapi call object (try vapi phone ID first, then phone number)
 async function resolveTenant(call: any): Promise<Tenant | null> {
   const phoneNumberId = call?.phoneNumber?.id;
-  const calledNumber = call?.phoneNumber?.number;
+  const calledNumber = call?.phoneNumber?.number || call?.phoneNumberId;
+
+  console.log(
+    `[VAPI-WEBHOOK] resolveTenant: phoneNumberId=${phoneNumberId} calledNumber=${calledNumber} callKeys=${Object.keys(call || {}).join(",")}`,
+  );
 
   // Fast path: cache lookup by Vapi phone ID
   if (phoneNumberId) {
     const cached = getTenantByVapiPhoneId(phoneNumberId);
     if (cached) return cached;
+
+    // Cache miss: try DB directly
+    console.log(
+      `[VAPI-WEBHOOK] Cache miss for Vapi phone ID ${phoneNumberId}, trying DB`,
+    );
+    const dbTenant = await queryOne(
+      "SELECT * FROM tenants WHERE vapi_phone_number_id = $1 AND is_active = true",
+      [phoneNumberId],
+    );
+    if (dbTenant) return dbTenant as unknown as Tenant;
   }
 
   // Fallback: lookup by phone number (cache + DB)
