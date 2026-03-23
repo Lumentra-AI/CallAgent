@@ -10,6 +10,8 @@ export interface Tenant {
   industry: string;
   phone_number: string; // SignalWire phone number assigned to this tenant
   vapi_phone_number_id?: string; // Vapi phone number ID for direct webhook lookup
+  vapi_phone_number?: string;
+  twilio_number_sid?: string;
 
   // Agent configuration
   agent_name: string;
@@ -34,7 +36,7 @@ export interface Tenant {
   features: FeatureFlags;
 
   // Voice pipeline routing
-  voice_pipeline: "custom" | "livekit";
+  voice_pipeline: "custom" | "livekit" | "vapi";
 
   // Chat widget
   chat_widget_enabled: boolean;
@@ -467,4 +469,15 @@ export interface CreatePortRequest {
   account_number: string;
   pin?: string;
   authorized_name: string;
+}
+
+export interface VapiUsage {
+  id: string;
+  tenant_id: string;
+  billing_cycle: string;
+  total_cost: number;
+  total_minutes: number;
+  total_calls: number;
+  last_call_at: string | null;
+  updated_at: string;
 }

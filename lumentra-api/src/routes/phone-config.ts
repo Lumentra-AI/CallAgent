@@ -30,6 +30,11 @@ import {
   addNumberToSipTrunk,
   removeNumberFromSipTrunk,
 } from "../services/livekit/sip-trunk.js";
+import {
+  buyNumber as buyTwilioNumber,
+  releaseNumber as releaseTwilioNumber,
+} from "../services/twilio/phone.js";
+import { importTwilioNumber as importTwilioToVapi } from "../services/vapi/client.js";
 
 export const phoneConfigRoutes = new Hono();
 
@@ -351,6 +356,111 @@ phoneConfigRoutes.post(
       }
     } catch (error) {
       console.error("[PHONE] Error provisioning number:", error);
+      return c.json({ error: "Failed to provision phone number" }, 500);
+    }
+  },
+);
+
+/**
+ * POST /api/phone/provision-vapi
+ * Buy a Twilio number and import it into Vapi for AI call handling
+ */
+phoneConfigRoutes.post(
+  "/provision-vapi",
+  requireRole("owner", "admin"),
+  criticalRateLimit("phone-provision"),
+  async (c) => {
+    const body = await c.req.json();
+
+    if (!body.phoneNumber) {
+      return c.json({ error: "phoneNumber is required" }, 400);
+    }
+
+    const tenantId = getAuthTenantId(c);
+
+    // Daily provisioning limit
+    if (await checkDailyProvisionLimit(tenantId)) {
+      return c.json(
+        {
+          error: "Daily provisioning limit reached. Please try again tomorrow.",
+        },
+        429,
+      );
+    }
+
+    try {
+      // 1. Buy number from Twilio
+      const twilioResult = await buyTwilioNumber(body.phoneNumber);
+
+      // 2. Import into Vapi with server URL for dynamic routing
+      const serverUrl =
+        process.env.PUBLIC_API_URL ||
+        process.env.BACKEND_URL ||
+        "https://api.lumentraai.com";
+      let vapiNumber;
+      try {
+        vapiNumber = await importTwilioToVapi({
+          number: body.phoneNumber,
+          name: `Lumentra - ${body.phoneNumber}`,
+          serverUrl,
+        });
+      } catch (vapiErr) {
+        // Vapi import failed -- release Twilio number to avoid orphan
+        console.error(
+          "[PHONE] Vapi import failed, releasing Twilio number:",
+          vapiErr,
+        );
+        await releaseTwilioNumber(twilioResult.sid);
+        return c.json(
+          { error: "Failed to configure AI phone number. Please try again." },
+          500,
+        );
+      }
+
+      // 3. Save to DB
+      await upsert(
+        "phone_configurations",
+        {
+          tenant_id: tenantId,
+          phone_number: body.phoneNumber,
+          setup_type: "new",
+          provider: "twilio",
+          provider_sid: twilioResult.sid,
+          status: "active",
+          verified_at: new Date().toISOString(),
+        },
+        ["tenant_id"],
+      );
+
+      // 4. Update tenant with Vapi phone number info
+      await updateOne(
+        "tenants",
+        {
+          phone_number: body.phoneNumber,
+          vapi_phone_number: body.phoneNumber,
+          vapi_phone_number_id: vapiNumber.id,
+          twilio_number_sid: twilioResult.sid,
+          voice_pipeline: "vapi",
+          updated_at: new Date().toISOString(),
+        },
+        { id: tenantId },
+      );
+
+      await logProvisionAction(
+        tenantId,
+        body.phoneNumber,
+        twilioResult.sid,
+        "provision",
+      );
+
+      return c.json({
+        success: true,
+        phoneNumber: body.phoneNumber,
+        vapiPhoneNumberId: vapiNumber.id,
+        provider: "vapi",
+      });
+    } catch (error) {
+      console.error("[PHONE] Error provisioning Vapi number:", error);
       return c.json({ error: "Failed to provision phone number" }, 500);
     }
   },

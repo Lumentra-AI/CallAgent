@@ -152,4 +152,57 @@ export async function transferCall(
   }
 }
 
+// Import a Twilio number into Vapi for voice AI handling
+export async function importTwilioNumber(params: {
+  number: string;
+  name?: string;
+  serverUrl?: string;
+}): Promise<VapiPhoneNumber> {
+  const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+  const twilioAuth = process.env.TWILIO_AUTH_TOKEN;
+
+  if (!twilioSid || !twilioAuth) {
+    throw new Error("TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required");
+  }
+
+  const body: Record<string, unknown> = {
+    provider: "twilio",
+    number: params.number,
+    twilioAccountSid: twilioSid,
+    twilioAuthToken: twilioAuth,
+    name: params.name || `Lumentra - ${params.number}`,
+  };
+
+  // Set server URL for dynamic assistant-request routing (no pre-assigned assistant)
+  if (params.serverUrl) {
+    body.server = { url: `${params.serverUrl}/webhooks/vapi` };
+  }
+
+  const response = await fetch(`${VAPI_BASE_URL}/phone-number`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to import Twilio number to Vapi: ${error}`);
+  }
+
+  return response.json() as Promise<VapiPhoneNumber>;
+}
+
+// Delete (unlink) a phone number from Vapi
+export async function deletePhoneNumber(id: string): Promise<void> {
+  const response = await fetch(`${VAPI_BASE_URL}/phone-number/${id}`, {
+    method: "DELETE",
+    headers: getHeaders(),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to delete phone number from Vapi: ${error}`);
+  }
+}
+
 export const vapiApiKey = VAPI_API_KEY;

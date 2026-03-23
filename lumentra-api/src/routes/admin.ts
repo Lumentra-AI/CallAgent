@@ -1271,3 +1271,33 @@ adminRoutes.post("/port-requests/:id/complete", async (c) => {
     return c.json({ error: "Failed to complete port request" }, 500);
   }
 });
+
+// ============================================
+// Vapi Usage Tracking (Admin Only)
+// ============================================
+
+// GET /admin/vapi-usage -- All tenants' Vapi spend for a billing cycle
+adminRoutes.get("/vapi-usage", async (c) => {
+  const cycle = c.req.query("cycle") || new Date().toISOString().slice(0, 7);
+  const rows = await queryAll(
+    `SELECT vu.tenant_id, vu.billing_cycle, vu.total_cost, vu.total_minutes,
+            vu.total_calls, vu.last_call_at, vu.updated_at,
+            t.business_name, t.phone_number, t.voice_pipeline
+     FROM vapi_usage vu
+     JOIN tenants t ON t.id = vu.tenant_id
+     WHERE vu.billing_cycle = $1
+     ORDER BY vu.total_cost DESC`,
+    [cycle],
+  );
+  return c.json({ usage: rows, billing_cycle: cycle });
+});
+
+// GET /admin/vapi-usage/:tenantId -- Single tenant's usage history
+adminRoutes.get("/vapi-usage/:tenantId", async (c) => {
+  const tenantId = c.req.param("tenantId");
+  const rows = await queryAll(
+    `SELECT * FROM vapi_usage WHERE tenant_id = $1 ORDER BY billing_cycle DESC LIMIT 12`,
+    [tenantId],
+  );
+  return c.json({ usage: rows });
+});

@@ -35,6 +35,7 @@ import { internalRoutes } from "./routes/internal.js";
 import { adminRoutes } from "./routes/admin.js";
 import { adminAnalyticsRoutes } from "./routes/admin-analytics.js";
 import { adminMonitoringRoutes } from "./routes/admin-monitoring.js";
+import vapiWebhook from "./routes/vapi-webhook.js";
 import {
   authMiddleware,
   userAuthMiddleware,
@@ -146,6 +147,7 @@ export function createApp() {
   app.route("/internal", internalRoutes); // LiveKit agent API (own auth via INTERNAL_API_KEY)
   // SSE endpoint with query-param auth (EventSource cannot send headers)
   app.route("/api/escalation/events", escalationEventsRoutes);
+  app.route("/webhooks/vapi", vapiWebhook); // Vapi voice AI webhook (own auth via VAPI_WEBHOOK_SECRET)
   app.use("/admin/*", platformAdminAuth());
   app.route("/admin", adminRoutes);
   app.route("/admin", adminAnalyticsRoutes);
