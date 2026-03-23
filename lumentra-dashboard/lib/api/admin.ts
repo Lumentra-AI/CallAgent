@@ -588,3 +588,32 @@ export function removePlatformAdmin(
     `/admin/admins/${encodeURIComponent(email)}`,
   );
 }
+
+// ============================================================================
+// Vapi Usage Types & Functions
+// ============================================================================
+
+export interface VapiUsageItem {
+  tenant_id: string;
+  billing_cycle: string;
+  total_cost: number;
+  total_minutes: number;
+  total_calls: number;
+  last_call_at: string | null;
+  updated_at: string;
+  business_name: string;
+  phone_number: string;
+  voice_pipeline: string;
+}
+
+export interface VapiUsageResponse {
+  usage: VapiUsageItem[];
+  billing_cycle: string;
+}
+
+/**
+ * GET /admin/vapi-usage?cycle=YYYY-MM - Get Vapi usage for a billing cycle
+ */
+export function fetchVapiUsage(cycle: string): Promise<VapiUsageResponse> {
+  return get<VapiUsageResponse>("/admin/vapi-usage", { cycle });
+}
