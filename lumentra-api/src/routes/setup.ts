@@ -57,7 +57,10 @@ export function requireVerifiedEmail(): MiddlewareHandler {
 
 setupRoutes.use("*", requireVerifiedEmail());
 
-const SETUP_STEPS: SetupStep[] = [
+const SETUP_STEPS: SetupStep[] = ["business", "assistant", "review"];
+
+/** All valid step names (for backward compat with existing tenants on old steps) */
+const ALL_VALID_STEPS: SetupStep[] = [
   "business",
   "capabilities",
   "details",
@@ -237,8 +240,22 @@ setupRoutes.get("/progress", async (c) => {
       tenant.id,
     ]);
 
+    // Normalize old steps to new 3-step wizard
+    let normalizedStep: SetupStep = tenant.setup_step || "business";
+    const oldToNew: Partial<Record<SetupStep, SetupStep>> = {
+      capabilities: "assistant",
+      details: "assistant",
+      integrations: "assistant",
+      phone: "review",
+      hours: "review",
+      escalation: "review",
+    };
+    if (oldToNew[normalizedStep]) {
+      normalizedStep = oldToNew[normalizedStep]!;
+    }
+
     return c.json({
-      step: tenant.setup_step || "business",
+      step: normalizedStep,
       completed: !!tenant.setup_completed_at,
       tenantId: tenant.id,
       data: {
@@ -290,8 +307,8 @@ setupRoutes.put("/step/:step", async (c) => {
   const body = await c.req.json();
   const userId = getAuthUserId(c);
 
-  // Validate step parameter
-  if (!SETUP_STEPS.includes(step)) {
+  // Validate step parameter (accept all valid step names for backward compat)
+  if (!ALL_VALID_STEPS.includes(step)) {
     return c.json({ error: "Invalid step" }, 400);
   }
 
@@ -476,8 +493,11 @@ setupRoutes.put("/step/:step", async (c) => {
             voice_config = COALESCE($5::jsonb, voice_config),
             greeting_standard = COALESCE($6, greeting_standard),
             greeting_after_hours = COALESCE($7, greeting_after_hours),
-            greeting_returning = COALESCE($8, greeting_returning)
-          WHERE id = $9
+            greeting_returning = COALESCE($8, greeting_returning),
+            escalation_enabled = COALESCE($9, escalation_enabled),
+            escalation_triggers = COALESCE($10, escalation_triggers),
+            transfer_behavior = COALESCE($11::jsonb, transfer_behavior)
+          WHERE id = $12
           RETURNING *`,
           [
             getNextStep(step) || step,
@@ -488,9 +508,50 @@ setupRoutes.put("/step/:step", async (c) => {
             body.greeting_standard || null,
             body.greeting_after_hours ?? null,
             body.greeting_returning ?? null,
+            body.escalation_enabled ?? null,
+            body.escalation_triggers ?? null,
+            body.transfer_behavior
+              ? JSON.stringify(body.transfer_behavior)
+              : null,
             tenantId,
           ],
         );
+
+        // Handle escalation contacts if provided (same logic as escalation step)
+        if (body.contacts && Array.isArray(body.contacts)) {
+          await transaction(async (client: PoolClient) => {
+            // Delete existing contacts
+            await client.query(
+              "DELETE FROM escalation_contacts WHERE tenant_id = $1",
+              [tenantId],
+            );
+
+            // Insert new contacts
+            for (let idx = 0; idx < body.contacts.length; idx++) {
+              const contact = body.contacts[idx];
+              const normalizedPhone = contact.phone
+                ? normalizePhoneE164(contact.phone)
+                : "";
+              await client.query(
+                `INSERT INTO escalation_contacts
+                   (tenant_id, name, phone, role, is_primary, availability, availability_hours, sort_order)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [
+                  tenantId,
+                  contact.name,
+                  normalizedPhone,
+                  contact.role || null,
+                  contact.is_primary || idx === 0,
+                  contact.availability || "business_hours",
+                  contact.availability_hours
+                    ? JSON.stringify(contact.availability_hours)
+                    : null,
+                  idx,
+                ],
+              );
+            }
+          });
+        }
         break;
       }
 
@@ -655,7 +716,7 @@ setupRoutes.post("/complete", async (c) => {
       status: string;
     }>(phoneConfigSql, [tenantId]);
 
-    // Validate all required fields before activating
+    // Validate only the 3 required wizard fields
     const errors: string[] = [];
     const incompleteSteps: string[] = [];
 
@@ -664,28 +725,9 @@ setupRoutes.post("/complete", async (c) => {
       incompleteSteps.push("business");
     }
 
-    if (
-      !phoneConfig?.phone_number ||
-      !["active", "porting_with_temp", "pending"].includes(phoneConfig.status)
-    ) {
-      errors.push("Phone number setup is required");
-      incompleteSteps.push("phone");
-    } else if (
-      tenant.phone_number?.startsWith("pending_") &&
-      !phoneConfig.phone_number
-    ) {
-      errors.push("Phone number setup is required");
-      incompleteSteps.push("phone");
-    }
-
     if (!tenant.agent_name) {
       errors.push("AI assistant name is required");
       incompleteSteps.push("assistant");
-    }
-
-    if (!tenant.timezone) {
-      errors.push("Timezone is required");
-      incompleteSteps.push("hours");
     }
 
     if (errors.length > 0) {
@@ -699,27 +741,105 @@ setupRoutes.post("/complete", async (c) => {
       );
     }
 
-    // Build update data
-    const updateData: Record<string, unknown> = {
-      status: "active",
-      setup_completed: true,
-      setup_completed_at: new Date().toISOString(),
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    };
+    // Apply smart defaults for skipped steps + activate tenant in a transaction
+    await transaction(async (client: PoolClient) => {
+      // Smart defaults: Capabilities based on industry
+      const industry = tenant.industry || "general";
+      const defaultCapabilities: Record<string, string[]> = {
+        hotel: ["reservations", "call_handling", "message_taking", "faq"],
+        motel: ["reservations", "call_handling", "message_taking", "faq"],
+        restaurant: ["reservations", "call_handling", "faq"],
+        salon: ["appointments", "call_handling", "faq"],
+        dental: ["appointments", "patient_intake", "call_handling", "faq"],
+        medical: ["appointments", "patient_intake", "call_handling", "faq"],
+        auto_service: ["appointments", "call_handling", "faq"],
+        general: ["appointments", "call_handling", "message_taking", "faq"],
+      };
+      const caps = defaultCapabilities[industry] || defaultCapabilities.general;
 
-    // Update phone number from phone_configurations
-    if (phoneConfig?.phone_number) {
-      updateData.phone_number = phoneConfig.phone_number;
-    }
+      const existingCaps = await queryOne<{ count: string }>(
+        `SELECT COUNT(*) as count FROM tenant_capabilities WHERE tenant_id = $1`,
+        [tenantId],
+      );
+      if (parseInt(existingCaps?.count || "0", 10) === 0) {
+        for (const cap of caps) {
+          await client.query(
+            `INSERT INTO tenant_capabilities (tenant_id, capability, is_enabled, config)
+             VALUES ($1, $2, true, '{}')
+             ON CONFLICT (tenant_id, capability) DO NOTHING`,
+            [tenantId, cap],
+          );
+        }
+      }
 
-    await updateOne("tenants", updateData, { id: tenantId });
+      // Smart default: Integration mode = builtin (assisted_mode false)
+      await client.query(
+        `UPDATE tenants SET assisted_mode = COALESCE(assisted_mode, false) WHERE id = $1`,
+        [tenantId],
+      );
+
+      // Smart default: Operating hours M-F 9-5 if not set
+      if (!tenant.operating_hours) {
+        const defaultSchedule = {
+          timezone: "America/Chicago",
+          schedule: [0, 1, 2, 3, 4, 5, 6].map((day) => ({
+            day,
+            enabled: day >= 1 && day <= 5,
+            openTime: day >= 1 && day <= 5 ? "09:00" : "",
+            closeTime: day >= 1 && day <= 5 ? "17:00" : "",
+          })),
+        };
+        await client.query(
+          `UPDATE tenants SET operating_hours = $1, timezone = COALESCE(timezone, $2) WHERE id = $3`,
+          [JSON.stringify(defaultSchedule), defaultSchedule.timezone, tenantId],
+        );
+      }
+
+      // Smart default: Timezone if still null
+      await client.query(
+        `UPDATE tenants SET timezone = COALESCE(timezone, 'America/Chicago') WHERE id = $1`,
+        [tenantId],
+      );
+
+      // Smart default: After-hours behavior
+      await client.query(
+        `UPDATE tenants SET after_hours_behavior = COALESCE(after_hours_behavior, 'answer_closed') WHERE id = $1`,
+        [tenantId],
+      );
+
+      // Activate tenant
+      const updateFields: string[] = [
+        `status = 'active'`,
+        `setup_completed = true`,
+        `setup_completed_at = $1`,
+        `is_active = true`,
+        `updated_at = $1`,
+      ];
+
+      // Update phone number from phone_configurations if available
+      if (phoneConfig?.phone_number) {
+        updateFields.push(`phone_number = $2`);
+        await client.query(
+          `UPDATE tenants SET ${updateFields.join(", ")} WHERE id = $3`,
+          [new Date().toISOString(), phoneConfig.phone_number, tenantId],
+        );
+      } else {
+        await client.query(
+          `UPDATE tenants SET ${updateFields.join(", ")} WHERE id = $2`,
+          [new Date().toISOString(), tenantId],
+        );
+      }
+    });
 
     // Invalidate cache
     await invalidateTenant(tenantId);
 
     // Non-blocking warnings for optional fields
     const warnings: string[] = [];
+    if (!phoneConfig?.phone_number)
+      warnings.push(
+        "No phone number yet - an admin will provision one for you",
+      );
     if (!tenant.greeting_standard)
       warnings.push(
         "No greeting configured - agent will use a generic greeting",
@@ -727,10 +847,6 @@ setupRoutes.post("/complete", async (c) => {
     if (!tenant.escalation_enabled)
       warnings.push(
         "No escalation contacts - calls cannot be transferred to humans",
-      );
-    if (!tenant.operating_hours)
-      warnings.push(
-        "No operating hours set - agent won't distinguish business hours",
       );
 
     return c.json({
@@ -754,7 +870,7 @@ setupRoutes.post("/go-back", async (c) => {
 
   const targetStep = body.step as SetupStep;
 
-  if (!SETUP_STEPS.includes(targetStep)) {
+  if (!ALL_VALID_STEPS.includes(targetStep)) {
     return c.json({ error: "Invalid step" }, 400);
   }
 

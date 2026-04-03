@@ -45,14 +45,12 @@ interface FeatureContextType {
 
 const FeatureContext = createContext<FeatureContextType | null>(null);
 
-// Default features shown while loading (starter tier minimum)
+// Default features shown while loading (4 core pages)
 const DEFAULT_FEATURES: FeatureKey[] = [
   "dashboard",
-  "workstation",
   "calls",
   "contacts",
   "calendar",
-  "escalations",
 ];
 
 export function FeatureProvider({ children }: { children: ReactNode }) {

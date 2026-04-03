@@ -30,7 +30,7 @@ export function BusinessStep() {
     const success = await saveStep("business");
     if (success) {
       goToNextStep();
-      router.push("/setup/capabilities");
+      router.push("/setup/assistant");
     }
     setIsSubmitting(false);
   };

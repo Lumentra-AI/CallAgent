@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   getAuthenticatedRedirectPath,
+  getBlockedRouteRedirect,
   isAuthRoutePath,
   isProtectedRoutePath,
   isSetupRoutePath,
@@ -124,6 +125,17 @@ export async function updateSession(request: NextRequest) {
     if (destination !== "/dashboard") {
       const url = request.nextUrl.clone();
       url.pathname = destination;
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+  }
+
+  // Server-side route lockdown: block non-essential pages before render
+  if (isProtectedRoute && user) {
+    const blockedRedirect = getBlockedRouteRedirect(pathname);
+    if (blockedRedirect) {
+      const url = request.nextUrl.clone();
+      url.pathname = blockedRedirect;
       url.search = "";
       return NextResponse.redirect(url);
     }

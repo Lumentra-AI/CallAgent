@@ -9,16 +9,9 @@ import {
   Settings,
   Mic,
   Clock,
-  Plug,
-  User,
   MessageSquare,
-  MessageCircle,
   PhoneForwarded,
-  CreditCard,
   ChevronRight,
-  Sparkles,
-  Zap,
-  Megaphone,
   UsersRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -36,122 +29,54 @@ interface TabConfig {
 const ALL_TABS: TabConfig[] = [
   {
     id: "general",
-    label: "General",
+    label: "Business Info",
     icon: Settings,
-    description: "Business identity and branding",
+    description: "Name, address, and contact details",
     requiredPermission: "manage_agent",
     category: "business",
   },
   {
     id: "hours",
-    label: "Hours",
+    label: "Business Hours",
     icon: Clock,
-    description: "Operating schedule",
+    description: "When you're open",
     requiredPermission: "manage_hours",
     category: "business",
     path: "/settings/hours",
   },
   {
-    id: "chatbot",
-    label: "Chat Widget",
-    icon: MessageSquare,
-    description: "Website chat configuration",
-    requiredPermission: "manage_agent",
-    category: "business",
-    path: "/settings/chatbot",
-  },
-  {
-    id: "billing",
-    label: "Billing",
-    icon: CreditCard,
-    description: "Payment and subscription",
-    requiredPermission: "manage_billing",
-    category: "business",
-  },
-  {
-    id: "integrations",
-    label: "Integrations",
-    icon: Plug,
-    description: "Connected booking and calendar systems",
-    requiredPermission: "manage_integrations",
-    category: "business",
-    path: "/settings/integrations",
-  },
-  {
-    id: "team" as SettingsTab,
-    label: "Team",
-    icon: UsersRound,
-    description: "Manage team access and permissions",
-    requiredPermission: "manage_staff",
-    category: "business",
-    path: "/settings/team",
-  },
-  {
-    id: "agent",
-    label: "Agent",
-    icon: User,
-    description: "Personality and behavior",
-    requiredPermission: "manage_agent",
-    category: "agent",
-  },
-  {
     id: "voice",
-    label: "Voice",
+    label: "Voice & Greeting",
     icon: Mic,
-    description: "Voice and speech settings",
+    description: "How your AI assistant sounds",
     requiredPermission: "manage_voice",
-    category: "agent",
-  },
-  {
-    id: "capabilities",
-    label: "Capabilities",
-    icon: Zap,
-    description: "What your assistant handles",
-    requiredPermission: "manage_agent",
-    category: "agent",
-    path: "/settings/capabilities",
+    category: "business",
   },
   {
     id: "greetings",
-    label: "Greetings",
+    label: "Call Greetings",
     icon: MessageSquare,
-    description: "Customize caller greetings",
+    description: "What callers hear first",
     requiredPermission: "manage_greetings",
-    category: "agent",
-  },
-  {
-    id: "responses",
-    label: "Responses",
-    icon: MessageCircle,
-    description: "Custom AI responses",
-    requiredPermission: "manage_responses",
-    category: "agent",
+    category: "business",
   },
   {
     id: "escalation",
-    label: "Escalation",
+    label: "Human Handoff",
     icon: PhoneForwarded,
-    description: "Call transfer rules",
+    description: "When and how calls go to your team",
     requiredPermission: "manage_escalation",
-    category: "agent",
+    category: "business",
     path: "/settings/escalation",
   },
   {
-    id: "promotions",
-    label: "Promotions",
-    icon: Megaphone,
-    description: "Special offers for callers",
-    requiredPermission: "manage_agent",
-    category: "agent",
-    path: "/settings/promotions",
-  },
-  {
-    id: "instructions",
-    label: "Instructions",
-    icon: Sparkles,
-    description: "Custom AI instructions",
-    requiredPermission: "manage_agent",
-    category: "agent",
+    id: "team" as SettingsTab,
+    label: "Team Access",
+    icon: UsersRound,
+    description: "Who can log in and what they see",
+    requiredPermission: "manage_staff",
+    category: "business",
+    path: "/settings/team",
   },
 ];
 
@@ -174,9 +99,6 @@ export default function SettingsSidebar() {
     if (!tab.requiredPermission) return true;
     return hasPermission(tab.requiredPermission);
   });
-
-  const businessTabs = visibleTabs.filter((tab) => tab.category === "business");
-  const agentTabs = visibleTabs.filter((tab) => tab.category === "agent");
   const activeTab =
     pathname !== "/settings" && pathname
       ? PATH_TO_TAB[pathname] || settingsTab
@@ -209,41 +131,16 @@ export default function SettingsSidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto p-4 scrollbar-thin">
-        {businessTabs.length > 0 && (
-          <div className="mb-6">
-            <h3 className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Business
-            </h3>
-            <ul className="space-y-1">
-              {businessTabs.map((tab) => (
-                <TabButton
-                  key={tab.id}
-                  tab={tab}
-                  isActive={activeTab === tab.id}
-                  onClick={() => handleTabClick(tab)}
-                />
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {agentTabs.length > 0 && (
-          <div>
-            <h3 className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Agent Configuration
-            </h3>
-            <ul className="space-y-1">
-              {agentTabs.map((tab) => (
-                <TabButton
-                  key={tab.id}
-                  tab={tab}
-                  isActive={activeTab === tab.id}
-                  onClick={() => handleTabClick(tab)}
-                />
-              ))}
-            </ul>
-          </div>
-        )}
+        <ul className="space-y-1">
+          {visibleTabs.map((tab) => (
+            <TabButton
+              key={tab.id}
+              tab={tab}
+              isActive={activeTab === tab.id}
+              onClick={() => handleTabClick(tab)}
+            />
+          ))}
+        </ul>
       </nav>
 
       <div className="border-t border-border p-4">

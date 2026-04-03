@@ -2,80 +2,116 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ArrowLeft, User, Volume2, ChevronDown } from "lucide-react";
+import { Check, ArrowLeft, User, Volume2, Plus, X, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
-import { SelectionCard } from "../SelectionCard";
-import {
-  PERSONALITY_TEMPLATES,
-  VOICE_OPTIONS,
-  getRecommendedTemplate,
-  getIndustryDefaults,
-} from "@/lib/onboarding-defaults";
-import type { PersonalityTemplate } from "@/lib/onboarding-defaults";
+import { VOICE_OPTIONS, getIndustryDefaults } from "@/lib/onboarding-defaults";
+import type { EscalationContact } from "@/types";
 
-type Personality = "professional" | "friendly" | "efficient";
+const NAME_SUGGESTIONS = ["Sarah", "Emma", "James", "Alex", "Madison", "Maya"];
 
-const NAME_SUGGESTIONS: Record<Personality, string[]> = {
-  professional: ["Sarah", "James", "Madison", "Michael"],
-  friendly: ["Emma", "Alex", "Sophie", "Ben"],
-  efficient: ["Kate", "Sam", "Anna", "Max"],
-};
+/**
+ * Normalize a US phone number to E.164 format (+1XXXXXXXXXX).
+ */
+function normalizePhoneE164(phone: string): string {
+  const hasPlus = phone.startsWith("+");
+  const digits = phone.replace(/\D/g, "");
+
+  if (hasPlus && digits.length === 11 && digits.startsWith("1")) {
+    return `+${digits}`;
+  }
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+${digits}`;
+  }
+  if (digits.length === 10) {
+    return `+1${digits}`;
+  }
+  if (hasPlus) return `+${digits}`;
+  return phone;
+}
 
 export function AssistantStep() {
   const router = useRouter();
   const { state, dispatch, saveStep, goToNextStep, goToPreviousStep } =
     useSetup();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
-    null,
-  );
-  const [showCustomize, setShowCustomize] = useState(false);
 
-  const { name, voice, personality } = state.assistantData;
+  const { name, voice, greeting } = state.assistantData;
   const businessName = state.businessData.name || "your business";
   const industry = state.businessData.industry;
+  const { contacts } = state.escalationData;
 
-  const recommendedTemplateId = getRecommendedTemplate(industry);
-
-  // Auto-select recommended template on mount if no template is selected
+  // Set defaults on mount: personality, name, greeting
   useEffect(() => {
-    if (!selectedTemplateId) {
-      const defaults = getIndustryDefaults(industry);
-      const template = PERSONALITY_TEMPLATES.find(
-        (t) => t.id === defaults.templateId,
-      );
+    const defaults = getIndustryDefaults(industry);
+    const updates: Partial<typeof state.assistantData> = {};
 
-      if (template) {
-        setSelectedTemplateId(template.id);
-
-        // Only set personality if it hasn't been set yet or matches default
-        if (!personality || personality === "professional") {
-          dispatch({
-            type: "SET_ASSISTANT_DATA",
-            payload: { personality: template.personality },
-          });
-        }
-      }
+    if (!name) {
+      updates.name = defaults.agentName;
     }
-    // Run only on mount
+    updates.personality = "professional";
+
+    if (!greeting) {
+      updates.greeting = `Thank you for calling ${businessName}, how can I help you today?`;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      dispatch({
+        type: "SET_ASSISTANT_DATA",
+        payload: updates,
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canContinue =
-    name.trim() !== "" && voice !== "" && personality !== null;
+  const canContinue = name.trim() !== "";
 
-  const handleTemplateSelect = (template: PersonalityTemplate) => {
-    setSelectedTemplateId(template.id);
+  // --- Contact helpers ---
+  const addContact = () => {
+    if (contacts.length >= 3) return;
+    const newContact: EscalationContact = {
+      id: `contact_${Date.now()}`,
+      tenant_id: state.tenantId || "",
+      name: "",
+      phone: "",
+      role: "",
+      is_primary: contacts.length === 0,
+      availability: "business_hours",
+      sort_order: contacts.length,
+      created_at: new Date().toISOString(),
+    };
     dispatch({
-      type: "SET_ASSISTANT_DATA",
-      payload: { personality: template.personality },
+      type: "SET_ESCALATION_DATA",
+      payload: { contacts: [...contacts, newContact] },
     });
-    // Close customization when selecting a template
-    setShowCustomize(false);
+  };
+
+  const updateContact = (
+    id: string,
+    field: keyof EscalationContact,
+    value: unknown,
+  ) => {
+    const updated = contacts.map((c) =>
+      c.id === id ? { ...c, [field]: value } : c,
+    );
+    dispatch({
+      type: "SET_ESCALATION_DATA",
+      payload: { contacts: updated },
+    });
+  };
+
+  const removeContact = (id: string) => {
+    const updated = contacts.filter((c) => c.id !== id);
+    if (updated.length > 0 && !updated.some((c) => c.is_primary)) {
+      updated[0].is_primary = true;
+    }
+    dispatch({
+      type: "SET_ESCALATION_DATA",
+      payload: { contacts: updated },
+    });
   };
 
   const handleContinue = async () => {
@@ -85,20 +121,14 @@ export function AssistantStep() {
     const success = await saveStep("assistant");
     if (success) {
       goToNextStep();
-      router.push("/setup/phone");
+      router.push("/setup/review");
     }
     setIsSubmitting(false);
   };
 
   const handleBack = () => {
     goToPreviousStep();
-    router.push("/setup/integrations");
-  };
-
-  const interpolateGreeting = (greeting: string) => {
-    return greeting
-      .replace("{business}", businessName)
-      .replace("{name}", name || "{name}");
+    router.push("/setup/business");
   };
 
   return (
@@ -106,15 +136,18 @@ export function AssistantStep() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">
-          Give your assistant an identity
+          Set up call handling
         </h1>
         <p className="mt-2 text-muted-foreground">
-          This is how callers will experience your business
+          Configure how your AI assistant answers the phone
         </p>
       </div>
 
-      {/* Assistant name */}
+      {/* ------------------------------------------------------------------ */}
+      {/* YOUR AI ASSISTANT */}
+      {/* ------------------------------------------------------------------ */}
       <div className="space-y-3">
+        <h2 className="text-lg font-medium">Your AI Assistant</h2>
         <Label htmlFor="assistant-name">Assistant name</Label>
         <Input
           id="assistant-name"
@@ -127,136 +160,34 @@ export function AssistantStep() {
             })
           }
         />
-        {personality && (
-          <div className="flex flex-wrap gap-2">
-            <span className="text-xs text-muted-foreground">Suggestions:</span>
-            {(NAME_SUGGESTIONS[personality] ?? []).map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                onClick={() =>
-                  dispatch({
-                    type: "SET_ASSISTANT_DATA",
-                    payload: { name: suggestion },
-                  })
-                }
-                className="rounded-full bg-muted px-3 py-1 text-xs font-medium transition-colors hover:bg-primary hover:text-primary-foreground"
-              >
-                {suggestion}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Template selection */}
-      <div className="space-y-4">
-        <Label>Personality template</Label>
-        <div className="grid gap-4 md:grid-cols-3">
-          {PERSONALITY_TEMPLATES.map((template) => {
-            const isSelected = selectedTemplateId === template.id;
-            const isRecommended = template.id === recommendedTemplateId;
-
-            return (
-              <SelectionCard
-                key={template.id}
-                selected={isSelected}
-                onClick={() => handleTemplateSelect(template)}
-                title={template.label}
-                description={template.tagline}
-                badge={isRecommended ? "Recommended" : undefined}
-              >
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Best for: {template.bestFor}
-                </p>
-                <div className="mt-3 rounded-lg bg-muted/50 p-3 text-sm italic text-muted-foreground">
-                  &ldquo;{interpolateGreeting(template.greeting)}&rdquo;
-                </div>
-              </SelectionCard>
-            );
-          })}
+        <div className="flex flex-wrap gap-2">
+          <span className="text-xs text-muted-foreground">Suggestions:</span>
+          {NAME_SUGGESTIONS.map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              onClick={() =>
+                dispatch({
+                  type: "SET_ASSISTANT_DATA",
+                  payload: { name: suggestion },
+                })
+              }
+              className="rounded-full bg-muted px-3 py-1 text-xs font-medium transition-colors hover:bg-primary hover:text-primary-foreground"
+            >
+              {suggestion}
+            </button>
+          ))}
         </div>
-
-        {/* Customize link */}
-        <button
-          type="button"
-          onClick={() => setShowCustomize(!showCustomize)}
-          className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ChevronDown
-            className={cn(
-              "h-4 w-4 transition-transform",
-              showCustomize && "rotate-180",
-            )}
-          />
-          Customize personality
-        </button>
-
-        {/* Expandable raw personality radio buttons */}
-        {showCustomize && (
-          <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
-            <p className="text-xs text-muted-foreground">
-              Override the template personality
-            </p>
-            <div className="flex flex-wrap gap-3">
-              {(
-                [
-                  {
-                    id: "professional" as Personality,
-                    label: "Professional",
-                    description: "Formal and business-like",
-                  },
-                  {
-                    id: "friendly" as Personality,
-                    label: "Friendly",
-                    description: "Warm and conversational",
-                  },
-                  {
-                    id: "efficient" as Personality,
-                    label: "Efficient",
-                    description: "Direct and to the point",
-                  },
-                ] as const
-              ).map((p) => {
-                const isActive = personality === p.id;
-
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => {
-                      dispatch({
-                        type: "SET_ASSISTANT_DATA",
-                        payload: { personality: p.id },
-                      });
-                      // Clear template selection since user is customizing
-                      setSelectedTemplateId(null);
-                    }}
-                    className={cn(
-                      "rounded-lg border px-4 py-2 text-left transition-colors",
-                      isActive
-                        ? "border-primary bg-primary/10 text-foreground"
-                        : "border-border hover:border-muted-foreground/40",
-                    )}
-                  >
-                    <p className="text-sm font-medium">{p.label}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {p.description}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Voice selection */}
+      {/* ------------------------------------------------------------------ */}
+      {/* VOICE */}
+      {/* ------------------------------------------------------------------ */}
       <div className="space-y-4">
-        <Label className="flex items-center gap-2">
+        <h2 className="text-lg font-medium flex items-center gap-2">
           <Volume2 className="h-4 w-4" />
           Voice
-        </Label>
+        </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {VOICE_OPTIONS.map((voiceOption) => {
             const isSelected = voice === voiceOption.cartesiaId;
@@ -283,11 +214,11 @@ export function AssistantStep() {
                     className={cn(
                       "flex h-12 w-12 shrink-0 items-center justify-center rounded-full",
                       voiceOption.type === "female"
-                        ? "bg-gradient-to-br from-pink-400 to-rose-600"
-                        : "bg-gradient-to-br from-blue-400 to-indigo-600",
+                        ? "bg-pink-500/20"
+                        : "bg-blue-500/20",
                     )}
                   >
-                    <User className="h-6 w-6 text-white" />
+                    <User className="h-6 w-6 text-foreground/70" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -319,6 +250,145 @@ export function AssistantStep() {
             );
           })}
         </div>
+      </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* WHAT CALLERS HEAR FIRST */}
+      {/* ------------------------------------------------------------------ */}
+      <div className="space-y-3">
+        <h2 className="text-lg font-medium">What callers hear first</h2>
+        <p className="text-sm text-muted-foreground">
+          The greeting your assistant says when answering the phone
+        </p>
+        <textarea
+          value={greeting}
+          onChange={(e) =>
+            dispatch({
+              type: "SET_ASSISTANT_DATA",
+              payload: { greeting: e.target.value },
+            })
+          }
+          rows={3}
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          placeholder={`Thank you for calling ${businessName}, how can I help you today?`}
+        />
+        <p className="text-xs text-muted-foreground">
+          Keep it short and friendly. The assistant will use this exact phrase
+          to greet every caller.
+        </p>
+      </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* WHO TO TRANSFER TO (optional) */}
+      {/* ------------------------------------------------------------------ */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-medium">Who to transfer to</h2>
+          <p className="text-sm text-muted-foreground">
+            Add people your assistant can transfer calls to when a human is
+            needed (optional, up to 3)
+          </p>
+        </div>
+
+        {contacts.length === 0 ? (
+          <button
+            type="button"
+            onClick={addContact}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed p-6 text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+          >
+            <Plus className="h-5 w-5" />
+            <span className="font-medium">Add a contact</span>
+          </button>
+        ) : (
+          <div className="space-y-3">
+            {contacts.map((contact, idx) => (
+              <div key={contact.id} className="rounded-lg border p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted">
+                      <Phone className="h-3.5 w-3.5" />
+                    </div>
+                    <span className="text-sm font-medium">
+                      Contact {idx + 1}
+                    </span>
+                    {contact.is_primary && (
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                        Primary
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeContact(contact.id)}
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="space-y-1">
+                    <Label htmlFor={`name-${contact.id}`} className="text-xs">
+                      Name
+                    </Label>
+                    <Input
+                      id={`name-${contact.id}`}
+                      placeholder="John Smith"
+                      value={contact.name}
+                      onChange={(e) =>
+                        updateContact(contact.id, "name", e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`phone-${contact.id}`} className="text-xs">
+                      Phone
+                    </Label>
+                    <Input
+                      id={`phone-${contact.id}`}
+                      type="tel"
+                      placeholder="(555) 123-4567"
+                      value={contact.phone}
+                      onChange={(e) =>
+                        updateContact(contact.id, "phone", e.target.value)
+                      }
+                      onBlur={(e) => {
+                        const val = e.target.value.trim();
+                        if (val) {
+                          updateContact(
+                            contact.id,
+                            "phone",
+                            normalizePhoneE164(val),
+                          );
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`role-${contact.id}`} className="text-xs">
+                      Role
+                    </Label>
+                    <Input
+                      id={`role-${contact.id}`}
+                      placeholder="Front Desk"
+                      value={contact.role || ""}
+                      onChange={(e) =>
+                        updateContact(contact.id, "role", e.target.value)
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {contacts.length < 3 && (
+              <Button variant="outline" size="sm" onClick={addContact}>
+                <Plus className="mr-1 h-4 w-4" />
+                Add another contact
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Navigation buttons */}

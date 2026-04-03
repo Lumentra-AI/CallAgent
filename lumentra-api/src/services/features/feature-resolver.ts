@@ -46,31 +46,12 @@ export const ALL_FEATURES: FeatureKey[] = [
 ];
 
 // Features included per subscription tier
+// All customer-facing tiers: 4 core pages only (settings/profile always shown)
+// Platform admins access everything via /admin routes, not via feature flags
 const TIER_DEFAULTS: Record<string, FeatureKey[]> = {
-  starter: [
-    "dashboard",
-    "workstation",
-    "calls",
-    "contacts",
-    "calendar",
-    "escalations",
-  ],
-  professional: [
-    "dashboard",
-    "workstation",
-    "calls",
-    "contacts",
-    "calendar",
-    "escalations",
-    "analytics",
-    "deals",
-    "tasks",
-    "chats",
-    "resources",
-    "notifications",
-    "pending",
-  ],
-  enterprise: [...ALL_FEATURES],
+  starter: ["dashboard", "calls", "contacts", "calendar"],
+  professional: ["dashboard", "calls", "contacts", "calendar"],
+  enterprise: ["dashboard", "calls", "contacts", "calendar"],
 };
 
 interface OverrideRow {

@@ -3,30 +3,14 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { useConfig } from "@/context/ConfigContext";
-import { useIndustry } from "@/context/IndustryContext";
 import { useAuth } from "@/context/AuthContext";
-import {
-  Circle,
-  Clock,
-  User,
-  Settings,
-  LogOut,
-  ChevronDown,
-  Wifi,
-  WifiOff,
-  AlertCircle,
-} from "lucide-react";
+import { Clock, User, Settings, LogOut, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 
-// ============================================================================
-// TOP BAR COMPONENT - Dense Status Strip
-// ============================================================================
-
 export default function TopBar() {
   const router = useRouter();
-  const { config, metrics } = useConfig();
-  const { industryLabel } = useIndustry();
+  const { config } = useConfig();
   const { user, signOut } = useAuth();
   const [currentTime, setCurrentTime] = React.useState(new Date());
   const [showUserMenu, setShowUserMenu] = React.useState(false);
@@ -41,9 +25,9 @@ export default function TopBar() {
     .toUpperCase()
     .slice(0, 2);
 
-  // Update time every second
+  // Update time every minute (no need for seconds)
   React.useEffect(() => {
-    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const interval = setInterval(() => setCurrentTime(new Date()), 60_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -58,113 +42,10 @@ export default function TopBar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const systemStatus = metrics?.system.status || "offline";
-  const latency = metrics?.system.latency || 0;
-  const activeCalls = metrics?.system.activeCalls || 0;
-
-  // Status icon and color mapping
-  const getStatusConfig = () => {
-    switch (systemStatus) {
-      case "online":
-        return {
-          icon: Wifi,
-          color: "text-emerald-500",
-          bgColor: "bg-emerald-500/10",
-          label: "Online",
-        };
-      case "degraded":
-        return {
-          icon: AlertCircle,
-          color: "text-amber-500",
-          bgColor: "bg-amber-500/10",
-          label: "Degraded",
-        };
-      default:
-        return {
-          icon: WifiOff,
-          color: "text-red-500",
-          bgColor: "bg-red-500/10",
-          label: "Offline",
-        };
-    }
-  };
-
-  const statusConfig = getStatusConfig();
-  const StatusIcon = statusConfig.icon;
-
-  // Latency color
-  const getLatencyColor = (ms: number) => {
-    if (ms < 50) return "text-emerald-500";
-    if (ms < 100) return "text-amber-500";
-    return "text-red-500";
-  };
-
   return (
     <header className="flex h-12 items-center justify-between border-b border-border bg-card/80 backdrop-blur-sm px-4">
-      {/* Left: System Status */}
-      <div className="flex items-center gap-3">
-        {/* Status Badge */}
-        <div
-          className={cn(
-            "flex items-center gap-2 px-2.5 py-1 rounded-full",
-            statusConfig.bgColor,
-          )}
-        >
-          <div className="relative">
-            <StatusIcon className={cn("h-3.5 w-3.5", statusConfig.color)} />
-            {systemStatus === "online" && (
-              <span className="absolute inset-0 animate-ping">
-                <StatusIcon
-                  className={cn("h-3.5 w-3.5 opacity-75", statusConfig.color)}
-                />
-              </span>
-            )}
-          </div>
-          <span
-            className={cn(
-              "text-xs font-medium hidden sm:inline",
-              statusConfig.color,
-            )}
-          >
-            {statusConfig.label}
-          </span>
-        </div>
-
-        {/* Divider */}
-        <span className="h-4 w-px bg-border hidden sm:block" />
-
-        {/* Latency */}
-        <div className="hidden sm:flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">RTT</span>
-          <span
-            className={cn(
-              "text-xs font-mono font-medium",
-              getLatencyColor(latency),
-            )}
-          >
-            {latency}ms
-          </span>
-        </div>
-
-        {/* Divider */}
-        <span className="h-4 w-px bg-border hidden md:block" />
-
-        {/* Active Calls */}
-        <div className="hidden md:flex items-center gap-1.5">
-          <Circle
-            className={cn(
-              "h-2 w-2 fill-current",
-              activeCalls > 0 ? "text-emerald-500" : "text-muted-foreground",
-            )}
-          />
-          <span className="text-xs text-muted-foreground">
-            {activeCalls} Active
-          </span>
-        </div>
-      </div>
-
-      {/* Center: Business Name */}
-      <div className="absolute left-1/2 -translate-x-1/2 hidden sm:block">
+      {/* Left: Business Name */}
+      <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-foreground">
           {config?.businessName || "Lumentra"}
         </span>
@@ -172,21 +53,16 @@ export default function TopBar() {
 
       {/* Right: Time, Theme, User */}
       <div className="flex items-center gap-2 sm:gap-4">
-        {/* Industry Tag - Hidden on small screens */}
-        <span className="hidden md:inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          {industryLabel}
-        </span>
-
         {/* Theme Toggle */}
-        <AnimatedThemeToggler size={18} />
+        <AnimatedThemeToggler size={20} />
 
-        {/* Time - Hidden on small screens */}
+        {/* Time */}
         <div className="hidden sm:flex items-center gap-1.5 text-muted-foreground">
           <Clock className="h-3.5 w-3.5" />
           <span className="text-xs font-mono tabular-nums">
             {currentTime.toLocaleTimeString("en-US", {
-              hour12: false,
-              hour: "2-digit",
+              hour12: true,
+              hour: "numeric",
               minute: "2-digit",
             })}
           </span>

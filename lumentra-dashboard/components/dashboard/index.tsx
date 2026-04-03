@@ -6,6 +6,7 @@ import TopBar from "./TopBar";
 import SystemHealth from "./SystemHealth";
 import Waveform from "./Waveform";
 import ActivityLog from "./ActivityLog";
+import OperationsBoard from "./OperationsBoard";
 import { SetupIncompleteBanner } from "./SetupIncompleteBanner";
 
 // ============================================================================
@@ -55,5 +56,6 @@ export {
   SystemHealth,
   Waveform,
   ActivityLog,
+  OperationsBoard,
   SetupIncompleteBanner,
 };

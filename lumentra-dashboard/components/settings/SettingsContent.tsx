@@ -1,53 +1,55 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useConfig } from "@/context/ConfigContext";
 import GeneralTab from "./GeneralTab";
 import VoiceTab from "./VoiceTab";
 import HoursTab from "./HoursTab";
-import BillingTab from "./BillingTab";
 import GreetingsTab from "./GreetingsTab";
-import ResponsesTab from "./ResponsesTab";
-import AgentTab from "./AgentTab";
 import EscalationTab from "./EscalationTab";
-import InstructionsTab from "./InstructionsTab";
+import type { SettingsTab } from "@/types";
+
+// Only these tabs are accessible in the simplified product
+const VALID_TABS: Set<string> = new Set([
+  "general",
+  "hours",
+  "voice",
+  "greetings",
+  "escalation",
+  "team",
+]);
 
 export default function SettingsContent() {
-  const { config, uiState } = useConfig();
+  const { config, uiState, setSettingsTab } = useConfig();
   const { settingsTab } = uiState;
 
+  // Clamp stale settingsTab from localStorage to a valid value
+  useEffect(() => {
+    if (!VALID_TABS.has(settingsTab)) {
+      setSettingsTab("general" as SettingsTab);
+    }
+  }, [settingsTab, setSettingsTab]);
+
   if (!config) return null;
+
+  // Don't render stale tab content
+  const activeTab = VALID_TABS.has(settingsTab) ? settingsTab : "general";
 
   return (
     <AnimatePresence mode="wait">
       <motion.div
-        key={settingsTab}
+        key={activeTab}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -10 }}
         transition={{ duration: 0.2 }}
       >
-        {settingsTab === "general" && <GeneralTab />}
-        {settingsTab === "agent" && <AgentTab />}
-        {settingsTab === "voice" && <VoiceTab />}
-        {settingsTab === "greetings" && <GreetingsTab />}
-        {settingsTab === "responses" && <ResponsesTab />}
-        {settingsTab === "instructions" && <InstructionsTab />}
-        {settingsTab === "hours" && <HoursTab />}
-        {settingsTab === "escalation" && <EscalationTab />}
-        {settingsTab === "billing" && <BillingTab />}
-        {![
-          "general",
-          "agent",
-          "voice",
-          "greetings",
-          "responses",
-          "instructions",
-          "hours",
-          "escalation",
-          "billing",
-        ].includes(settingsTab) && <GeneralTab />}
+        {activeTab === "general" && <GeneralTab />}
+        {activeTab === "voice" && <VoiceTab />}
+        {activeTab === "greetings" && <GreetingsTab />}
+        {activeTab === "hours" && <HoursTab />}
+        {activeTab === "escalation" && <EscalationTab />}
       </motion.div>
     </AnimatePresence>
   );

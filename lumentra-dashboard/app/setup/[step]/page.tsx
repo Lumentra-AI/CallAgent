@@ -13,26 +13,14 @@ import {
 } from "@/components/setup/SetupContext";
 import { SetupProgressBar } from "@/components/setup/SetupProgressBar";
 import { BusinessStep } from "@/components/setup/steps/BusinessStep";
-import { CapabilitiesStep } from "@/components/setup/steps/CapabilitiesStep";
-import { DetailsStep } from "@/components/setup/steps/DetailsStep";
-import { IntegrationsStep } from "@/components/setup/steps/IntegrationsStep";
 import { AssistantStep } from "@/components/setup/steps/AssistantStep";
-import { PhoneStep } from "@/components/setup/steps/PhoneStep";
-import { HoursStep } from "@/components/setup/steps/HoursStep";
-import { EscalationStep } from "@/components/setup/steps/EscalationStep";
 import { ReviewStep } from "@/components/setup/steps/ReviewStep";
 import type { SetupStep } from "@/types";
 import { useToast } from "@/context/ToastContext";
 
-const STEP_COMPONENTS: Record<SetupStep, React.ComponentType> = {
+const STEP_COMPONENTS: Partial<Record<SetupStep, React.ComponentType>> = {
   business: BusinessStep,
-  capabilities: CapabilitiesStep,
-  details: DetailsStep,
-  integrations: IntegrationsStep,
   assistant: AssistantStep,
-  phone: PhoneStep,
-  hours: HoursStep,
-  escalation: EscalationStep,
   review: ReviewStep,
 };
 
@@ -114,6 +102,11 @@ export default function SetupStepPage() {
 
   const StepComponent = STEP_COMPONENTS[step];
   const currentStepIndex = SETUP_STEPS.indexOf(step);
+
+  // If step has no component (old step from before simplification), redirect
+  if (!StepComponent) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-background">

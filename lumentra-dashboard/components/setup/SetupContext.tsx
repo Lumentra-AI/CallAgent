@@ -24,24 +24,14 @@ import { get, put, post } from "@/lib/api/client";
 // TYPES
 // ============================================================================
 
-export const SETUP_STEPS: SetupStep[] = [
-  "business",
-  "capabilities",
-  "details",
-  "integrations",
-  "assistant",
-  "phone",
-  "hours",
-  "escalation",
-  "review",
-];
+export const SETUP_STEPS: SetupStep[] = ["business", "assistant", "review"];
 
 export const STEP_LABELS: Record<SetupStep, string> = {
-  business: "Business",
+  business: "Your Business",
   capabilities: "Features",
   details: "Details",
   integrations: "Scheduling",
-  assistant: "Assistant",
+  assistant: "Call Handling",
   phone: "Phone",
   hours: "Hours",
   escalation: "Contacts",
@@ -67,6 +57,7 @@ export interface SetupState {
     name: string;
     voice: string;
     personality: "professional" | "friendly" | "efficient";
+    greeting: string;
   };
   phoneData: {
     setupType: PhoneSetupType | null;
@@ -170,6 +161,7 @@ const initialState: SetupState = {
     name: "",
     voice: "female_professional",
     personality: "professional",
+    greeting: "",
   },
   phoneData: {
     setupType: null,
@@ -358,6 +350,7 @@ interface ApiProgressResponse {
     agent_name?: string;
     agent_personality?: string;
     voice_config?: { voiceId?: string };
+    greeting_standard?: string;
     phone_config?: {
       setup_type?: PhoneSetupType;
       phone_number?: string;
@@ -458,6 +451,7 @@ function mapApiToState(data: ApiProgressResponse): Partial<SetupState> {
         }
         return "professional";
       })(),
+      greeting: data.data.greeting_standard || "",
     },
     phoneData: {
       setupType: data.data.phone_config?.setup_type || null,
@@ -520,6 +514,15 @@ function getStepData(
         agent_name: state.assistantData.name,
         agent_personality: state.assistantData.personality,
         voice_config: { voiceId: state.assistantData.voice },
+        greeting_standard: state.assistantData.greeting || null,
+        // Include escalation data since it's now part of this step
+        escalation_enabled: state.escalationData.contacts.length > 0,
+        escalation_triggers: [
+          ...state.escalationData.triggers,
+          ...state.escalationData.customTriggers,
+        ],
+        contacts: state.escalationData.contacts,
+        transfer_behavior: state.escalationData.transferBehavior,
       };
     case "phone":
       return {
@@ -682,24 +685,8 @@ export function SetupProvider({ children }: { children: ReactNode }) {
           state.businessData.industry !== null &&
           state.businessData.city.trim() !== ""
         );
-      case "capabilities":
-        return state.capabilities.length > 0;
-      case "details":
-        return true; // Details are optional
-      case "integrations":
-        return state.integrationMode !== null;
       case "assistant":
-        return (
-          state.assistantData.name.trim() !== "" &&
-          state.assistantData.voice !== "" &&
-          state.assistantData.personality !== null
-        );
-      case "phone":
-        return state.phoneData.setupType !== null;
-      case "hours":
-        return state.hoursData.timezone !== "";
-      case "escalation":
-        return true; // Escalation contacts are optional
+        return state.assistantData.name.trim() !== "";
       case "review":
         return true;
       default:

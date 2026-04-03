@@ -5,11 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Building2,
-  Sparkles,
   User,
-  Phone,
-  Clock,
-  Users,
   CheckCircle,
   AlertCircle,
   Rocket,
@@ -116,19 +112,13 @@ export function ReviewStep() {
       complete: !!state.businessData.name && !!state.businessData.industry,
     },
     {
-      label: "Phone number configured",
-      complete:
-        !!state.phoneData.number &&
-        !state.phoneData.number.startsWith("pending_"),
+      label: "AI assistant configured",
+      complete: !!state.assistantData.name,
     },
     {
-      label: "Emergency contact added",
+      label: "Transfer contact added",
       complete: state.escalationData.contacts.length > 0,
       optional: true,
-    },
-    {
-      label: "Operating hours set",
-      complete: !!state.hoursData.timezone,
     },
   ];
 
@@ -181,30 +171,15 @@ export function ReviewStep() {
 
   const handleBack = () => {
     goToPreviousStep();
-    router.push("/setup/escalation");
-  };
-
-  const getHoursSummary = () => {
-    const { schedule, sameEveryDay } = state.hoursData;
-    if (sameEveryDay) {
-      const mon = schedule.monday;
-      if (mon?.status === "open") {
-        return `Mon-Fri ${mon.open} - ${mon.close}`;
-      }
-      return "Custom schedule";
-    }
-    const openDays = Object.values(schedule).filter(
-      (s) => s.status === "open",
-    ).length;
-    return `${openDays} days/week`;
+    router.push("/setup/assistant");
   };
 
   return (
     <div className="space-y-8">
       {/* Header */}
       <div className="text-center">
-        <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-primary via-primary/80 to-primary/60 shadow-lg shadow-primary/30">
-          <Sparkles className="h-10 w-10 text-primary-foreground" />
+        <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 shadow-lg shadow-primary/10">
+          <Rocket className="h-10 w-10 text-primary" />
         </div>
         <h1 className="text-2xl font-semibold tracking-tight">
           Your assistant is ready!
@@ -215,9 +190,9 @@ export function ReviewStep() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <SummaryCard
-          title="Business"
+          title="Your Business"
           icon={Building2}
           step="business"
           onEdit={() => handleEditStep("business")}
@@ -232,114 +207,29 @@ export function ReviewStep() {
         />
 
         <SummaryCard
-          title="Features"
-          icon={Sparkles}
-          step="capabilities"
-          onEdit={() => handleEditStep("capabilities")}
-          configured={state.capabilities.length > 0}
-          items={[
-            {
-              label: "Active features",
-              value: `${state.capabilities.length} selected`,
-            },
-            {
-              label: "Scheduling",
-              value:
-                state.integrationMode === "external"
-                  ? "External system"
-                  : state.integrationMode === "builtin"
-                    ? "Lumentra"
-                    : "Messages only",
-            },
-          ]}
-        />
-
-        <SummaryCard
-          title="Assistant"
+          title="Call Handling"
           icon={User}
           step="assistant"
           onEdit={() => handleEditStep("assistant")}
           configured={!!state.assistantData.name}
           items={[
-            { label: "Name", value: state.assistantData.name || "-" },
+            { label: "Assistant", value: state.assistantData.name || "-" },
             {
-              label: "Personality",
-              value:
-                state.assistantData.personality.charAt(0).toUpperCase() +
-                state.assistantData.personality.slice(1),
+              label: "Greeting",
+              value: state.assistantData.greeting
+                ? state.assistantData.greeting.length > 50
+                  ? state.assistantData.greeting.slice(0, 50) + "..."
+                  : state.assistantData.greeting
+                : "Default",
             },
-          ]}
-        />
-
-        <SummaryCard
-          title="Phone"
-          icon={Phone}
-          step="phone"
-          onEdit={() => handleEditStep("phone")}
-          configured={
-            !!state.phoneData.number &&
-            !state.phoneData.number.startsWith("pending_")
-          }
-          items={[
-            {
-              label: "Setup type",
-              value:
-                state.phoneData.setupType === "new"
-                  ? "New number"
-                  : state.phoneData.setupType === "port"
-                    ? "Transferring"
-                    : "Forwarding",
-            },
-            { label: "Number", value: state.phoneData.number || "Pending" },
-          ]}
-        />
-
-        <SummaryCard
-          title="Hours"
-          icon={Clock}
-          step="hours"
-          onEdit={() => handleEditStep("hours")}
-          configured={!!state.hoursData.timezone}
-          items={[
-            { label: "Timezone", value: state.hoursData.timezone || "-" },
-            { label: "Schedule", value: getHoursSummary() },
-            {
-              label: "After hours",
-              value:
-                state.hoursData.afterHoursBehavior === "answer_closed"
-                  ? "Answer + message"
-                  : state.hoursData.afterHoursBehavior,
-            },
-          ]}
-        />
-
-        <SummaryCard
-          title="Emergency Contacts"
-          icon={Users}
-          step="escalation"
-          onEdit={() => handleEditStep("escalation")}
-          configured={state.escalationData.contacts.length > 0}
-          items={[
             {
               label: "Contacts",
               value:
                 state.escalationData.contacts.length > 0
-                  ? `${state.escalationData.contacts.length} configured`
+                  ? state.escalationData.contacts
+                      .map((c) => c.name || "Unnamed")
+                      .join(", ")
                   : "None (optional)",
-            },
-            {
-              label: "Primary",
-              value:
-                state.escalationData.contacts.find((c) => c.is_primary)?.name ||
-                "-",
-            },
-            {
-              label: "Transfer type",
-              value:
-                state.escalationData.transferBehavior.type
-                  .charAt(0)
-                  .toUpperCase() +
-                state.escalationData.transferBehavior.type.slice(1),
             },
           ]}
         />

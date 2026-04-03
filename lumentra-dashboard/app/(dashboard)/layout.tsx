@@ -25,7 +25,7 @@ import {
   Zap,
   Info,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 function LoadingScreen() {
@@ -127,6 +127,22 @@ function DemoModeBanner() {
   );
 }
 
+// Pages accessible to normal users (non-admin)
+const ALLOWED_PATHS = [
+  "/dashboard",
+  "/calls",
+  "/calendar",
+  "/contacts",
+  "/settings",
+  "/profile",
+];
+const ALLOWED_SETTINGS_SUBS = [
+  "/settings",
+  "/settings/hours",
+  "/settings/escalation",
+  "/settings/team",
+];
+
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const { isLoading: configLoading } = useConfig();
   const { isLoading: authLoading, user } = useAuth();
@@ -139,6 +155,26 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     refreshTenants,
   } = useTenant();
   const router = useRouter();
+  const pathname = usePathname();
+
+  // Route guard: redirect non-essential pages
+  useEffect(() => {
+    if (!pathname) return;
+    // Admin routes are allowed for platform admins (checked elsewhere)
+    if (pathname.startsWith("/admin")) return;
+    // Settings sub-routes: check against allowlist
+    if (pathname.startsWith("/settings/")) {
+      if (!ALLOWED_SETTINGS_SUBS.includes(pathname)) {
+        router.replace("/settings");
+        return;
+      }
+    }
+    // Top-level dashboard routes: check against allowlist
+    const topPath = "/" + (pathname.split("/")[1] || "");
+    if (!ALLOWED_PATHS.includes(topPath) && !pathname.startsWith("/settings")) {
+      router.replace("/dashboard");
+    }
+  }, [pathname, router]);
 
   useEffect(() => {
     if (!authLoading && !user) {
