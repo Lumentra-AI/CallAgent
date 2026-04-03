@@ -206,6 +206,7 @@ dashboardRoutes.get("/stats", async (c) => {
       callsWeekResult,
       callsMonthResult,
       missedTodayResult,
+      pendingTodayResult,
       bookingsTodayResult,
       bookingsWeekResult,
       bookingsMonthResult,
@@ -227,6 +228,10 @@ dashboardRoutes.get("/stats", async (c) => {
         [tenantId, today.toISOString()],
       ),
       queryOne<{ count: string }>(
+        `SELECT COUNT(*) as count FROM pending_bookings WHERE tenant_id = $1 AND status = 'pending'`,
+        [tenantId],
+      ),
+      queryOne<{ count: string }>(
         `SELECT COUNT(*) as count FROM bookings WHERE tenant_id = $1 AND created_at >= $2`,
         [tenantId, today.toISOString()],
       ),
@@ -244,6 +249,7 @@ dashboardRoutes.get("/stats", async (c) => {
     const callsWeek = parseInt(callsWeekResult?.count || "0", 10);
     const callsMonth = parseInt(callsMonthResult?.count || "0", 10);
     const missedToday = parseInt(missedTodayResult?.count || "0", 10);
+    const pendingCount = parseInt(pendingTodayResult?.count || "0", 10);
     const bookingsToday = parseInt(bookingsTodayResult?.count || "0", 10);
     const bookingsWeek = parseInt(bookingsWeekResult?.count || "0", 10);
     const bookingsMonth = parseInt(bookingsMonthResult?.count || "0", 10);
@@ -268,6 +274,7 @@ dashboardRoutes.get("/stats", async (c) => {
         week: bookingsWeek,
         month: bookingsMonth,
       },
+      pending: pendingCount,
       revenue: estimatedRevenue,
       timestamp: new Date().toISOString(),
     });

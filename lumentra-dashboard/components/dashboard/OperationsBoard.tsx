@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 interface DashboardStats {
   calls: { today: number; week: number; month: number; missedToday?: number };
   bookings: { today: number; week: number; month: number };
+  pending?: number;
 }
 
 interface RecentCall {
@@ -332,11 +333,9 @@ export default function OperationsBoard() {
   // Computed stats
   const callsToday = stats?.calls?.today ?? 0;
   const bookingsToday = stats?.bookings?.today ?? 0;
-  // Missed calls: today-scoped from /api/dashboard/stats
+  // All stat cards sourced from /api/dashboard/stats (today-scoped DB queries)
   const missedCalls = stats?.calls?.missedToday ?? 0;
-  const pendingCount = pendingBookings.filter(
-    (b) => b.status === "pending",
-  ).length;
+  const pendingCount = stats?.pending ?? 0;
 
   // Confirm / Reject handlers -- refetch all dashboard data afterward
   // so stats, schedule, and pending list all stay in sync
