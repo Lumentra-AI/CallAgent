@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 // ---------------------------------------------------------------------------
 
 interface DashboardStats {
-  calls: { today: number; week: number; month: number };
+  calls: { today: number; week: number; month: number; missedToday?: number };
   bookings: { today: number; week: number; month: number };
 }
 
@@ -267,9 +267,6 @@ function ErrorBanner({
 export default function OperationsBoard() {
   // State
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [callStats, setCallStats] = useState<{
-    outcomes: Record<string, number>;
-  } | null>(null);
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
   const [pendingBookings, setPendingBookings] = useState<PendingBooking[]>([]);
   const [upcomingBookings, setUpcomingBookings] = useState<UpcomingBooking[]>(
@@ -289,26 +286,18 @@ export default function OperationsBoard() {
     setLoading(true);
     setError(null);
     try {
-      const [
-        statsRes,
-        callStatsRes,
-        callsRes,
-        pendingRes,
-        upcomingRes,
-        callbackRes,
-      ] = await Promise.allSettled([
-        get<DashboardStats>("/api/dashboard/stats"),
-        get<{ outcomes: Record<string, number> }>("/api/calls/stats"),
-        get<{ calls: RecentCall[] }>("/api/calls/recent"),
-        get<{ bookings: PendingBooking[] }>("/api/pending-bookings"),
-        get<{ bookings: UpcomingBooking[] }>("/api/bookings/upcoming", {
-          hours: "24",
-        }),
-        get<{ queue: CallbackItem[] }>("/api/escalation/queue"),
-      ]);
+      const [statsRes, callsRes, pendingRes, upcomingRes, callbackRes] =
+        await Promise.allSettled([
+          get<DashboardStats>("/api/dashboard/stats"),
+          get<{ calls: RecentCall[] }>("/api/calls/recent"),
+          get<{ bookings: PendingBooking[] }>("/api/pending-bookings"),
+          get<{ bookings: UpcomingBooking[] }>("/api/bookings/upcoming", {
+            hours: "24",
+          }),
+          get<{ queue: CallbackItem[] }>("/api/escalation/queue"),
+        ]);
 
       if (statsRes.status === "fulfilled") setStats(statsRes.value);
-      if (callStatsRes.status === "fulfilled") setCallStats(callStatsRes.value);
       if (callsRes.status === "fulfilled")
         setRecentCalls(callsRes.value.calls ?? []);
       if (pendingRes.status === "fulfilled")
@@ -321,7 +310,6 @@ export default function OperationsBoard() {
       // If ALL failed, show error
       const allFailed = [
         statsRes,
-        callStatsRes,
         callsRes,
         pendingRes,
         upcomingRes,
@@ -344,12 +332,8 @@ export default function OperationsBoard() {
   // Computed stats
   const callsToday = stats?.calls?.today ?? 0;
   const bookingsToday = stats?.bookings?.today ?? 0;
-  // Missed calls from call stats endpoint (DB-accurate, not recent-N slice)
-  const missedCalls = callStats?.outcomes
-    ? (callStats.outcomes["hangup"] ?? 0) +
-      (callStats.outcomes["missed"] ?? 0) +
-      (callStats.outcomes["abandoned"] ?? 0)
-    : 0;
+  // Missed calls: today-scoped from /api/dashboard/stats
+  const missedCalls = stats?.calls?.missedToday ?? 0;
   const pendingCount = pendingBookings.filter(
     (b) => b.status === "pending",
   ).length;

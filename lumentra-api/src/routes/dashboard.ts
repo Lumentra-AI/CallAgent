@@ -87,6 +87,17 @@ dashboardRoutes.get("/metrics", async (c) => {
     );
     const bookingsToday = parseInt(bookingsResult?.count || "0", 10);
 
+    // Today's missed/hangup calls
+    const missedResult = await queryOne<{ count: string }>(
+      `SELECT COUNT(*) as count FROM calls
+       WHERE tenant_id = $1
+       AND created_at >= $2
+       AND created_at < $3
+       AND outcome_type IN ('hangup', 'missed', 'abandoned')`,
+      [tenantId, today.toISOString(), tomorrow.toISOString()],
+    );
+    const missedToday = parseInt(missedResult?.count || "0", 10);
+
     // Average response latency (from recent calls)
     const latencyData = await queryAll<{
       metadata: Record<string, number> | null;
@@ -127,6 +138,7 @@ dashboardRoutes.get("/metrics", async (c) => {
         active: activeCalls,
         queued: queuedCalls,
         today: callsToday,
+        missedToday,
       },
       bookings: {
         today: bookingsToday,
@@ -193,6 +205,7 @@ dashboardRoutes.get("/stats", async (c) => {
       callsTodayResult,
       callsWeekResult,
       callsMonthResult,
+      missedTodayResult,
       bookingsTodayResult,
       bookingsWeekResult,
       bookingsMonthResult,
@@ -208,6 +221,10 @@ dashboardRoutes.get("/stats", async (c) => {
       queryOne<{ count: string }>(
         `SELECT COUNT(*) as count FROM calls WHERE tenant_id = $1 AND created_at >= $2`,
         [tenantId, monthStart.toISOString()],
+      ),
+      queryOne<{ count: string }>(
+        `SELECT COUNT(*) as count FROM calls WHERE tenant_id = $1 AND created_at >= $2 AND outcome_type IN ('hangup', 'missed', 'abandoned')`,
+        [tenantId, today.toISOString()],
       ),
       queryOne<{ count: string }>(
         `SELECT COUNT(*) as count FROM bookings WHERE tenant_id = $1 AND created_at >= $2`,
@@ -226,6 +243,7 @@ dashboardRoutes.get("/stats", async (c) => {
     const callsToday = parseInt(callsTodayResult?.count || "0", 10);
     const callsWeek = parseInt(callsWeekResult?.count || "0", 10);
     const callsMonth = parseInt(callsMonthResult?.count || "0", 10);
+    const missedToday = parseInt(missedTodayResult?.count || "0", 10);
     const bookingsToday = parseInt(bookingsTodayResult?.count || "0", 10);
     const bookingsWeek = parseInt(bookingsWeekResult?.count || "0", 10);
     const bookingsMonth = parseInt(bookingsMonthResult?.count || "0", 10);
@@ -243,6 +261,7 @@ dashboardRoutes.get("/stats", async (c) => {
         today: callsToday,
         week: callsWeek,
         month: callsMonth,
+        missedToday,
       },
       bookings: {
         today: bookingsToday,
