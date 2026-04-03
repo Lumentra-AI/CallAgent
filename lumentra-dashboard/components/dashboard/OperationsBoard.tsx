@@ -267,6 +267,9 @@ function ErrorBanner({
 export default function OperationsBoard() {
   // State
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [callStats, setCallStats] = useState<{
+    outcomes: Record<string, number>;
+  } | null>(null);
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
   const [pendingBookings, setPendingBookings] = useState<PendingBooking[]>([]);
   const [upcomingBookings, setUpcomingBookings] = useState<UpcomingBooking[]>(
@@ -286,18 +289,26 @@ export default function OperationsBoard() {
     setLoading(true);
     setError(null);
     try {
-      const [statsRes, callsRes, pendingRes, upcomingRes, callbackRes] =
-        await Promise.allSettled([
-          get<DashboardStats>("/api/dashboard/stats"),
-          get<{ calls: RecentCall[] }>("/api/calls/recent"),
-          get<{ bookings: PendingBooking[] }>("/api/pending-bookings"),
-          get<{ bookings: UpcomingBooking[] }>("/api/bookings/upcoming", {
-            hours: "24",
-          }),
-          get<{ queue: CallbackItem[] }>("/api/escalation/queue"),
-        ]);
+      const [
+        statsRes,
+        callStatsRes,
+        callsRes,
+        pendingRes,
+        upcomingRes,
+        callbackRes,
+      ] = await Promise.allSettled([
+        get<DashboardStats>("/api/dashboard/stats"),
+        get<{ outcomes: Record<string, number> }>("/api/calls/stats"),
+        get<{ calls: RecentCall[] }>("/api/calls/recent"),
+        get<{ bookings: PendingBooking[] }>("/api/pending-bookings"),
+        get<{ bookings: UpcomingBooking[] }>("/api/bookings/upcoming", {
+          hours: "24",
+        }),
+        get<{ queue: CallbackItem[] }>("/api/escalation/queue"),
+      ]);
 
       if (statsRes.status === "fulfilled") setStats(statsRes.value);
+      if (callStatsRes.status === "fulfilled") setCallStats(callStatsRes.value);
       if (callsRes.status === "fulfilled")
         setRecentCalls(callsRes.value.calls ?? []);
       if (pendingRes.status === "fulfilled")
@@ -310,6 +321,7 @@ export default function OperationsBoard() {
       // If ALL failed, show error
       const allFailed = [
         statsRes,
+        callStatsRes,
         callsRes,
         pendingRes,
         upcomingRes,
@@ -332,30 +344,23 @@ export default function OperationsBoard() {
   // Computed stats
   const callsToday = stats?.calls?.today ?? 0;
   const bookingsToday = stats?.bookings?.today ?? 0;
-  const missedCalls = recentCalls.filter(
-    (c) =>
-      c.outcome_type &&
-      ["hangup", "missed", "abandoned"].includes(c.outcome_type.toLowerCase()),
-  ).length;
+  // Missed calls from call stats endpoint (DB-accurate, not recent-N slice)
+  const missedCalls = callStats?.outcomes
+    ? (callStats.outcomes["hangup"] ?? 0) +
+      (callStats.outcomes["missed"] ?? 0) +
+      (callStats.outcomes["abandoned"] ?? 0)
+    : 0;
   const pendingCount = pendingBookings.filter(
     (b) => b.status === "pending",
   ).length;
 
-  // Confirm / Reject handlers
+  // Confirm / Reject handlers -- refetch all dashboard data afterward
+  // so stats, schedule, and pending list all stay in sync
   const handleConfirm = async (id: string) => {
     setConfirmingIds((prev) => new Set(prev).add(id));
     try {
       await post(`/api/pending-bookings/${id}/convert`, {});
-      // Refetch pending bookings
-      try {
-        const res = await get<{ bookings: PendingBooking[] }>(
-          "/api/pending-bookings",
-        );
-        setPendingBookings(res.bookings ?? []);
-      } catch {
-        // Remove locally on refetch failure
-        setPendingBookings((prev) => prev.filter((b) => b.id !== id));
-      }
+      await fetchAll();
     } catch {
       // Silently fail -- booking stays in list so user can retry
     } finally {
@@ -371,14 +376,7 @@ export default function OperationsBoard() {
     setRejectingIds((prev) => new Set(prev).add(id));
     try {
       await put(`/api/pending-bookings/${id}/reject`, {});
-      try {
-        const res = await get<{ bookings: PendingBooking[] }>(
-          "/api/pending-bookings",
-        );
-        setPendingBookings(res.bookings ?? []);
-      } catch {
-        setPendingBookings((prev) => prev.filter((b) => b.id !== id));
-      }
+      await fetchAll();
     } catch {
       // Silently fail
     } finally {
