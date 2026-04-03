@@ -18,7 +18,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { get, put } from "@/lib/api/client";
+import { get, post, put } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 
 // ---------------------------------------------------------------------------
@@ -66,6 +66,7 @@ interface CallbackItem {
   startedAt: string;
   transferType: string | null;
   aiSummary: string | null;
+  status: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -334,7 +335,7 @@ export default function OperationsBoard() {
   const missedCalls = recentCalls.filter(
     (c) =>
       c.outcome_type &&
-      ["missed", "abandoned"].includes(c.outcome_type.toLowerCase()),
+      ["hangup", "missed", "abandoned"].includes(c.outcome_type.toLowerCase()),
   ).length;
   const pendingCount = pendingBookings.filter(
     (b) => b.status === "pending",
@@ -344,7 +345,7 @@ export default function OperationsBoard() {
   const handleConfirm = async (id: string) => {
     setConfirmingIds((prev) => new Set(prev).add(id));
     try {
-      await put(`/api/pending-bookings/${id}/confirm`);
+      await post(`/api/pending-bookings/${id}/convert`, {});
       // Refetch pending bookings
       try {
         const res = await get<{ bookings: PendingBooking[] }>(
@@ -392,9 +393,11 @@ export default function OperationsBoard() {
   // Filter to only pending bookings for the confirmations section
   const pendingOnly = pendingBookings.filter((b) => b.status === "pending");
 
-  // Filter callbacks to only those with callback transfer type
+  // Filter callbacks: only waiting/in-progress, exclude resolved/completed
   const callbackItems = callbacks.filter(
-    (c) => c.transferType === "callback" || !c.transferType,
+    (c) =>
+      (c.transferType === "callback" || !c.transferType) &&
+      (!c.status || ["waiting", "in-progress"].includes(c.status)),
   );
 
   return (
