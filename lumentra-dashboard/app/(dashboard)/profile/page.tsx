@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { motion } from "framer-motion";
+
 import {
   User,
   Shield,
@@ -185,12 +185,7 @@ export default function ProfilePage() {
       {/* Content */}
       <main className="flex-1 overflow-y-auto p-8 scrollbar-thin">
         <div className="mx-auto max-w-2xl">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2 }}
-          >
+          <div key={activeTab}>
             {activeTab === "profile" && (
               <ProfileTab data={profileData} onUpdate={updateProfile} />
             )}
@@ -205,7 +200,7 @@ export default function ProfilePage() {
             )}
 
             {activeTab === "preferences" && <PreferencesTab />}
-          </motion.div>
+          </div>
         </div>
       </main>
     </div>

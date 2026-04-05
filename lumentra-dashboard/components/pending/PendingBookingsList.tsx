@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
 import { Calendar, Inbox } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PendingBookingCard } from "./PendingBookingCard";
@@ -77,25 +76,16 @@ export function PendingBookingsList({
 
   return (
     <div className={cn("grid gap-4 md:grid-cols-2 lg:grid-cols-3", className)}>
-      <AnimatePresence mode="popLayout">
-        {bookings.map((booking, index) => (
-          <motion.div
-            key={booking.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ delay: index * 0.05 }}
-            layout
-          >
-            <PendingBookingCard
-              booking={booking}
-              onConfirm={onConfirm}
-              onReject={onReject}
-              onViewTranscript={onViewTranscript}
-            />
-          </motion.div>
-        ))}
-      </AnimatePresence>
+      {bookings.map((booking) => (
+        <div key={booking.id}>
+          <PendingBookingCard
+            booking={booking}
+            onConfirm={onConfirm}
+            onReject={onReject}
+            onViewTranscript={onViewTranscript}
+          />
+        </div>
+      ))}
     </div>
   );
 }
@@ -142,75 +132,70 @@ export function PendingBookingsCompact({
 
   return (
     <div className={cn("space-y-2", className)}>
-      <AnimatePresence>
-        {displayBookings.map((booking) => (
-          <motion.div
-            key={booking.id}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 10 }}
-            className="flex items-center justify-between gap-3 rounded-lg border bg-card p-3"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/10">
-                <Calendar className="h-4 w-4 text-amber-500" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">
-                  {booking.customer_name || "Unknown"}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {booking.service || "Booking request"}
-                </p>
-              </div>
+      {displayBookings.map((booking) => (
+        <div
+          key={booking.id}
+          className="flex items-center justify-between gap-3 rounded-lg border bg-card p-3"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/10">
+              <Calendar className="h-4 w-4 text-amber-500" />
             </div>
-            <div className="flex items-center gap-1 flex-shrink-0">
-              {onConfirm && (
-                <button
-                  onClick={() => onConfirm(booking.id)}
-                  className="p-1.5 rounded-md text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
-                  title="Confirm"
-                >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                </button>
-              )}
-              {onReject && (
-                <button
-                  onClick={() => onReject(booking.id)}
-                  className="p-1.5 rounded-md text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-                  title="Reject"
-                >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
-              )}
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">
+                {booking.customer_name || "Unknown"}
+              </p>
+              <p className="text-xs text-muted-foreground truncate">
+                {booking.service || "Booking request"}
+              </p>
             </div>
-          </motion.div>
-        ))}
-      </AnimatePresence>
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {onConfirm && (
+              <button
+                onClick={() => onConfirm(booking.id)}
+                className="p-1.5 rounded-md text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+                title="Confirm"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </button>
+            )}
+            {onReject && (
+              <button
+                onClick={() => onReject(booking.id)}
+                className="p-1.5 rounded-md text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                title="Reject"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
 
       {remainingCount > 0 && (
         <p className="text-xs text-center text-muted-foreground pt-1">

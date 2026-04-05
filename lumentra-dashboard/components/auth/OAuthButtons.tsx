@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
@@ -64,14 +63,7 @@ export function OAuthButtons({
       {providers.map((provider, index) => {
         const config = PROVIDER_CONFIG[provider];
         return (
-          <motion.div
-            key={provider}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 * index, duration: 0.3 }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
+          <div key={provider}>
             <Button
               type="button"
               variant="outline"
@@ -85,7 +77,7 @@ export function OAuthButtons({
               {config.icon}
               {config.name}
             </Button>
-          </motion.div>
+          </div>
         );
       })}
     </div>

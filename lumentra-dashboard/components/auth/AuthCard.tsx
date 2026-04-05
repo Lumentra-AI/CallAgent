@@ -1,27 +1,22 @@
 "use client";
 
-import { motion, HTMLMotionProps } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { ReactNode } from "react";
 
-interface AuthCardProps extends Omit<HTMLMotionProps<"div">, "children"> {
+interface AuthCardProps {
   children: ReactNode;
   className?: string;
 }
 
-export function AuthCard({ children, className, ...props }: AuthCardProps) {
+export function AuthCard({ children, className }: AuthCardProps) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: "easeOut" }}
+    <div
       className={cn(
         "relative w-full max-w-md",
         "rounded-2xl border border-border bg-card/95 backdrop-blur-sm",
         "p-8 shadow-elevated",
         className,
       )}
-      {...props}
     >
       {/* Subtle glow effect behind card */}
       <div
@@ -33,6 +28,6 @@ export function AuthCard({ children, className, ...props }: AuthCardProps) {
         }}
       />
       {children}
-    </motion.div>
+    </div>
   );
 }

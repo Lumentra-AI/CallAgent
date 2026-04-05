@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { motion } from "framer-motion";
+
 import { cn } from "@/lib/utils";
 import { useIndustry } from "@/context/IndustryContext";
 import { Sidebar } from "./Sidebar";
@@ -71,19 +71,16 @@ export function AppShell({ children, className }: AppShellProps) {
       />
 
       {/* Main Content Area */}
-      <motion.main
-        initial={false}
-        animate={{
-          marginLeft: sidebarCollapsed ? 72 : 240,
-        }}
-        transition={{ duration: 0.2, ease: "easeInOut" }}
+      <main
+        style={{ marginLeft: sidebarCollapsed ? 72 : 240 }}
         className={cn(
-          "min-h-screen pt-16 transition-all duration-200",
+          "transition-[margin-left] duration-200 ease-in-out",
+          "min-h-screen pt-16",
           className,
         )}
       >
         <div className="p-6">{children}</div>
-      </motion.main>
+      </main>
 
       {/* Command Palette */}
       <CommandPalette open={commandPaletteOpen} onClose={closeCommandPalette} />

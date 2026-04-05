@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+
 import { useConfig } from "@/context/ConfigContext";
 import GeneralTab from "./GeneralTab";
 import VoiceTab from "./VoiceTab";
@@ -37,20 +37,12 @@ export default function SettingsContent() {
   const activeTab = VALID_TABS.has(settingsTab) ? settingsTab : "general";
 
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={activeTab}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -10 }}
-        transition={{ duration: 0.2 }}
-      >
-        {activeTab === "general" && <GeneralTab />}
-        {activeTab === "voice" && <VoiceTab />}
-        {activeTab === "greetings" && <GreetingsTab />}
-        {activeTab === "hours" && <HoursTab />}
-        {activeTab === "escalation" && <EscalationTab />}
-      </motion.div>
-    </AnimatePresence>
+    <div key={activeTab}>
+      {activeTab === "general" && <GeneralTab />}
+      {activeTab === "voice" && <VoiceTab />}
+      {activeTab === "greetings" && <GreetingsTab />}
+      {activeTab === "hours" && <HoursTab />}
+      {activeTab === "escalation" && <EscalationTab />}
+    </div>
   );
 }

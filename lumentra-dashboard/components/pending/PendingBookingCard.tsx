@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
+
 import {
   Phone,
   Calendar,
@@ -151,14 +151,7 @@ export function PendingBookingCard({
     : cn("rounded-xl border bg-card", className);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      whileHover={{ y: -2 }}
-      transition={{ duration: 0.2 }}
-      className={cn("w-full", className)}
-    >
+    <div className={cn("w-full", className)}>
       <div className={wrapperClassName}>
         <div
           className={cn(
@@ -315,6 +308,6 @@ export function PendingBookingCard({
           )}
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

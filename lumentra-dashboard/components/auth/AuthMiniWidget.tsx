@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { MessageSquare, X, Sparkles } from "lucide-react";
 import { CircularWaveform } from "@/components/demo/VoiceWaveform";
 import { cn } from "@/lib/utils";
@@ -31,14 +30,9 @@ export function AuthMiniWidget({ className }: AuthMiniWidgetProps) {
 
   return (
     <div className={cn("fixed bottom-6 right-6 z-50", className)}>
-      <AnimatePresence mode="wait">
+      <>
         {isOpen ? (
-          <motion.div
-            key="open"
-            initial={{ opacity: 0, scale: 0.8, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.8, y: 20 }}
-            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+          <div
             className={cn(
               "w-72 rounded-2xl border border-border",
               "bg-card/95 backdrop-blur-md shadow-elevated",
@@ -68,22 +62,16 @@ export function AuthMiniWidget({ className }: AuthMiniWidgetProps) {
 
               {/* Demo Carousel */}
               <div className="text-center space-y-2 mb-4">
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={currentDemo}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.2 }}
-                  >
+                <>
+                  <div key={currentDemo}>
                     <h4 className="font-medium text-sm">
                       {demos[currentDemo].title}
                     </h4>
                     <p className="text-xs text-muted-foreground">
                       {demos[currentDemo].description}
                     </p>
-                  </motion.div>
-                </AnimatePresence>
+                  </div>
+                </>
               </div>
 
               {/* Demo Indicators */}
@@ -107,15 +95,9 @@ export function AuthMiniWidget({ className }: AuthMiniWidgetProps) {
                 Sign up to see it in action
               </p>
             </div>
-          </motion.div>
+          </div>
         ) : (
-          <motion.button
-            key="closed"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+          <button
             onClick={() => setIsOpen(true)}
             className={cn(
               "flex items-center justify-center",
@@ -125,9 +107,9 @@ export function AuthMiniWidget({ className }: AuthMiniWidgetProps) {
             )}
           >
             <MessageSquare className="h-6 w-6" />
-          </motion.button>
+          </button>
         )}
-      </AnimatePresence>
+      </>
 
       {/* Auto-rotate demos */}
       {isOpen && (

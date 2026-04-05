@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { motion } from "framer-motion";
+
 import { usePathname, useRouter } from "next/navigation";
 import { useConfig } from "@/context/ConfigContext";
 import type { SettingsTab, Permission } from "@/types";
@@ -194,13 +194,9 @@ function TabButton({ tab, isActive, onClick }: TabButtonProps) {
             {tab.label}
           </div>
           {isActive && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              className="truncate text-[10px] opacity-70"
-            >
+            <div className="truncate text-[10px] opacity-70">
               {tab.description}
-            </motion.div>
+            </div>
           )}
         </div>
         {isActive && !tab.path && (

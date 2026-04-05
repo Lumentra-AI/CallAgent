@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useTenant } from "@/context/TenantContext";
 import { AlertCircle, X, ChevronRight, MapPin, Phone } from "lucide-react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
+
 import { cn } from "@/lib/utils";
 
 interface IncompleteItem {
@@ -89,10 +89,7 @@ export function SetupIncompleteBanner() {
   ).length;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
+    <div
       className={cn(
         "rounded-lg border p-4 mb-6",
         highPriorityCount > 0
@@ -143,18 +140,13 @@ export function SetupIncompleteBanner() {
 
       {/* Items */}
       <div className="mt-4 space-y-2">
-        <AnimatePresence>
-          {sortedItems.map((item, index) => {
+        <>
+          {sortedItems.map((item) => {
             const Icon = item.icon;
             const isExpanded = expandedItem === item.key;
 
             return (
-              <motion.div
-                key={item.key}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.05 }}
-              >
+              <div key={item.key}>
                 <Link
                   href={item.href}
                   className={cn(
@@ -188,18 +180,11 @@ export function SetupIncompleteBanner() {
                       <p className="text-sm font-medium text-foreground">
                         {item.label}
                       </p>
-                      <AnimatePresence>
-                        {isExpanded && (
-                          <motion.p
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="text-xs text-muted-foreground"
-                          >
-                            {item.description}
-                          </motion.p>
-                        )}
-                      </AnimatePresence>
+                      {isExpanded && (
+                        <p className="text-xs text-muted-foreground">
+                          {item.description}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -212,10 +197,10 @@ export function SetupIncompleteBanner() {
                     <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
                   </div>
                 </Link>
-              </motion.div>
+              </div>
             );
           })}
-        </AnimatePresence>
+        </>
       </div>
 
       {/* Quick action for high priority */}
@@ -230,6 +215,6 @@ export function SetupIncompleteBanner() {
           </Link>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 }

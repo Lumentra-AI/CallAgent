@@ -1,7 +1,6 @@
 "use client";
 
 import { MeshGradientBg } from "@/components/effects/MeshGradientBg";
-import { Particles } from "@/components/magicui/particles";
 import { useTheme } from "@/context/ThemeContext";
 
 interface AuthBackgroundProps {
@@ -17,8 +16,6 @@ export function AuthBackground({ className }: AuthBackgroundProps) {
     ? ["#09090b", "#18181b", "#1e1b4b", "#18181b", "#09090b"]
     : ["#fafafa", "#f4f4f5", "#e0e7ff", "#f4f4f5", "#fafafa"];
 
-  const particleColor = isDark ? "#6366f1" : "#6366f1";
-
   return (
     <div className={className}>
       {/* Animated mesh gradient base layer */}
@@ -26,16 +23,6 @@ export function AuthBackground({ className }: AuthBackgroundProps) {
         colors={gradientColors}
         speed={0.003}
         className="opacity-80"
-      />
-
-      {/* Subtle floating particles overlay */}
-      <Particles
-        className="absolute inset-0"
-        quantity={30}
-        color={particleColor}
-        size={0.4}
-        staticity={70}
-        ease={80}
       />
 
       {/* Soft radial gradient overlay for depth */}

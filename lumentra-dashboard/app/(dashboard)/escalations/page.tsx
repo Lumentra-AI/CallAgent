@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+
 import {
   Phone,
   Clock,
@@ -83,11 +83,7 @@ export default function EscalationsPage() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-xl border border-border bg-card p-4"
-          >
+          <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/10">
                 <Users className="h-5 w-5 text-amber-500" />
@@ -99,14 +95,9 @@ export default function EscalationsPage() {
                 <p className="text-xs text-muted-foreground">Waiting</p>
               </div>
             </div>
-          </motion.div>
+          </div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-            className="rounded-xl border border-border bg-card p-4"
-          >
+          <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/10">
                 <AlertTriangle className="h-5 w-5 text-red-500" />
@@ -118,14 +109,9 @@ export default function EscalationsPage() {
                 <p className="text-xs text-muted-foreground">High Priority</p>
               </div>
             </div>
-          </motion.div>
+          </div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="rounded-xl border border-border bg-card p-4"
-          >
+          <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500/10">
                 <Clock className="h-5 w-5 text-blue-500" />
@@ -137,14 +123,9 @@ export default function EscalationsPage() {
                 <p className="text-xs text-muted-foreground">Avg Wait</p>
               </div>
             </div>
-          </motion.div>
+          </div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="rounded-xl border border-border bg-card p-4"
-          >
+          <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/10">
                 <CheckCircle2 className="h-5 w-5 text-green-500" />
@@ -156,7 +137,7 @@ export default function EscalationsPage() {
                 <p className="text-xs text-muted-foreground">Resolved</p>
               </div>
             </div>
-          </motion.div>
+          </div>
         </div>
 
         {/* Filters */}
@@ -246,11 +227,7 @@ export default function EscalationsPage() {
               <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : filteredQueue.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex flex-col items-center justify-center py-12 text-center"
-            >
+            <div className="flex flex-col items-center justify-center py-12 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted mb-4">
                 <Phone className="h-8 w-8 text-muted-foreground" />
               </div>
@@ -262,18 +239,11 @@ export default function EscalationsPage() {
                   ? "The queue is empty. All calls are being handled by the AI."
                   : "No escalations match the current filters."}
               </p>
-            </motion.div>
+            </div>
           ) : (
-            <AnimatePresence mode="popLayout">
-              {filteredQueue.map((escalation, index) => (
-                <motion.div
-                  key={escalation.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ delay: index * 0.05 }}
-                  layout
-                >
+            <>
+              {filteredQueue.map((escalation) => (
+                <div key={escalation.id}>
                   <EscalationCard
                     escalation={escalation}
                     onTakeCall={
@@ -288,9 +258,9 @@ export default function EscalationsPage() {
                     }
                     onClick={() => openPanel(escalation)}
                   />
-                </motion.div>
+                </div>
               ))}
-            </AnimatePresence>
+            </>
           )}
         </div>
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+
 import {
   Search,
   Bell,
@@ -133,71 +133,63 @@ export function TopBar({
             <ChevronDown className="h-4 w-4 text-muted-foreground" />
           </button>
 
-          <AnimatePresence>
-            {showUserMenu && (
-              <>
-                {/* Backdrop */}
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setShowUserMenu(false)}
-                />
+          {showUserMenu && (
+            <>
+              {/* Backdrop */}
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowUserMenu(false)}
+              />
 
-                {/* Dropdown */}
-                <motion.div
-                  initial={{ opacity: 0, y: -8, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.96 }}
-                  transition={{ duration: 0.15, ease: "easeOut" }}
-                  className="absolute right-0 top-full z-50 mt-2 w-56 rounded-xl border border-border bg-popover p-1.5 shadow-elevated"
+              {/* Dropdown */}
+              <div className="absolute right-0 top-full z-50 mt-2 w-56 rounded-xl border border-border bg-popover p-1.5 shadow-elevated">
+                <div className="border-b border-border px-3 py-2 mb-1">
+                  <p className="text-sm font-medium text-foreground">
+                    {tenant?.agent_name || "User"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {tenant?.business_name || "Business"}
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    router.push("/profile");
+                  }}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent"
                 >
-                  <div className="border-b border-border px-3 py-2 mb-1">
-                    <p className="text-sm font-medium text-foreground">
-                      {tenant?.agent_name || "User"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {tenant?.business_name || "Business"}
-                    </p>
-                  </div>
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  Profile
+                </button>
 
-                  <button
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      router.push("/profile");
-                    }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent"
-                  >
-                    <User className="h-4 w-4 text-muted-foreground" />
-                    Profile
-                  </button>
+                <button
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    router.push("/settings");
+                  }}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent"
+                >
+                  <Settings className="h-4 w-4 text-muted-foreground" />
+                  Settings
+                </button>
 
-                  <button
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      router.push("/settings");
-                    }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent"
-                  >
-                    <Settings className="h-4 w-4 text-muted-foreground" />
-                    Settings
-                  </button>
+                <div className="my-1 border-t border-border" />
 
-                  <div className="my-1 border-t border-border" />
-
-                  <button
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      // Add logout logic here
-                      router.push("/auth/login");
-                    }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
-                  >
-                    <LogOut className="h-4 w-4" />
-                    Sign out
-                  </button>
-                </motion.div>
-              </>
-            )}
-          </AnimatePresence>
+                <button
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    // Add logout logic here
+                    router.push("/auth/login");
+                  }}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </header>

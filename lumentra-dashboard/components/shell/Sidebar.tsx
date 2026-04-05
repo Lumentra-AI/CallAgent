@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+
 import {
   LayoutDashboard,
   Users,
@@ -131,34 +131,26 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   };
 
   return (
-    <motion.aside
-      initial={false}
-      animate={{ width: collapsed ? 72 : 240 }}
-      transition={{ duration: 0.2, ease: "easeInOut" }}
+    <aside
+      style={{ width: collapsed ? 72 : 240 }}
       className={cn(
         "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border bg-sidebar",
         "shadow-soft",
+        "transition-[width] duration-200 ease-in-out",
       )}
     >
       {/* Logo / Brand */}
       <div className="flex h-16 items-center justify-between border-b border-border px-4">
-        <AnimatePresence mode="wait">
-          {!collapsed && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex items-center gap-2"
-            >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-industry">
-                <MessageSquare className="h-4 w-4 text-white" />
-              </div>
-              <span className="font-semibold text-foreground">
-                {tenant?.business_name || "Lumentra"}
-              </span>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {!collapsed ? (
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-industry">
+              <MessageSquare className="h-4 w-4 text-white" />
+            </div>
+            <span className="font-semibold text-foreground">
+              {tenant?.business_name || "Lumentra"}
+            </span>
+          </div>
+        ) : null}
 
         {collapsed && (
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-industry mx-auto">
@@ -194,18 +186,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                     : "text-muted-foreground group-hover:text-foreground",
                 )}
               />
-              <AnimatePresence mode="wait">
-                {!collapsed && (
-                  <motion.span
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: "auto" }}
-                    exit={{ opacity: 0, width: 0 }}
-                    className="truncate"
-                  >
-                    {label}
-                  </motion.span>
-                )}
-              </AnimatePresence>
+              {!collapsed && <span className="truncate">{label}</span>}
               {getBadge(item) && !collapsed && (
                 <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-white">
                   {getBadge(item)}
@@ -241,18 +222,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                     : "text-muted-foreground group-hover:text-foreground",
                 )}
               />
-              <AnimatePresence mode="wait">
-                {!collapsed && (
-                  <motion.span
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: "auto" }}
-                    exit={{ opacity: 0, width: 0 }}
-                    className="truncate"
-                  >
-                    {item.label}
-                  </motion.span>
-                )}
-              </AnimatePresence>
+              {!collapsed && <span className="truncate">{item.label}</span>}
             </Link>
           );
         })}
@@ -272,6 +242,6 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
           )}
         </button>
       </div>
-    </motion.aside>
+    </aside>
   );
 }
