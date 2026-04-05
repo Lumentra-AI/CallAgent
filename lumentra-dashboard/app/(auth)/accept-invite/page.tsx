@@ -220,11 +220,18 @@ export default function AcceptInvitePage() {
             Something went wrong
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">{error}</p>
-          <Button className="mt-6 w-full" onClick={handleRetry}>
-            Try again
-          </Button>
+          {tenantId ? (
+            <Button className="mt-6 w-full" onClick={handleRetry}>
+              Try again
+            </Button>
+          ) : (
+            <div className="mt-6" />
+          )}
           <Link href="/dashboard">
-            <Button variant="ghost" className="mt-2 w-full">
+            <Button
+              variant="ghost"
+              className={tenantId ? "mt-2 w-full" : "w-full"}
+            >
               Go to dashboard
             </Button>
           </Link>
