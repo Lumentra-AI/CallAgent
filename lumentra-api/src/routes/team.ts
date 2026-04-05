@@ -233,7 +233,7 @@ teamRoutes.post("/invite", async (c) => {
 
     // Get the redirect URL from the request origin or use the configured app URL
     const appUrl = process.env.APP_URL || "https://app.lumentraai.com";
-    const redirectTo = `${appUrl}/accept-invite`;
+    const redirectTo = `${appUrl}/accept-invite?tid=${auth.tenantId}`;
 
     // Use Supabase Admin API to invite the user
     const supabaseAdmin = getServiceClient();
@@ -307,7 +307,7 @@ teamRoutes.post("/invite", async (c) => {
           to: email,
           businessName,
           inviterEmail: inviter?.email || null,
-          acceptUrl: `${appUrl}/accept-invite?existing=1`,
+          acceptUrl: `${appUrl}/accept-invite?existing=1&tid=${auth.tenantId}`,
         });
 
         await logActivity({
@@ -405,8 +405,8 @@ teamRoutes.post("/invite", async (c) => {
 
 /**
  * POST /api/team/accept-invite
- * Stamp accepted_at on the current user's pending membership(s).
- * Uses userAuthMiddleware since the user may not have X-Tenant-ID yet.
+ * Stamp accepted_at on the current user's pending membership for a specific tenant.
+ * Requires tenant_id in the request body. Uses userAuthMiddleware (no X-Tenant-ID header).
  */
 teamRoutes.post("/accept-invite", async (c) => {
   const auth = c.get("auth");
@@ -415,27 +415,29 @@ teamRoutes.post("/accept-invite", async (c) => {
   }
 
   try {
-    // Find all pending memberships for this user
-    const pending = await queryAll<{ id: string; tenant_id: string }>(
+    const body = await c.req.json().catch(() => ({}));
+    const tenantId = body.tenant_id;
+
+    if (!tenantId) {
+      return c.json({ error: "tenant_id is required" }, 400);
+    }
+
+    // Find the specific pending membership
+    const pending = await queryOne<{ id: string; tenant_id: string }>(
       `SELECT id, tenant_id FROM tenant_members
-       WHERE user_id = $1 AND accepted_at IS NULL AND is_active = true`,
-      [auth.userId],
+       WHERE user_id = $1 AND tenant_id = $2 AND accepted_at IS NULL AND is_active = true`,
+      [auth.userId, tenantId],
     );
 
-    if (!pending || pending.length === 0) {
-      // Idempotent: no pending invites means already accepted or none exist
+    if (!pending) {
+      // Idempotent: no pending invite for this tenant means already accepted or none exists
       return c.json({ accepted_tenants: [], count: 0, already_accepted: true });
     }
 
     const now = new Date().toISOString();
-    const accepted: string[] = [];
+    await updateOne("tenant_members", { accepted_at: now }, { id: pending.id });
 
-    for (const row of pending) {
-      await updateOne("tenant_members", { accepted_at: now }, { id: row.id });
-      accepted.push(row.tenant_id);
-    }
-
-    return c.json({ accepted_tenants: accepted, count: accepted.length });
+    return c.json({ accepted_tenants: [pending.tenant_id], count: 1 });
   } catch (error) {
     console.error("[TEAM] Error accepting invite:", error);
     return c.json({ error: "Failed to accept invite" }, 500);
@@ -484,7 +486,7 @@ teamRoutes.post("/:memberId/resend-invite", async (c) => {
 
     const { error: inviteError } =
       await supabaseAdmin.auth.admin.inviteUserByEmail(target.email, {
-        redirectTo: `${appUrl}/accept-invite`,
+        redirectTo: `${appUrl}/accept-invite?tid=${auth.tenantId}`,
       });
 
     if (inviteError) {
@@ -503,7 +505,7 @@ teamRoutes.post("/:memberId/resend-invite", async (c) => {
           to: target.email,
           businessName: tenant?.business_name || "a business",
           inviterEmail: inviter?.email || null,
-          acceptUrl: `${appUrl}/accept-invite?existing=1`,
+          acceptUrl: `${appUrl}/accept-invite?existing=1&tid=${auth.tenantId}`,
         });
 
         if (!emailResult.sent) {

@@ -24,7 +24,10 @@ const API_BASE =
 
 type AcceptResult = "accepted" | "already_accepted" | "failed";
 
-async function callAcceptInvite(accessToken: string): Promise<AcceptResult> {
+async function callAcceptInvite(
+  accessToken: string,
+  tenantId: string,
+): Promise<AcceptResult> {
   try {
     const res = await fetch(`${API_BASE}/api/team/accept-invite`, {
       method: "POST",
@@ -32,6 +35,7 @@ async function callAcceptInvite(accessToken: string): Promise<AcceptResult> {
         "Content-Type": "application/json",
         Authorization: `Bearer ${accessToken}`,
       },
+      body: JSON.stringify({ tenant_id: tenantId }),
     });
     if (!res.ok) return "failed";
     const data = await res.json();
@@ -44,6 +48,7 @@ async function callAcceptInvite(accessToken: string): Promise<AcceptResult> {
 export default function AcceptInvitePage() {
   const searchParams = useSearchParams();
   const isExistingUser = searchParams.get("existing") === "1";
+  const tenantId = searchParams.get("tid") || "";
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -81,14 +86,13 @@ export default function AcceptInvitePage() {
       setIsValidSession(true);
 
       // For existing users, auto-accept and redirect immediately
-      if (isExistingUser) {
+      if (isExistingUser && tenantId) {
         setIsAccepting(true);
-        const result = await callAcceptInvite(session.access_token);
+        const result = await callAcceptInvite(session.access_token, tenantId);
         if (result === "accepted" || result === "already_accepted") {
           setSuccess(true);
           setTimeout(() => router.push("/dashboard"), 1500);
         } else {
-          // Real failure -- show retry UI
           setIsAccepting(false);
           setError("Could not accept the invite. Please try again.");
         }
@@ -96,7 +100,30 @@ export default function AcceptInvitePage() {
     };
 
     checkSession();
-  }, [isExistingUser, router]);
+  }, [isExistingUser, tenantId, router]);
+
+  const handleRetry = () => {
+    setError("");
+    setIsAccepting(true);
+    const supabase = createClient();
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        setIsAccepting(false);
+        setIsValidSession(false);
+        return;
+      }
+      callAcceptInvite(session.access_token, tenantId).then((result) => {
+        if (result === "accepted" || result === "already_accepted") {
+          setSuccess(true);
+          setTimeout(() => router.push("/dashboard"), 1500);
+        } else {
+          setIsAccepting(false);
+          setError("Could not accept the invite. Please try again.");
+        }
+      });
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,24 +151,30 @@ export default function AcceptInvitePage() {
       return;
     }
 
-    const { error } = await supabase.auth.updateUser({ password });
+    const { error: pwError } = await supabase.auth.updateUser({ password });
 
-    if (error) {
+    if (pwError) {
       setIsLoading(false);
-      setError(error.message);
+      setError(pwError.message);
       return;
     }
 
-    // Stamp accepted_at on pending membership(s)
-    try {
+    // Accept the specific tenant invite
+    if (tenantId) {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+
       if (session?.access_token) {
-        await callAcceptInvite(session.access_token);
+        const result = await callAcceptInvite(session.access_token, tenantId);
+        if (result === "failed") {
+          setIsLoading(false);
+          setError(
+            "Password set, but could not accept the invite. Please try logging in.",
+          );
+          return;
+        }
       }
-    } catch {
-      console.warn("Failed to call accept-invite endpoint");
     }
 
     setIsLoading(false);
@@ -172,31 +205,7 @@ export default function AcceptInvitePage() {
             Something went wrong
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">{error}</p>
-          <Button
-            className="mt-6 w-full"
-            onClick={() => {
-              setError("");
-              setIsAccepting(true);
-              const supabase = createClient();
-              if (!supabase) return;
-              supabase.auth.getSession().then(({ data: { session } }) => {
-                if (!session) {
-                  setIsAccepting(false);
-                  setIsValidSession(false);
-                  return;
-                }
-                callAcceptInvite(session.access_token).then((result) => {
-                  if (result === "accepted" || result === "already_accepted") {
-                    setSuccess(true);
-                    setTimeout(() => router.push("/dashboard"), 1500);
-                  } else {
-                    setIsAccepting(false);
-                    setError("Could not accept the invite. Please try again.");
-                  }
-                });
-              });
-            }}
-          >
+          <Button className="mt-6 w-full" onClick={handleRetry}>
             Try again
           </Button>
           <Link href="/dashboard">
@@ -212,6 +221,12 @@ export default function AcceptInvitePage() {
   // No session -- different messages for existing vs new users
   if (!isValidSession) {
     if (isExistingUser) {
+      // Preserve tid in the redirect so it survives the login round-trip
+      const returnPath = tenantId
+        ? `/accept-invite?existing=1&tid=${tenantId}`
+        : "/accept-invite?existing=1";
+      const encodedReturn = encodeURIComponent(returnPath);
+
       return (
         <div className="flex min-h-screen items-center justify-center p-4">
           <AuthCard className="text-center">
@@ -224,7 +239,7 @@ export default function AcceptInvitePage() {
             <p className="mt-2 text-sm text-muted-foreground">
               Sign in to accept your team invitation and access the dashboard.
             </p>
-            <Link href="/login?redirect=/accept-invite%3Fexisting%3D1">
+            <Link href={`/login?redirect=${encodedReturn}`}>
               <Button className="mt-6 w-full">Sign in to accept</Button>
             </Link>
           </AuthCard>

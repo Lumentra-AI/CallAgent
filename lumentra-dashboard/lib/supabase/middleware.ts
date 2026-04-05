@@ -19,6 +19,7 @@ async function getAuthenticatedDestination(
     .select("tenant_id")
     .eq("user_id", userId)
     .eq("is_active", true)
+    .not("accepted_at", "is", null)
     .limit(1);
 
   const membership = memberships?.[0];

@@ -18,7 +18,7 @@ const PROTECTED_ROUTE_PREFIXES = [
   "/admin",
 ];
 
-const AUTH_ROUTE_PATHS = new Set(["/login", "/signup", "/accept-invite"]);
+const AUTH_ROUTE_PATHS = new Set(["/login", "/signup"]);
 
 // Routes accessible to normal (non-admin) authenticated users
 const ALLOWED_DASHBOARD_PREFIXES = [
