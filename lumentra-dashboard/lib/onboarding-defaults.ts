@@ -172,7 +172,7 @@ const INDUSTRY_DEFAULTS: Partial<Record<IndustryType, IndustryDefaults>> = {
   dental: {
     agentName: "Sarah",
     templateId: "friendly_receptionist",
-    voiceId: "sarah",
+    voiceId: "694f9389-aac1-45b6-b726-9d9369183238",
     capabilities: [
       "appointments",
       "patient_intake",
@@ -189,7 +189,7 @@ const INDUSTRY_DEFAULTS: Partial<Record<IndustryType, IndustryDefaults>> = {
   medical: {
     agentName: "Sarah",
     templateId: "professional_assistant",
-    voiceId: "professional_woman",
+    voiceId: "248be419-c632-4f23-adf1-5324ed7dbf1d",
     capabilities: [
       "appointments",
       "patient_intake",
@@ -206,7 +206,7 @@ const INDUSTRY_DEFAULTS: Partial<Record<IndustryType, IndustryDefaults>> = {
   restaurant: {
     agentName: "Emma",
     templateId: "friendly_receptionist",
-    voiceId: "support_lady",
+    voiceId: "829ccd10-f8b3-43cd-b8a0-4aeaa81f3b30",
     capabilities: ["reservations", "faq", "promotions", "after_hours"],
     escalationTriggers: [
       "caller_asks_for_person",
@@ -217,7 +217,7 @@ const INDUSTRY_DEFAULTS: Partial<Record<IndustryType, IndustryDefaults>> = {
   hotel: {
     agentName: "Madison",
     templateId: "professional_assistant",
-    voiceId: "professional_woman",
+    voiceId: "248be419-c632-4f23-adf1-5324ed7dbf1d",
     capabilities: ["reservations", "faq", "after_hours"],
     escalationTriggers: [
       "caller_asks_for_person",
@@ -229,7 +229,7 @@ const INDUSTRY_DEFAULTS: Partial<Record<IndustryType, IndustryDefaults>> = {
   motel: {
     agentName: "Sarah",
     templateId: "friendly_receptionist",
-    voiceId: "sarah",
+    voiceId: "694f9389-aac1-45b6-b726-9d9369183238",
     capabilities: ["reservations", "faq", "after_hours"],
     escalationTriggers: [
       "caller_asks_for_person",
@@ -240,7 +240,7 @@ const INDUSTRY_DEFAULTS: Partial<Record<IndustryType, IndustryDefaults>> = {
   salon: {
     agentName: "Emma",
     templateId: "friendly_receptionist",
-    voiceId: "support_lady",
+    voiceId: "829ccd10-f8b3-43cd-b8a0-4aeaa81f3b30",
     capabilities: ["appointments", "faq", "promotions"],
     escalationTriggers: [
       "caller_asks_for_person",
@@ -251,7 +251,7 @@ const INDUSTRY_DEFAULTS: Partial<Record<IndustryType, IndustryDefaults>> = {
   auto_service: {
     agentName: "Alex",
     templateId: "casual_helper",
-    voiceId: "barbershop_man",
+    voiceId: "a0e99841-438c-4a64-b679-ae501e7d6091",
     capabilities: ["appointments", "faq", "promotions"],
     escalationTriggers: [
       "caller_asks_for_person",
@@ -264,7 +264,7 @@ const INDUSTRY_DEFAULTS: Partial<Record<IndustryType, IndustryDefaults>> = {
 const DEFAULT_INDUSTRY_DEFAULTS: IndustryDefaults = {
   agentName: "Sarah",
   templateId: "friendly_receptionist",
-  voiceId: "sarah",
+  voiceId: "694f9389-aac1-45b6-b726-9d9369183238",
   capabilities: ["call_handling", "message_taking", "faq"],
   escalationTriggers: [
     "caller_asks_for_person",

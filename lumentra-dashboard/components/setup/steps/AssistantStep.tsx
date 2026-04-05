@@ -1,14 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ArrowLeft, User, Volume2, Plus, X, Phone } from "lucide-react";
+import {
+  Check,
+  ArrowLeft,
+  User,
+  Volume2,
+  Plus,
+  X,
+  Phone,
+  Play,
+  Loader2,
+  Square,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useSetup } from "../SetupContext";
 import { VOICE_OPTIONS, getIndustryDefaults } from "@/lib/onboarding-defaults";
+import { apiFetchRaw } from "@/lib/api/client";
 import type { EscalationContact } from "@/types";
 
 const NAME_SUGGESTIONS = ["Sarah", "Emma", "James", "Alex", "Madison", "Maya"];
@@ -33,6 +45,18 @@ function normalizePhoneE164(phone: string): string {
   return phone;
 }
 
+/**
+ * Check if a phone string is a valid E.164 US number (10 or 11 digits).
+ */
+function isValidPhone(phone: string): boolean {
+  const digits = phone.replace(/\D/g, "");
+  return (
+    digits.length === 10 || (digits.length === 11 && digits.startsWith("1"))
+  );
+}
+
+type ContactErrors = Record<string, { name?: string; phone?: string }>;
+
 export function AssistantStep() {
   const router = useRouter();
   const { state, dispatch, saveStep, goToNextStep, goToPreviousStep } =
@@ -43,8 +67,12 @@ export function AssistantStep() {
   const businessName = state.businessData.name || "your business";
   const industry = state.businessData.industry;
   const { contacts } = state.escalationData;
+  const [contactErrors, setContactErrors] = useState<ContactErrors>({});
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playingVoice, setPlayingVoice] = useState<string | null>(null);
 
-  // Set defaults on mount: personality, name, greeting
+  // Set defaults on mount: personality, name, greeting, voice
   useEffect(() => {
     const defaults = getIndustryDefaults(industry);
     const updates: Partial<typeof state.assistantData> = {};
@@ -58,6 +86,17 @@ export function AssistantStep() {
       updates.greeting = `Thank you for calling ${businessName}, how can I help you today?`;
     }
 
+    // Set industry-appropriate voice if voice hasn't been explicitly chosen yet.
+    // The default initial voice is Sarah's UUID -- override it with the industry
+    // default so hotel gets Madison, restaurant gets Emily, etc.
+    const DEFAULT_VOICE = "694f9389-aac1-45b6-b726-9d9369183238";
+    if (!voice || voice === DEFAULT_VOICE) {
+      const industryVoice = defaults.voiceId;
+      if (industryVoice && industryVoice !== DEFAULT_VOICE) {
+        updates.voice = industryVoice;
+      }
+    }
+
     if (Object.keys(updates).length > 0) {
       dispatch({
         type: "SET_ASSISTANT_DATA",
@@ -67,7 +106,23 @@ export function AssistantStep() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canContinue = name.trim() !== "";
+  // Validate contacts: if any exist, every one must have name + valid phone
+  const validateContacts = useCallback((): ContactErrors => {
+    const errors: ContactErrors = {};
+    for (const c of contacts) {
+      const e: { name?: string; phone?: string } = {};
+      if (!c.name.trim()) e.name = "Name is required";
+      if (!c.phone.trim()) e.phone = "Phone is required";
+      else if (!isValidPhone(c.phone))
+        e.phone = "Enter a valid US phone number";
+      if (Object.keys(e).length > 0) errors[c.id] = e;
+    }
+    return errors;
+  }, [contacts]);
+
+  const contactsValid =
+    contacts.length === 0 || Object.keys(validateContacts()).length === 0;
+  const canContinue = name.trim() !== "" && contactsValid;
 
   // --- Contact helpers ---
   const addContact = () => {
@@ -79,7 +134,7 @@ export function AssistantStep() {
       phone: "",
       role: "",
       is_primary: contacts.length === 0,
-      availability: "business_hours",
+      availability: "always",
       sort_order: contacts.length,
       created_at: new Date().toISOString(),
     };
@@ -114,7 +169,66 @@ export function AssistantStep() {
     });
   };
 
+  // Voice preview
+  const playPreview = useCallback(
+    async (voiceId: string) => {
+      // Stop current playback
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (playingVoice === voiceId) {
+        setPlayingVoice(null);
+        return;
+      }
+
+      setPreviewLoading(voiceId);
+      setPlayingVoice(null);
+      try {
+        const sampleText =
+          greeting?.trim() ||
+          `Thank you for calling ${businessName}, how can I help you today?`;
+        const res = await apiFetchRaw("/api/voice/preview", {
+          method: "POST",
+          body: JSON.stringify({ voiceId, sampleText }),
+        });
+        if (!res.ok) throw new Error("Preview failed");
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audioRef.current = audio;
+        audio.onended = () => {
+          setPlayingVoice(null);
+          URL.revokeObjectURL(url);
+        };
+        audio.play();
+        setPlayingVoice(voiceId);
+      } catch {
+        // Silently fail -- preview is non-critical
+      } finally {
+        setPreviewLoading(null);
+      }
+    },
+    [playingVoice, greeting, businessName],
+  );
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
   const handleContinue = async () => {
+    // Validate contacts before submitting
+    if (contacts.length > 0) {
+      const errors = validateContacts();
+      setContactErrors(errors);
+      if (Object.keys(errors).length > 0) return;
+    }
     if (!canContinue) return;
 
     setIsSubmitting(true);
@@ -191,17 +305,12 @@ export function AssistantStep() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {VOICE_OPTIONS.map((voiceOption) => {
             const isSelected = voice === voiceOption.cartesiaId;
+            const isLoading = previewLoading === voiceOption.cartesiaId;
+            const isPlaying = playingVoice === voiceOption.cartesiaId;
 
             return (
-              <button
+              <div
                 key={voiceOption.id}
-                type="button"
-                onClick={() =>
-                  dispatch({
-                    type: "SET_ASSISTANT_DATA",
-                    payload: { voice: voiceOption.cartesiaId },
-                  })
-                }
                 className={cn(
                   "rounded-xl border p-4 text-left transition-colors",
                   isSelected
@@ -209,7 +318,16 @@ export function AssistantStep() {
                     : "border-border hover:border-muted-foreground/40",
                 )}
               >
-                <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    dispatch({
+                      type: "SET_ASSISTANT_DATA",
+                      payload: { voice: voiceOption.cartesiaId },
+                    })
+                  }
+                  className="flex w-full items-center gap-3 text-left"
+                >
                   <div
                     className={cn(
                       "flex h-12 w-12 shrink-0 items-center justify-center rounded-full",
@@ -245,8 +363,26 @@ export function AssistantStep() {
                       <Check className="h-3 w-3 text-primary-foreground" />
                     </div>
                   )}
-                </div>
-              </button>
+                </button>
+                {/* Preview play button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    playPreview(voiceOption.cartesiaId);
+                  }}
+                  className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : isPlaying ? (
+                    <Square className="h-3 w-3" />
+                  ) : (
+                    <Play className="h-3 w-3" />
+                  )}
+                  {isLoading ? "Loading..." : isPlaying ? "Stop" : "Preview"}
+                </button>
+              </div>
             );
           })}
         </div>
@@ -301,85 +437,168 @@ export function AssistantStep() {
           </button>
         ) : (
           <div className="space-y-3">
-            {contacts.map((contact, idx) => (
-              <div key={contact.id} className="rounded-lg border p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted">
-                      <Phone className="h-3.5 w-3.5" />
-                    </div>
-                    <span className="text-sm font-medium">
-                      Contact {idx + 1}
-                    </span>
-                    {contact.is_primary && (
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                        Primary
+            {contacts.map((contact, idx) => {
+              const errors = contactErrors[contact.id];
+              return (
+                <div
+                  key={contact.id}
+                  className={cn(
+                    "rounded-lg border p-4",
+                    errors ? "border-red-300 dark:border-red-800" : "",
+                  )}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted">
+                        <Phone className="h-3.5 w-3.5" />
+                      </div>
+                      <span className="text-sm font-medium">
+                        Contact {idx + 1}
                       </span>
-                    )}
+                      {contact.is_primary && (
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                          Primary
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeContact(contact.id)}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => removeContact(contact.id)}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="space-y-1">
-                    <Label htmlFor={`name-${contact.id}`} className="text-xs">
-                      Name
-                    </Label>
-                    <Input
-                      id={`name-${contact.id}`}
-                      placeholder="John Smith"
-                      value={contact.name}
-                      onChange={(e) =>
-                        updateContact(contact.id, "name", e.target.value)
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor={`phone-${contact.id}`} className="text-xs">
-                      Phone
-                    </Label>
-                    <Input
-                      id={`phone-${contact.id}`}
-                      type="tel"
-                      placeholder="(555) 123-4567"
-                      value={contact.phone}
-                      onChange={(e) =>
-                        updateContact(contact.id, "phone", e.target.value)
-                      }
-                      onBlur={(e) => {
-                        const val = e.target.value.trim();
-                        if (val) {
-                          updateContact(
-                            contact.id,
-                            "phone",
-                            normalizePhoneE164(val),
-                          );
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="space-y-1">
+                      <Label htmlFor={`name-${contact.id}`} className="text-xs">
+                        Name
+                      </Label>
+                      <Input
+                        id={`name-${contact.id}`}
+                        placeholder="John Smith"
+                        value={contact.name}
+                        onChange={(e) => {
+                          updateContact(contact.id, "name", e.target.value);
+                          if (contactErrors[contact.id]?.name) {
+                            setContactErrors((prev) => {
+                              const next = { ...prev };
+                              if (next[contact.id]) {
+                                delete next[contact.id].name;
+                                if (Object.keys(next[contact.id]).length === 0)
+                                  delete next[contact.id];
+                              }
+                              return next;
+                            });
+                          }
+                        }}
+                        className={cn(errors?.name && "border-red-400")}
+                      />
+                      {errors?.name && (
+                        <p className="text-[11px] text-red-500">
+                          {errors.name}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor={`phone-${contact.id}`}
+                        className="text-xs"
+                      >
+                        Phone
+                      </Label>
+                      <Input
+                        id={`phone-${contact.id}`}
+                        type="tel"
+                        placeholder="(555) 123-4567"
+                        value={contact.phone}
+                        onChange={(e) => {
+                          updateContact(contact.id, "phone", e.target.value);
+                          if (contactErrors[contact.id]?.phone) {
+                            setContactErrors((prev) => {
+                              const next = { ...prev };
+                              if (next[contact.id]) {
+                                delete next[contact.id].phone;
+                                if (Object.keys(next[contact.id]).length === 0)
+                                  delete next[contact.id];
+                              }
+                              return next;
+                            });
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const val = e.target.value.trim();
+                          if (val) {
+                            updateContact(
+                              contact.id,
+                              "phone",
+                              normalizePhoneE164(val),
+                            );
+                          }
+                        }}
+                        className={cn(errors?.phone && "border-red-400")}
+                      />
+                      {errors?.phone && (
+                        <p className="text-[11px] text-red-500">
+                          {errors.phone}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor={`role-${contact.id}`} className="text-xs">
+                        Department or role
+                      </Label>
+                      <Input
+                        id={`role-${contact.id}`}
+                        placeholder="Front Desk"
+                        value={contact.role || ""}
+                        onChange={(e) =>
+                          updateContact(contact.id, "role", e.target.value)
                         }
-                      }}
-                    />
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        Helps route &quot;transfer to front desk&quot; requests
+                      </p>
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <Label htmlFor={`role-${contact.id}`} className="text-xs">
-                      Role
-                    </Label>
-                    <Input
-                      id={`role-${contact.id}`}
-                      placeholder="Front Desk"
-                      value={contact.role || ""}
-                      onChange={(e) =>
-                        updateContact(contact.id, "role", e.target.value)
-                      }
-                    />
+
+                  {/* Availability selector */}
+                  <div className="mt-3 flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground">
+                      Available:
+                    </span>
+                    <div className="flex gap-2">
+                      {(
+                        [
+                          { value: "always", label: "Anytime" },
+                          {
+                            value: "business_hours",
+                            label: "Business hours",
+                          },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() =>
+                            updateContact(contact.id, "availability", opt.value)
+                          }
+                          className={cn(
+                            "rounded-full px-3 py-1 text-xs transition-colors",
+                            contact.availability === opt.value
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground hover:bg-muted/80",
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {contacts.length < 3 && (
               <Button variant="outline" size="sm" onClick={addContact}>

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { Volume2, Phone } from "lucide-react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { Volume2, Play, Square, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetchRaw } from "@/lib/api/client";
 
 // ============================================================================
 // TYPES
@@ -48,7 +49,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 // ============================================================================
 
 export function VoicePreview({
-  voiceId: _voiceId,
+  voiceId,
   voiceName,
   provider,
   speakingRate,
@@ -56,35 +57,129 @@ export function VoicePreview({
   sampleText = SAMPLE_TEXTS.default,
   compact = false,
 }: VoicePreviewProps) {
-  // voiceId kept in props for backwards compatibility
-  void _voiceId;
-  // Compact version: return null (no play button to show)
-  if (compact) {
-    return null;
-  }
+  void pitch;
+  const [loading, setLoading] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+
+  const stopPlayback = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+    setPlaying(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopPlayback();
+    };
+  }, [stopPlayback]);
+
+  const play = useCallback(async () => {
+    stopPlayback();
+    if (playing) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiFetchRaw("/api/voice/preview", {
+        method: "POST",
+        body: JSON.stringify({ voiceId, sampleText, speed: speakingRate }),
+      });
+      if (!res.ok) throw new Error("Preview failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      objectUrlRef.current = url;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => {
+        stopPlayback();
+      };
+      audio.play();
+      setPlaying(true);
+    } catch {
+      setError("Could not generate preview");
+    } finally {
+      setLoading(false);
+    }
+  }, [voiceId, sampleText, speakingRate, playing, stopPlayback]);
 
   const providerLabel = PROVIDER_LABELS[provider] || provider;
 
-  // Full version: static informational display
+  // Compact version: small play button for voice grid cards
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          play();
+        }}
+        className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+        title={`Preview ${voiceName}`}
+      >
+        {loading ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : playing ? (
+          <Square className="h-3.5 w-3.5" />
+        ) : (
+          <Play className="h-3.5 w-3.5" />
+        )}
+      </button>
+    );
+  }
+
+  // Full version: preview panel with play button
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
           <Volume2 className="h-5 w-5 text-primary" />
         </div>
-        <div>
+        <div className="flex-1">
           <div className="text-sm font-medium text-foreground">{voiceName}</div>
           <div className="text-xs text-muted-foreground">{providerLabel}</div>
         </div>
+        <button
+          type="button"
+          onClick={play}
+          disabled={loading}
+          className={cn(
+            "flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors",
+            playing
+              ? "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+              : "border-primary text-primary hover:bg-primary/5",
+          )}
+        >
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Generating...
+            </>
+          ) : playing ? (
+            <>
+              <Square className="h-4 w-4" />
+              Stop
+            </>
+          ) : (
+            <>
+              <Play className="h-4 w-4" />
+              Play Preview
+            </>
+          )}
+        </button>
       </div>
 
-      {/* Test Call Prompt */}
-      <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-4">
-        <Phone className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
-          Make a test call to hear how your agent sounds with this voice.
-        </p>
-      </div>
+      {error && <p className="text-xs text-red-500">{error}</p>}
 
       {/* Sample Text Display */}
       <div className="rounded-lg border border-border bg-card p-3">
@@ -100,10 +195,6 @@ export function VoicePreview({
           <span className="font-mono text-foreground">
             {speakingRate.toFixed(2)}x
           </span>
-        </span>
-        <span>
-          Pitch:{" "}
-          <span className="font-mono text-foreground">{pitch.toFixed(2)}</span>
         </span>
       </div>
     </div>

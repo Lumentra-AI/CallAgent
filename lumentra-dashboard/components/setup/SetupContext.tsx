@@ -20,6 +20,33 @@ import type {
 } from "@/types";
 import { get, put, post } from "@/lib/api/client";
 
+// Default Cartesia voice (Sarah)
+const DEFAULT_CARTESIA_VOICE = "694f9389-aac1-45b6-b726-9d9369183238";
+
+// Legacy friendly-ID -> Cartesia UUID mapping for tenants saved before UUIDs were used
+const LEGACY_VOICE_MAP: Record<string, string> = {
+  sarah: "694f9389-aac1-45b6-b726-9d9369183238",
+  support_lady: "829ccd10-f8b3-43cd-b8a0-4aeaa81f3b30",
+  professional_woman: "248be419-c632-4f23-adf1-5324ed7dbf1d",
+  support_man: "a167e0f3-df7e-4d52-a9c3-f949145efdab",
+  barbershop_man: "a0e99841-438c-4a64-b679-ae501e7d6091",
+  calm_lady: "00a77add-48d5-4ef6-8157-71e5437b282d",
+  female_professional: "248be419-c632-4f23-adf1-5324ed7dbf1d",
+};
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Resolve any voice identifier to a valid Cartesia UUID.
+ * Handles: already-valid UUID, legacy friendly ID, missing/invalid value.
+ */
+function resolveCartesiaVoiceId(raw: string | undefined | null): string {
+  if (!raw) return DEFAULT_CARTESIA_VOICE;
+  if (UUID_RE.test(raw)) return raw;
+  return LEGACY_VOICE_MAP[raw] ?? DEFAULT_CARTESIA_VOICE;
+}
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -159,7 +186,7 @@ const initialState: SetupState = {
   integrations: [],
   assistantData: {
     name: "",
-    voice: "female_professional",
+    voice: "694f9389-aac1-45b6-b726-9d9369183238",
     personality: "professional",
     greeting: "",
   },
@@ -349,7 +376,7 @@ interface ApiProgressResponse {
     assisted_mode?: boolean;
     agent_name?: string;
     agent_personality?: string;
-    voice_config?: { voiceId?: string };
+    voice_config?: { voiceId?: string; voice_id?: string };
     greeting_standard?: string;
     phone_config?: {
       setup_type?: PhoneSetupType;
@@ -430,7 +457,9 @@ function mapApiToState(data: ApiProgressResponse): Partial<SetupState> {
     integrations: data.data.integrations || [],
     assistantData: {
       name: data.data.agent_name || "",
-      voice: data.data.voice_config?.voiceId || "female_professional",
+      voice: resolveCartesiaVoiceId(
+        data.data.voice_config?.voiceId ?? data.data.voice_config?.voice_id,
+      ),
       personality: (() => {
         const raw = data.data.agent_personality;
         // DB stores JSONB {tone: "professional", ...} -- extract tone string
@@ -513,7 +542,11 @@ function getStepData(
       return {
         agent_name: state.assistantData.name,
         agent_personality: state.assistantData.personality,
-        voice_config: { voiceId: state.assistantData.voice },
+        voice_config: {
+          voiceId: state.assistantData.voice,
+          voice_id: state.assistantData.voice,
+          provider: "cartesia",
+        },
         greeting_standard: state.assistantData.greeting || null,
         // Include escalation data since it's now part of this step
         escalation_enabled: state.escalationData.contacts.length > 0,

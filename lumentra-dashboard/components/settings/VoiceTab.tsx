@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useConfig } from "@/context/ConfigContext";
 import { useTenantConfig } from "@/hooks/useTenantConfig";
 import {
@@ -185,31 +185,74 @@ export default function VoiceTab() {
     "Hello! Thank you for calling. How can I assist you today?",
   );
 
-  // Derive voice config from tenant, with sensible defaults
-  const voiceConfig = tenant?.voice_config ?? DEFAULT_VOICE_CONFIG;
-  const provider = voiceConfig.provider;
-  const voiceId = voiceConfig.voice_id;
-  const voiceName = voiceConfig.voice_name;
-  const speakingRate = voiceConfig.speaking_rate ?? 1.0;
-  const pitch = voiceConfig.pitch ?? 1.0;
+  // Derive voice config from tenant, with sensible defaults.
+  // IMPORTANT: Only Cartesia is active in the live agent. Force provider to
+  // cartesia regardless of what's saved -- this auto-heals legacy tenants
+  // that were saved with openai or elevenlabs before those were disabled.
+  const rawConfig = tenant?.voice_config ?? DEFAULT_VOICE_CONFIG;
+  const provider = "cartesia" as const;
 
-  const availableVoices = VOICES[provider] || [];
+  // Read voice ID from either key shape (setup writes voiceId, settings writes voice_id)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawVoiceId = rawConfig.voice_id ?? (rawConfig as any).voiceId ?? null;
+  const isValidCartesiaId =
+    rawVoiceId && VOICES.cartesia.some((v) => v.id === rawVoiceId);
+  const voiceId = isValidCartesiaId
+    ? rawVoiceId
+    : DEFAULT_VOICE_CONFIG.voice_id;
+  const voiceName =
+    VOICES.cartesia.find((v) => v.id === voiceId)?.name ??
+    DEFAULT_VOICE_CONFIG.voice_name;
+  const speakingRate = rawConfig.speaking_rate ?? 1.0;
+
+  const availableVoices = VOICES[provider];
+
+  // Auto-heal: persist correction if provider isn't cartesia, voice_id key is
+  // missing/invalid, or the canonical snake_case shape is absent.
+  const needsHeal =
+    rawConfig.provider !== "cartesia" ||
+    !isValidCartesiaId ||
+    rawConfig.voice_id !== voiceId;
+  const healedRef = useRef(false);
+  useEffect(() => {
+    if (needsHeal && !healedRef.current && tenant) {
+      healedRef.current = true;
+      updateSettings({
+        voice_config: {
+          provider: "cartesia",
+          voice_id: voiceId,
+          voiceId: voiceId,
+          voice_name: voiceName,
+          speaking_rate: speakingRate,
+          pitch: 1.0,
+        },
+      });
+    }
+  }, [needsHeal, tenant, voiceId, voiceName, speakingRate, updateSettings]);
 
   // Helper to update voice config via the unified hook
   const updateVoice = useCallback(
     (
       updates: Partial<{
-        provider: "openai" | "elevenlabs" | "cartesia";
         voice_id: string;
         voice_name: string;
         speaking_rate: number;
-        pitch: number;
       }>,
     ) => {
-      const newConfig = { ...voiceConfig, ...updates };
+      const current = {
+        provider: "cartesia" as const,
+        voice_id: voiceId,
+        voiceId: voiceId,
+        voice_name: voiceName,
+        speaking_rate: speakingRate,
+        pitch: 1.0,
+      };
+      const newConfig = { ...current, ...updates };
+      // Keep both key shapes in sync
+      if (updates.voice_id) newConfig.voiceId = updates.voice_id;
       updateSettings({ voice_config: newConfig });
     },
-    [voiceConfig, updateSettings],
+    [voiceId, voiceName, speakingRate, updateSettings],
   );
 
   if (!tenant) return null;
@@ -276,6 +319,8 @@ export default function VoiceTab() {
       {/* ================================================================== */}
       {/* PLATFORM ADMIN SECTION: Voice Provider Infrastructure              */}
       {/* Only visible to platform admins - controls backend voice API       */}
+      {/* NOTE: Only Cartesia is wired to the live agent runtime today.      */}
+      {/* OpenAI/ElevenLabs are saved in config but NOT used by the agent.   */}
       {/* ================================================================== */}
       {canManageVoiceProviders && (
         <section className="space-y-4">
@@ -289,31 +334,28 @@ export default function VoiceTab() {
             </span>
           </div>
           <p className="text-xs text-muted-foreground">
-            Backend infrastructure setting. Determines which voice API is used.
+            Backend infrastructure setting. Only Cartesia is active in the live
+            agent today. Other providers are planned but not yet wired to
+            runtime.
           </p>
 
           <div className="grid gap-3 sm:grid-cols-3">
             {VOICE_PROVIDERS.map((p) => {
               const isSelected = provider === p.value;
+              const isActive = p.value === "cartesia";
               return (
-                <button
+                <div
                   key={p.value}
-                  type="button"
-                  onClick={() =>
-                    updateVoice({
-                      provider: p.value,
-                      voice_id: VOICES[p.value][0]?.id || "",
-                      voice_name: VOICES[p.value][0]?.name || "",
-                    })
-                  }
                   className={cn(
                     "relative rounded-xl border p-4 text-left transition-all",
-                    isSelected
+                    isActive && isSelected
                       ? "border-amber-500/50 bg-amber-500/5 shadow-sm"
-                      : "border-border bg-card hover:border-amber-500/30 hover:bg-muted/50",
+                      : isActive
+                        ? "border-border bg-card"
+                        : "cursor-not-allowed border-border bg-muted/30 opacity-50",
                   )}
                 >
-                  {isSelected && (
+                  {isActive && isSelected && (
                     <div className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500">
                       <Check className="h-3 w-3 text-white" />
                     </div>
@@ -324,7 +366,12 @@ export default function VoiceTab() {
                   <div className="mt-1 text-xs text-muted-foreground">
                     {p.description}
                   </div>
-                </button>
+                  {!isActive && (
+                    <div className="mt-1 text-[10px] font-medium text-amber-500">
+                      Coming soon
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -378,21 +425,31 @@ export default function VoiceTab() {
               {availableVoices.map((voice) => {
                 const isSelected = voiceId === voice.id;
                 return (
-                  <button
+                  <div
                     key={voice.id}
-                    type="button"
+                    className={cn(
+                      "group relative flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all cursor-pointer",
+                      isSelected
+                        ? "border-primary bg-primary/5 shadow-sm"
+                        : "border-border bg-card hover:border-primary/50 hover:bg-muted/50",
+                    )}
+                    role="button"
+                    tabIndex={0}
                     onClick={() =>
                       updateVoice({
                         voice_id: voice.id,
                         voice_name: voice.name,
                       })
                     }
-                    className={cn(
-                      "group relative flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all",
-                      isSelected
-                        ? "border-primary bg-primary/5 shadow-sm"
-                        : "border-border bg-card hover:border-primary/50 hover:bg-muted/50",
-                    )}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        updateVoice({
+                          voice_id: voice.id,
+                          voice_name: voice.name,
+                        });
+                      }
+                    }}
                   >
                     <div
                       className={cn(
@@ -431,17 +488,17 @@ export default function VoiceTab() {
                       </div>
                     )}
 
-                    {/* Play Preview Button */}
+                    {/* Play Preview Button -- sibling, not nested button */}
                     <VoicePreview
                       voiceId={voice.id}
                       voiceName={voice.name}
                       provider={provider}
                       speakingRate={speakingRate}
-                      pitch={pitch}
+                      pitch={1.0}
                       sampleText={sampleText}
                       compact
                     />
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -467,7 +524,7 @@ export default function VoiceTab() {
               voiceName={voiceName}
               provider={provider}
               speakingRate={speakingRate}
-              pitch={pitch}
+              pitch={1.0}
               sampleText={sampleText}
             />
           </section>
@@ -524,59 +581,18 @@ export default function VoiceTab() {
               </div>
             </div>
 
-            {/* Pitch */}
-            <div className="space-y-4 border-t border-border pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-medium text-foreground">
-                    Pitch
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Voice pitch adjustment
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-1">
-                  <span className="font-mono text-sm font-medium text-foreground">
-                    {pitch.toFixed(2)}
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <input
-                  type="range"
-                  min="0.8"
-                  max="1.2"
-                  step="0.05"
-                  value={pitch}
-                  onChange={(e) =>
-                    updateVoice({
-                      pitch: parseFloat(e.target.value),
-                    })
-                  }
-                  className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-muted accent-primary"
-                />
-                <div className="flex justify-between text-[10px] text-muted-foreground">
-                  <span>Lower</span>
-                  <span>Natural</span>
-                  <span>Higher</span>
-                </div>
-              </div>
-            </div>
-
             {/* Reset to Defaults */}
-            <div className="border-t border-border pt-4">
+            <div className="border-t border-border pt-6">
               <button
                 type="button"
                 onClick={() =>
                   updateVoice({
                     speaking_rate: 1.0,
-                    pitch: 1.0,
                   })
                 }
                 className="text-sm text-muted-foreground hover:text-foreground hover:underline"
               >
-                Reset to defaults
+                Reset to default speed
               </button>
             </div>
           </section>

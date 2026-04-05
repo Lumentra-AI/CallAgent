@@ -178,6 +178,26 @@ export function post<T>(endpoint: string, data?: unknown): Promise<T> {
 }
 
 /**
+ * Raw fetch with auth headers -- for binary responses (audio, files).
+ * Returns the raw Response object instead of parsing JSON.
+ */
+export async function apiFetchRaw(
+  endpoint: string,
+  options?: RequestInit,
+): Promise<Response> {
+  const url = `${API_BASE}${endpoint}`;
+  const token = await getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string>),
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (currentTenantId) headers["X-Tenant-ID"] = currentTenantId;
+
+  return fetch(url, { ...options, headers });
+}
+
+/**
  * PUT request helper
  */
 export function put<T>(endpoint: string, data?: unknown): Promise<T> {

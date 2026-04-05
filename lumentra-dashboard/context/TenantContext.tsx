@@ -35,6 +35,7 @@ export interface TenantDetails extends TenantListItem {
   voice_config?: {
     provider: "openai" | "elevenlabs" | "cartesia";
     voice_id: string;
+    voiceId?: string;
     voice_name: string;
     speaking_rate: number;
     pitch: number;
