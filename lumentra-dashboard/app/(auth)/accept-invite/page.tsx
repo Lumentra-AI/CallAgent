@@ -22,7 +22,9 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
   (process.env.NODE_ENV === "production" ? "" : "http://localhost:3100");
 
-async function callAcceptInvite(accessToken: string): Promise<boolean> {
+type AcceptResult = "accepted" | "already_accepted" | "failed";
+
+async function callAcceptInvite(accessToken: string): Promise<AcceptResult> {
   try {
     const res = await fetch(`${API_BASE}/api/team/accept-invite`, {
       method: "POST",
@@ -31,9 +33,11 @@ async function callAcceptInvite(accessToken: string): Promise<boolean> {
         Authorization: `Bearer ${accessToken}`,
       },
     });
-    return res.ok;
+    if (!res.ok) return "failed";
+    const data = await res.json();
+    return data.already_accepted ? "already_accepted" : "accepted";
   } catch {
-    return false;
+    return "failed";
   }
 }
 
@@ -79,14 +83,14 @@ export default function AcceptInvitePage() {
       // For existing users, auto-accept and redirect immediately
       if (isExistingUser) {
         setIsAccepting(true);
-        const accepted = await callAcceptInvite(session.access_token);
-        if (accepted) {
+        const result = await callAcceptInvite(session.access_token);
+        if (result === "accepted" || result === "already_accepted") {
           setSuccess(true);
           setTimeout(() => router.push("/dashboard"), 1500);
         } else {
-          // Accept failed but session is valid -- redirect anyway
-          // (invite may have already been accepted)
-          router.push("/dashboard");
+          // Real failure -- show retry UI
+          setIsAccepting(false);
+          setError("Could not accept the invite. Please try again.");
         }
       }
     };
@@ -152,6 +156,55 @@ export default function AcceptInvitePage() {
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Existing user: accept failed -- show retry UI instead of password form
+  if (isExistingUser && isValidSession && error && !success) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-4">
+        <AuthCard className="text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+            <AlertCircle className="h-6 w-6 text-destructive" />
+          </div>
+          <h1 className="text-2xl font-bold text-foreground">
+            Something went wrong
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+          <Button
+            className="mt-6 w-full"
+            onClick={() => {
+              setError("");
+              setIsAccepting(true);
+              const supabase = createClient();
+              if (!supabase) return;
+              supabase.auth.getSession().then(({ data: { session } }) => {
+                if (!session) {
+                  setIsAccepting(false);
+                  setIsValidSession(false);
+                  return;
+                }
+                callAcceptInvite(session.access_token).then((result) => {
+                  if (result === "accepted" || result === "already_accepted") {
+                    setSuccess(true);
+                    setTimeout(() => router.push("/dashboard"), 1500);
+                  } else {
+                    setIsAccepting(false);
+                    setError("Could not accept the invite. Please try again.");
+                  }
+                });
+              });
+            }}
+          >
+            Try again
+          </Button>
+          <Link href="/dashboard">
+            <Button variant="ghost" className="mt-2 w-full">
+              Go to dashboard
+            </Button>
+          </Link>
+        </AuthCard>
       </div>
     );
   }

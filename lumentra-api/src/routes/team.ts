@@ -423,7 +423,8 @@ teamRoutes.post("/accept-invite", async (c) => {
     );
 
     if (!pending || pending.length === 0) {
-      return c.json({ error: "No pending invites found" }, 404);
+      // Idempotent: no pending invites means already accepted or none exist
+      return c.json({ accepted_tenants: [], count: 0, already_accepted: true });
     }
 
     const now = new Date().toISOString();
