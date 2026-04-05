@@ -24,11 +24,6 @@ import type {
   IntegrationStatus,
 } from "@/types";
 
-// Aceternity & MagicUI components
-import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
-import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShineBorder } from "@/components/magicui/shine-border";
-
 interface IntegrationOption {
   id: IntegrationProvider;
   name: string;
@@ -388,13 +383,7 @@ export default function IntegrationsSettingsPage() {
 
       {/* Current Mode */}
       <div>
-        <ShineBorder
-          borderRadius={12}
-          borderWidth={2}
-          duration={8}
-          color={integrationMode === "external" ? "#22c55e" : "#6366f1"}
-          className="w-full min-w-full bg-card p-0"
-        >
+        <div className="rounded-xl border-2 border-primary/30 bg-card p-0">
           <div className="p-6">
             <div className="flex items-center gap-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
@@ -408,7 +397,7 @@ export default function IntegrationsSettingsPage() {
               </div>
             </div>
           </div>
-        </ShineBorder>
+        </div>
       </div>
 
       {/* Connected Integrations */}

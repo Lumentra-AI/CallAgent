@@ -17,7 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ShineBorder } from "@/components/magicui/shine-border";
+
 import type { PendingBooking, BookingStatus } from "@/types";
 
 interface PendingBookingCardProps {
@@ -146,16 +146,9 @@ export function PendingBookingCard({
     }
   };
 
-  const CardWrapper = isPending ? ShineBorder : "div";
-  const wrapperProps = isPending
-    ? {
-        borderRadius: 12,
-        borderWidth: 1,
-        duration: 10,
-        color: ["#fbbf24", "#f59e0b", "#fbbf24"],
-        className: "w-full min-w-0",
-      }
-    : { className: cn("rounded-xl border bg-card", className) };
+  const wrapperClassName = isPending
+    ? "rounded-xl border-2 border-amber-400/50 bg-card"
+    : cn("rounded-xl border bg-card", className);
 
   return (
     <motion.div
@@ -166,7 +159,7 @@ export function PendingBookingCard({
       transition={{ duration: 0.2 }}
       className={cn("w-full", className)}
     >
-      <CardWrapper {...(wrapperProps as Record<string, unknown>)}>
+      <div className={wrapperClassName}>
         <div
           className={cn(
             "rounded-xl border bg-card overflow-hidden",
@@ -321,7 +314,7 @@ export function PendingBookingCard({
             </div>
           )}
         </div>
-      </CardWrapper>
+      </div>
     </motion.div>
   );
 }

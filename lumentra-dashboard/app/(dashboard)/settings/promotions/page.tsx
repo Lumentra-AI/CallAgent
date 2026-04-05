@@ -24,12 +24,6 @@ import {
 import Link from "next/link";
 import type { TenantPromotion, MentionBehavior } from "@/types";
 
-// Aceternity & MagicUI components
-import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
-import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShimmerButton } from "@/components/magicui/shimmer-button";
-import { ShineBorder } from "@/components/magicui/shine-border";
-
 const MENTION_BEHAVIOR_OPTIONS: {
   value: MentionBehavior;
   label: string;
@@ -213,13 +207,7 @@ export default function PromotionsSettingsPage() {
       {/* New Promotion Form */}
       {showNewForm && (
         <div>
-          <ShineBorder
-            borderRadius={12}
-            borderWidth={2}
-            duration={8}
-            color={["#6366f1", "#8b5cf6", "#a855f7"]}
-            className="w-full min-w-full bg-card p-0"
-          >
+          <div className="rounded-xl border-2 border-primary/30 bg-card p-0">
             <div className="space-y-4 p-6">
               <div className="flex items-center justify-between">
                 <Label className="text-base font-semibold">New Promotion</Label>
@@ -338,20 +326,16 @@ export default function PromotionsSettingsPage() {
                 >
                   Cancel
                 </Button>
-                <ShimmerButton
+                <Button
                   onClick={handleCreatePromotion}
                   disabled={!newPromotion.offer_text.trim() || isSaving}
-                  shimmerColor="#ffffff"
-                  shimmerSize="0.05em"
-                  borderRadius="8px"
-                  background="hsl(var(--primary))"
-                  className="px-6 py-2 text-sm font-medium"
+                  className="px-6"
                 >
                   {isSaving ? "Creating..." : "Create Promotion"}
-                </ShimmerButton>
+                </Button>
               </div>
             </div>
-          </ShineBorder>
+          </div>
         </div>
       )}
 

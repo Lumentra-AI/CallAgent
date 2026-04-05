@@ -26,11 +26,6 @@ import type {
   ContactAvailability,
 } from "@/types";
 
-// Aceternity & MagicUI components
-import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
-import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShimmerButton } from "@/components/magicui/shimmer-button";
-
 const DEFAULT_TRIGGERS = [
   { id: "caller_asks_for_person", label: "Caller asks for a person" },
   { id: "caller_frustrated", label: "Caller sounds frustrated or angry" },
@@ -706,17 +701,9 @@ export default function EscalationSettingsPage() {
 
       {/* Save button */}
       <div className="flex justify-end pt-4">
-        <ShimmerButton
-          onClick={handleSave}
-          disabled={isSaving}
-          shimmerColor="#ffffff"
-          shimmerSize="0.05em"
-          borderRadius="8px"
-          background="hsl(var(--primary))"
-          className="px-8 py-3 text-sm font-medium"
-        >
+        <Button onClick={handleSave} disabled={isSaving} className="px-8">
           {isSaving ? "Saving..." : "Save Changes"}
-        </ShimmerButton>
+        </Button>
       </div>
     </div>
   );

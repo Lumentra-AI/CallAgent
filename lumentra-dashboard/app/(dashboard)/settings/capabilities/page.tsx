@@ -26,13 +26,6 @@ import Link from "next/link";
 import { INDUSTRY_PRESETS } from "@/lib/industryPresets";
 import type { CapabilityOption, TenantCapability } from "@/types";
 
-// Aceternity & MagicUI components
-import { BentoGrid, BentoGridItem } from "@/components/aceternity/bento-grid";
-import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
-import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShimmerButton } from "@/components/magicui/shimmer-button";
-import { ShineBorder } from "@/components/magicui/shine-border";
-
 const CAPABILITY_ICONS: Record<string, React.ElementType> = {
   appointments: CalendarCheck,
   reservations: CalendarCheck,
@@ -338,13 +331,7 @@ export default function CapabilitiesSettingsPage() {
       {/* Selection summary */}
       {capabilities.length > 0 && (
         <div>
-          <ShineBorder
-            borderRadius={12}
-            borderWidth={1}
-            duration={12}
-            color="#22c55e"
-            className="w-full min-w-full bg-muted/30 p-4"
-          >
+          <div className="rounded-xl border border-green-500/30 bg-muted/30 p-4">
             <p className="text-sm">
               <span className="font-bold text-primary">
                 {capabilities.length}
@@ -360,7 +347,7 @@ export default function CapabilitiesSettingsPage() {
                 .filter(Boolean)
                 .join(", ")}
             </p>
-          </ShineBorder>
+          </div>
         </div>
       )}
 
@@ -379,24 +366,13 @@ export default function CapabilitiesSettingsPage() {
 
       {/* Save button */}
       <div className="flex justify-end pt-4">
-        <ShimmerButton
+        <Button
           onClick={handleSave}
           disabled={isSaving || capabilities.length === 0}
-          shimmerColor="#ffffff"
-          shimmerSize="0.05em"
-          borderRadius="8px"
-          background={
-            capabilities.length > 0
-              ? "hsl(var(--primary))"
-              : "hsl(var(--muted))"
-          }
-          className={cn(
-            "px-8 py-3 text-sm font-medium",
-            capabilities.length === 0 && "cursor-not-allowed opacity-50",
-          )}
+          className="px-8"
         >
           {isSaving ? "Saving..." : "Save Changes"}
-        </ShimmerButton>
+        </Button>
       </div>
     </div>
   );

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { motion } from "framer-motion";
 import {
   Calendar,
   Clock,
@@ -16,7 +15,6 @@ import { useIndustry } from "@/context/IndustryContext";
 import { get, put } from "@/lib/api/client";
 import { PendingBookingsList } from "@/components/pending";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
 import type { PendingBooking, BookingStatus } from "@/types";
 
 interface PendingBookingsResponse {
@@ -149,11 +147,9 @@ export default function PendingBookingsPage() {
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <TextGenerateEffect
-              words={`Pending ${transactionPluralLabel}`}
-              className="text-2xl md:text-3xl text-foreground"
-              duration={0.3}
-            />
+            <h1 className="text-2xl md:text-3xl font-semibold text-foreground">
+              Pending {transactionPluralLabel}
+            </h1>
             <p className="text-sm text-muted-foreground mt-1">
               Review and confirm {transactionLabel.toLowerCase()} requests from
               callers
@@ -173,11 +169,7 @@ export default function PendingBookingsPage() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-xl border border-border bg-card p-4"
-          >
+          <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/10">
                 <Clock className="h-5 w-5 text-amber-500" />
@@ -189,14 +181,9 @@ export default function PendingBookingsPage() {
                 <p className="text-xs text-muted-foreground">Pending</p>
               </div>
             </div>
-          </motion.div>
+          </div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-            className="rounded-xl border border-border bg-card p-4"
-          >
+          <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/10">
                 <CheckCircle2 className="h-5 w-5 text-green-500" />
@@ -208,14 +195,9 @@ export default function PendingBookingsPage() {
                 <p className="text-xs text-muted-foreground">Confirmed</p>
               </div>
             </div>
-          </motion.div>
+          </div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="rounded-xl border border-border bg-card p-4"
-          >
+          <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/10">
                 <XCircle className="h-5 w-5 text-red-500" />
@@ -227,14 +209,9 @@ export default function PendingBookingsPage() {
                 <p className="text-xs text-muted-foreground">Rejected</p>
               </div>
             </div>
-          </motion.div>
+          </div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="rounded-xl border border-border bg-card p-4"
-          >
+          <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500/10">
                 <Calendar className="h-5 w-5 text-blue-500" />
@@ -246,18 +223,14 @@ export default function PendingBookingsPage() {
                 <p className="text-xs text-muted-foreground">Today</p>
               </div>
             </div>
-          </motion.div>
+          </div>
         </div>
 
         {/* Error state */}
         {error && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-4"
-          >
+          <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-4">
             <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-          </motion.div>
+          </div>
         )}
 
         {/* Tabs and content */}

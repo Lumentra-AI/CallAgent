@@ -9,10 +9,7 @@ import { cn } from "@/lib/utils";
 import { ArrowLeft, Clock, Loader2 } from "lucide-react";
 import Link from "next/link";
 
-// Aceternity & MagicUI components
-import { TextGenerateEffect } from "@/components/aceternity/text-generate-effect";
-import { SpotlightNew } from "@/components/aceternity/spotlight";
-import { ShimmerButton } from "@/components/magicui/shimmer-button";
+import { Button } from "@/components/ui/button";
 
 const DAYS = [
   { key: "monday", label: "Monday", short: "Mon" },
@@ -592,20 +589,13 @@ export default function HoursSettingsPage() {
 
       {/* Save button */}
       <div className="flex justify-end pt-4">
-        <ShimmerButton
+        <Button
           onClick={handleSave}
           disabled={!canSave || isSaving}
-          shimmerColor="#ffffff"
-          shimmerSize="0.05em"
-          borderRadius="8px"
-          background={canSave ? "hsl(var(--primary))" : "hsl(var(--muted))"}
-          className={cn(
-            "px-8 py-3 text-sm font-medium",
-            !canSave && "cursor-not-allowed opacity-50",
-          )}
+          className="px-8"
         >
           {isSaving ? "Saving..." : "Save Changes"}
-        </ShimmerButton>
+        </Button>
       </div>
     </div>
   );
