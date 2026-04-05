@@ -40,7 +40,7 @@ escalationEventsRoutes.get("/", async (c) => {
 
   // Resolve tenant
   const membership = await queryOne<{ tenant_id: string }>(
-    "SELECT tenant_id FROM tenant_members WHERE user_id = $1 AND is_active = true LIMIT 1",
+    "SELECT tenant_id FROM tenant_members WHERE user_id = $1 AND is_active = true AND accepted_at IS NOT NULL LIMIT 1",
     [user.id],
   );
 

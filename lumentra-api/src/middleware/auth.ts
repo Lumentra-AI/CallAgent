@@ -57,7 +57,7 @@ function getAuthClient(): SupabaseClient {
 // Service client for database operations (uses service role key)
 let serviceClient: SupabaseClient | null = null;
 
-function getServiceClient(): SupabaseClient {
+export function getServiceClient(): SupabaseClient {
   if (!serviceClient) {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -100,6 +100,7 @@ async function verifyTenantAccess(
     .eq("user_id", userId)
     .eq("tenant_id", tenantId)
     .eq("is_active", true)
+    .not("accepted_at", "is", null)
     .single();
 
   if (error || !data) {

@@ -31,6 +31,7 @@ import { tasksRoutes } from "./routes/tasks.js";
 import { featuresRoutes } from "./routes/features.js";
 import { teamRoutes } from "./routes/team.js";
 import { activityRoutes } from "./routes/activity.js";
+import { voiceRoutes } from "./routes/voice.js";
 import { internalRoutes } from "./routes/internal.js";
 import { adminRoutes } from "./routes/admin.js";
 import { adminAnalyticsRoutes } from "./routes/admin-analytics.js";
@@ -166,6 +167,9 @@ export function createApp() {
   app.use("/api/tenants", userAuthMiddleware());
   app.use("/api/tenants/*", userAuthMiddleware());
 
+  // Accept-invite uses user-only auth (no X-Tenant-ID required)
+  app.use("/api/team/accept-invite", userAuthMiddleware());
+
   // Full auth (requires X-Tenant-ID) for all other API routes
   app.use("/api/*", authMiddleware());
   app.use("/api/*", tenantRateLimit(300, "tenant-api"));
@@ -196,6 +200,7 @@ export function createApp() {
   app.route("/api/knowledge-base", knowledgeBaseRoutes);
   app.route("/api/team", teamRoutes);
   app.route("/api/activity", activityRoutes);
+  app.route("/api/voice", voiceRoutes);
 
   // Root
   app.get("/", (c) => {

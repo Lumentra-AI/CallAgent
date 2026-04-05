@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -18,13 +18,36 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:3100");
+
+async function callAcceptInvite(accessToken: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/api/team/accept-invite`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export default function AcceptInvitePage() {
+  const searchParams = useSearchParams();
+  const isExistingUser = searchParams.get("existing") === "1";
+
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isValidSession, setIsValidSession] = useState<boolean | null>(null);
+  const [isAccepting, setIsAccepting] = useState(false);
   const router = useRouter();
   const passwordValidation = validatePassword(password);
   const passwordsMatch = password === confirmPassword;
@@ -45,11 +68,31 @@ export default function AcceptInvitePage() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      setIsValidSession(!!session);
+
+      if (!session) {
+        setIsValidSession(false);
+        return;
+      }
+
+      setIsValidSession(true);
+
+      // For existing users, auto-accept and redirect immediately
+      if (isExistingUser) {
+        setIsAccepting(true);
+        const accepted = await callAcceptInvite(session.access_token);
+        if (accepted) {
+          setSuccess(true);
+          setTimeout(() => router.push("/dashboard"), 1500);
+        } else {
+          // Accept failed but session is valid -- redirect anyway
+          // (invite may have already been accepted)
+          router.push("/dashboard");
+        }
+      }
     };
 
     checkSession();
-  }, []);
+  }, [isExistingUser, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,19 +122,33 @@ export default function AcceptInvitePage() {
 
     const { error } = await supabase.auth.updateUser({ password });
 
-    setIsLoading(false);
-
     if (error) {
+      setIsLoading(false);
       setError(error.message);
-    } else {
-      setSuccess(true);
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 2000);
+      return;
     }
+
+    // Stamp accepted_at on pending membership(s)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await callAcceptInvite(session.access_token);
+      }
+    } catch {
+      console.warn("Failed to call accept-invite endpoint");
+    }
+
+    setIsLoading(false);
+    setSuccess(true);
+    setTimeout(() => {
+      router.push("/dashboard");
+    }, 2000);
   };
 
-  if (isValidSession === null) {
+  // Loading state
+  if (isValidSession === null || isAccepting) {
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -99,7 +156,29 @@ export default function AcceptInvitePage() {
     );
   }
 
+  // No session -- different messages for existing vs new users
   if (!isValidSession) {
+    if (isExistingUser) {
+      return (
+        <div className="flex min-h-screen items-center justify-center p-4">
+          <AuthCard className="text-center">
+            <div className="flex justify-center mb-4">
+              <AuthLogo />
+            </div>
+            <h1 className="text-2xl font-bold text-foreground">
+              Accept your invite
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Sign in to accept your team invitation and access the dashboard.
+            </p>
+            <Link href="/login?redirect=/accept-invite%3Fexisting%3D1">
+              <Button className="mt-6 w-full">Sign in to accept</Button>
+            </Link>
+          </AuthCard>
+        </div>
+      );
+    }
+
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
         <AuthCard className="text-center">
@@ -133,7 +212,9 @@ export default function AcceptInvitePage() {
           </div>
           <h1 className="text-2xl font-bold text-foreground">All set</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Your password has been set. Taking you to the dashboard...
+            {isExistingUser
+              ? "Invite accepted. Taking you to the dashboard..."
+              : "Your password has been set. Taking you to the dashboard..."}
           </p>
           <Link href="/dashboard">
             <Button className="mt-6 w-full">Go to dashboard</Button>
@@ -143,6 +224,7 @@ export default function AcceptInvitePage() {
     );
   }
 
+  // Password form -- only shown for new users (not existing user flow)
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       <AuthCard>

@@ -76,7 +76,7 @@ tenantsRoutes.get("/", async (c) => {
         tm.role
       FROM tenant_members tm
       JOIN tenants t ON tm.tenant_id = t.id
-      WHERE tm.user_id = $1 AND tm.is_active = true`,
+      WHERE tm.user_id = $1 AND tm.is_active = true AND tm.accepted_at IS NOT NULL`,
       [userId],
     );
 
@@ -123,10 +123,10 @@ tenantsRoutes.get("/:id", async (c) => {
   const userId = getAuthUserId(c);
 
   try {
-    // Verify user has access to this tenant
+    // Verify user has access to this tenant (pending invites don't count)
     const membership = await queryOne<{ role: string }>(
       `SELECT role FROM tenant_members
-       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true`,
+       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true AND accepted_at IS NOT NULL`,
       [userId, id],
     );
 
@@ -317,7 +317,7 @@ tenantsRoutes.put(
       // Verify user is owner or admin
       const membership = await queryOne<{ role: string }>(
         `SELECT role FROM tenant_members
-       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true`,
+       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true AND accepted_at IS NOT NULL`,
         [userId, id],
       );
 
@@ -390,7 +390,7 @@ tenantsRoutes.delete("/:id", requireRole("owner"), async (c) => {
     // Verify user is owner
     const membership = await queryOne<{ role: string }>(
       `SELECT role FROM tenant_members
-       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true`,
+       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true AND accepted_at IS NOT NULL`,
       [userId, id],
     );
 
@@ -434,7 +434,7 @@ tenantsRoutes.put("/:id/phone", requireRole("owner"), async (c) => {
     // Verify user is owner
     const membership = await queryOne<{ role: string }>(
       `SELECT role FROM tenant_members
-       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true`,
+       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true AND accepted_at IS NOT NULL`,
       [userId, id],
     );
 
@@ -509,7 +509,7 @@ tenantsRoutes.post("/:id/members", async (c) => {
     // Verify user is owner or admin
     const membership = await queryOne<{ role: string }>(
       `SELECT role FROM tenant_members
-       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true`,
+       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true AND accepted_at IS NOT NULL`,
       [userId, tenantId],
     );
 
@@ -573,7 +573,7 @@ tenantsRoutes.get("/:id/members", async (c) => {
     // Verify user has access
     const membership = await queryOne<{ role: string }>(
       `SELECT role FROM tenant_members
-       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true`,
+       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true AND accepted_at IS NOT NULL`,
       [userId, tenantId],
     );
 
@@ -616,7 +616,7 @@ tenantsRoutes.delete("/:id/members/:memberId", async (c) => {
     // Verify user is owner or admin
     const membership = await queryOne<{ role: string }>(
       `SELECT role FROM tenant_members
-       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true`,
+       WHERE user_id = $1 AND tenant_id = $2 AND is_active = true AND accepted_at IS NOT NULL`,
       [userId, tenantId],
     );
 

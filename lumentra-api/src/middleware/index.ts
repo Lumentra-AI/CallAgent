@@ -12,6 +12,7 @@ export {
   getAuthUserId,
   getAuthContext,
   getPlatformAdminContext,
+  getServiceClient,
   type AuthContext,
   type PlatformAdminContext,
 } from "./auth.js";
