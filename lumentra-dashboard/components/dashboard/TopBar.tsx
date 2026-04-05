@@ -4,14 +4,23 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { useConfig } from "@/context/ConfigContext";
 import { useAuth } from "@/context/AuthContext";
-import { Clock, User, Settings, LogOut, ChevronDown } from "lucide-react";
+import {
+  Clock,
+  User,
+  Settings,
+  LogOut,
+  ChevronDown,
+  Moon,
+  Sun,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
+import { useTheme } from "@/context/ThemeContext";
 
 export default function TopBar() {
   const router = useRouter();
   const { config } = useConfig();
   const { user, signOut } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [currentTime, setCurrentTime] = React.useState(new Date());
   const [showUserMenu, setShowUserMenu] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -54,7 +63,17 @@ export default function TopBar() {
       {/* Right: Time, Theme, User */}
       <div className="flex items-center gap-2 sm:gap-4">
         {/* Theme Toggle */}
-        <AnimatedThemeToggler size={20} />
+        <button
+          onClick={toggleTheme}
+          className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-accent"
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+        >
+          {theme === "dark" ? (
+            <Moon className="h-4.5 w-4.5 text-indigo-300" />
+          ) : (
+            <Sun className="h-4.5 w-4.5 text-amber-500" />
+          )}
+        </button>
 
         {/* Time */}
         <div className="hidden sm:flex items-center gap-1.5 text-muted-foreground">
