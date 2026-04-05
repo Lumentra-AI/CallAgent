@@ -88,13 +88,13 @@ export function TopBar({
         {mounted && (
           <button
             onClick={toggleTheme}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-accent"
             aria-label="Toggle theme"
           >
             {theme === "dark" ? (
-              <Moon className="h-5 w-5" />
+              <Moon className="h-5 w-5 text-indigo-300" />
             ) : (
-              <Sun className="h-5 w-5" />
+              <Sun className="h-5 w-5 text-amber-500" />
             )}
           </button>
         )}
