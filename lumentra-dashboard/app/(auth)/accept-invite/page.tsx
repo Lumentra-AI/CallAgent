@@ -86,7 +86,13 @@ export default function AcceptInvitePage() {
       setIsValidSession(true);
 
       // For existing users, auto-accept and redirect immediately
-      if (isExistingUser && tenantId) {
+      if (isExistingUser) {
+        if (!tenantId) {
+          setError(
+            "This invite link is incomplete. Please ask your administrator to resend the invitation.",
+          );
+          return;
+        }
         setIsAccepting(true);
         const result = await callAcceptInvite(session.access_token, tenantId);
         if (result === "accepted" || result === "already_accepted") {
@@ -160,20 +166,29 @@ export default function AcceptInvitePage() {
     }
 
     // Accept the specific tenant invite
-    if (tenantId) {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    if (!tenantId) {
+      setIsLoading(false);
+      setError(
+        "Password set, but this invite link is incomplete. Please ask your administrator to resend the invitation.",
+      );
+      return;
+    }
 
-      if (session?.access_token) {
-        const result = await callAcceptInvite(session.access_token, tenantId);
-        if (result === "failed") {
-          setIsLoading(false);
-          setError(
-            "Password set, but could not accept the invite. Please try logging in.",
-          );
-          return;
-        }
+    const {
+      data: { session: freshSession },
+    } = await supabase.auth.getSession();
+
+    if (freshSession?.access_token) {
+      const result = await callAcceptInvite(
+        freshSession.access_token,
+        tenantId,
+      );
+      if (result === "failed") {
+        setIsLoading(false);
+        setError(
+          "Password set, but could not accept the invite. Please try logging in.",
+        );
+        return;
       }
     }
 
