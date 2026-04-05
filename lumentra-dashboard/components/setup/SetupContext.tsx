@@ -51,7 +51,7 @@ function resolveCartesiaVoiceId(raw: string | undefined | null): string {
 // TYPES
 // ============================================================================
 
-export const SETUP_STEPS: SetupStep[] = ["business", "assistant", "review"];
+export const SETUP_STEPS: SetupStep[] = ["business"];
 
 export const STEP_LABELS: Record<SetupStep, string> = {
   business: "Your Business",
@@ -425,12 +425,14 @@ function mapApiToState(data: ApiProgressResponse): Partial<SetupState> {
     }
   }
 
+  const normalizedStep = isValidStep(data.step) ? data.step : "business";
+
   // Calculate completed steps based on current step
-  const currentStepIndex = getStepIndex(data.step);
+  const currentStepIndex = getStepIndex(normalizedStep);
   const completedSteps = SETUP_STEPS.slice(0, currentStepIndex);
 
   return {
-    currentStep: data.step,
+    currentStep: normalizedStep,
     completedSteps,
     tenantId: data.tenantId || null,
     businessData: {
@@ -715,13 +717,8 @@ export function SetupProvider({ children }: { children: ReactNode }) {
       case "business":
         return (
           state.businessData.name.trim() !== "" &&
-          state.businessData.industry !== null &&
-          state.businessData.city.trim() !== ""
+          state.businessData.industry !== null
         );
-      case "assistant":
-        return state.assistantData.name.trim() !== "";
-      case "review":
-        return true;
       default:
         return false;
     }

@@ -126,6 +126,6 @@ export function getAuthenticatedRedirectPath(params: {
   hasMembership: boolean;
   isSetupComplete: boolean;
 }): string {
-  const { hasMembership, isSetupComplete } = params;
-  return hasMembership && isSetupComplete ? "/dashboard" : "/setup";
+  const { hasMembership } = params;
+  return hasMembership ? "/dashboard" : "/setup";
 }

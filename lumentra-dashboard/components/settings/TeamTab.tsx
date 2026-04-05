@@ -45,7 +45,7 @@ const PAGE_LABELS: Record<FeatureKey, string> = {
 };
 
 const ROLE_OPTIONS = [
-  { value: "admin", label: "Admin" },
+  { value: "admin", label: "Tenant Admin" },
   { value: "member", label: "Member" },
   { value: "readonly", label: "Read Only" },
 ];
@@ -259,7 +259,7 @@ export default function TeamTab() {
           Team Management
         </h2>
         <p className="text-sm text-muted-foreground">
-          Invite team members and control their page access.
+          Invite team members and control their access inside this business.
         </p>
       </div>
 

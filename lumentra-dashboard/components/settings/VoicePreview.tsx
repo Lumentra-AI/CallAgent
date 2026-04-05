@@ -57,63 +57,106 @@ export function VoicePreview({
   sampleText = SAMPLE_TEXTS.default,
   compact = false,
 }: VoicePreviewProps) {
-  void pitch;
   const [loading, setLoading] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const objectUrlRef = useRef<string | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   const stopPlayback = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
+    if (!sourceRef.current) {
+      setPlaying(false);
+      return;
     }
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current);
-      objectUrlRef.current = null;
+
+    sourceRef.current.onended = null;
+
+    try {
+      sourceRef.current.stop();
+    } catch {
+      // Ignore stop errors for already-finished nodes.
     }
+
+    sourceRef.current.disconnect();
+    sourceRef.current = null;
     setPlaying(false);
   }, []);
 
   useEffect(() => {
     return () => {
       stopPlayback();
+      void audioContextRef.current?.close().catch(() => undefined);
+      audioContextRef.current = null;
     };
   }, [stopPlayback]);
 
   const play = useCallback(async () => {
-    stopPlayback();
     if (playing) {
+      stopPlayback();
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
+      const AudioContextCtor =
+        window.AudioContext ||
+        (
+          window as Window & {
+            webkitAudioContext?: typeof AudioContext;
+          }
+        ).webkitAudioContext;
+      if (!AudioContextCtor) {
+        throw new Error("Audio preview is not supported in this browser");
+      }
+
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContextCtor();
+      }
+
+      const audioContext = audioContextRef.current;
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+
       const res = await apiFetchRaw("/api/voice/preview", {
         method: "POST",
         body: JSON.stringify({ voiceId, sampleText, speed: speakingRate }),
       });
-      if (!res.ok) throw new Error("Preview failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      objectUrlRef.current = url;
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      audio.onended = () => {
-        stopPlayback();
+      if (!res.ok) {
+        throw new Error("Preview failed");
+      }
+
+      const audioBuffer = await res.arrayBuffer();
+      const decodedAudio = await audioContext.decodeAudioData(audioBuffer);
+
+      stopPlayback();
+
+      const source = audioContext.createBufferSource();
+      source.buffer = decodedAudio;
+      source.connect(audioContext.destination);
+      source.onended = () => {
+        source.disconnect();
+        if (sourceRef.current === source) {
+          sourceRef.current = null;
+          setPlaying(false);
+        }
       };
-      audio.play();
+      sourceRef.current = source;
+      source.start(0);
       setPlaying(true);
-    } catch {
-      setError("Could not generate preview");
+    } catch (err) {
+      stopPlayback();
+      setError(
+        err instanceof Error ? err.message : "Could not generate preview",
+      );
     } finally {
       setLoading(false);
     }
   }, [voiceId, sampleText, speakingRate, playing, stopPlayback]);
 
   const providerLabel = PROVIDER_LABELS[provider] || provider;
+  void pitch;
 
   // Compact version: small play button for voice grid cards
   if (compact) {

@@ -69,7 +69,7 @@ export default function VerifyEmailPage() {
     }
 
     setStatusMessage(
-      "Still waiting for the verification link to be clicked. Once it is, you can continue to setup.",
+      "Still waiting for the verification link to be clicked. Once it is, you can continue into your workspace.",
     );
     setIsChecking(false);
   }, [router, supabase]);
@@ -161,9 +161,9 @@ export default function VerifyEmailPage() {
         </p>
 
         <div className="mt-4 rounded-lg border border-border/60 bg-muted/40 p-4 text-left text-sm text-muted-foreground">
-          Your account is signed in, but setup stays locked until the email
-          address is confirmed. OAuth sign-ins skip this because the provider
-          already verifies the email.
+          Your account is signed in, but the workspace stays locked until the
+          email address is confirmed. OAuth sign-ins skip this because the
+          provider already verifies the email.
         </div>
 
         {statusMessage && (

@@ -13,15 +13,11 @@ import {
 } from "@/components/setup/SetupContext";
 import { SetupProgressBar } from "@/components/setup/SetupProgressBar";
 import { BusinessStep } from "@/components/setup/steps/BusinessStep";
-import { AssistantStep } from "@/components/setup/steps/AssistantStep";
-import { ReviewStep } from "@/components/setup/steps/ReviewStep";
 import type { SetupStep } from "@/types";
 import { useToast } from "@/context/ToastContext";
 
 const STEP_COMPONENTS: Partial<Record<SetupStep, React.ComponentType>> = {
   business: BusinessStep,
-  assistant: AssistantStep,
-  review: ReviewStep,
 };
 
 // Create steps array for progress bar

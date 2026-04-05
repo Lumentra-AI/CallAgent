@@ -252,8 +252,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
         businessName: currentTenant.business_name || base.businessName,
         agentName: currentTenant.agent_name || base.agentName,
         userRole: mappedRole,
-        isConfigured:
-          base.isConfigured || Boolean(currentTenant.setup_completed_at),
+        isConfigured: true,
       };
     });
 

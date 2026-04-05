@@ -13,24 +13,25 @@ import type { IndustryType } from "@/types";
 
 export function BusinessStep() {
   const router = useRouter();
-  const { state, dispatch, saveStep, goToNextStep } = useSetup();
+  const { state, dispatch, saveStep, completeSetup } = useSetup();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const industries = Object.values(INDUSTRY_PRESETS);
 
   const canContinue =
     state.businessData.name.trim() !== "" &&
-    state.businessData.industry !== null &&
-    state.businessData.city.trim() !== "";
+    state.businessData.industry !== null;
 
   const handleContinue = async () => {
     if (!canContinue) return;
 
     setIsSubmitting(true);
-    const success = await saveStep("business");
-    if (success) {
-      goToNextStep();
-      router.push("/setup/assistant");
+    const saved = await saveStep("business");
+    if (saved) {
+      const completed = await completeSetup();
+      if (completed) {
+        router.push("/dashboard?setup=complete");
+      }
     }
     setIsSubmitting(false);
   };
@@ -47,10 +48,11 @@ export function BusinessStep() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">
-          Let&apos;s get to know your business
+          Add your business information
         </h1>
         <p className="mt-2 text-muted-foreground">
-          This helps us customize your AI assistant for your specific needs
+          Keep this simple. We use these details across your shared dashboard
+          and caller-facing basics.
         </p>
       </div>
 
@@ -107,6 +109,9 @@ export function BusinessStep() {
               className="pl-9"
             />
           </div>
+          <p className="text-xs text-muted-foreground">
+            Optional, but helpful for local context and directions.
+          </p>
         </div>
 
         <div className="space-y-2">
@@ -139,7 +144,7 @@ export function BusinessStep() {
           disabled={!canContinue || isSubmitting}
           size="lg"
         >
-          {isSubmitting ? "Saving..." : "Continue"}
+          {isSubmitting ? "Saving..." : "Save and continue"}
         </Button>
       </div>
     </div>

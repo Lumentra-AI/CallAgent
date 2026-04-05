@@ -182,7 +182,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     }
   }, [authLoading, user, router]);
 
-  // Redirect to setup if user has no tenants or setup is incomplete
+  // Redirect to setup only when the user has no tenant at all.
   useEffect(() => {
     if (!authLoading && !tenantLoading && user) {
       if (tenants.length === 0) {
@@ -190,17 +190,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       }
     }
   }, [authLoading, tenantLoading, user, tenants, router]);
-
-  // Redirect to setup if current tenant hasn't completed setup
-  useEffect(() => {
-    if (
-      currentTenant &&
-      !currentTenant.setup_completed_at &&
-      currentTenant.status !== "active"
-    ) {
-      router.replace("/setup");
-    }
-  }, [currentTenant, router]);
 
   if (authLoading || configLoading || tenantLoading) {
     return <LoadingScreen />;
@@ -210,8 +199,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     return <LoadingScreen />;
   }
 
-  // Show error screen only if tenant load failed AND user has tenants
-  // (new users with no tenants get redirected to /setup above)
+  // Show error screen only if tenant load failed AND user has tenants.
   if (error && !currentTenant && tenants.length > 0) {
     return <ErrorScreen onRetry={refreshTenants} />;
   }

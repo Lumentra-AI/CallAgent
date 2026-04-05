@@ -10,6 +10,7 @@ import type { SetupStep } from "@/types";
 interface ProgressResponse {
   step: SetupStep;
   completed: boolean;
+  tenantId?: string;
 }
 
 export default function SetupPage() {
@@ -27,7 +28,7 @@ export default function SetupPage() {
         try {
           const progress = await get<ProgressResponse>("/api/setup/progress");
 
-          if (progress.completed) {
+          if (progress.completed || progress.tenantId) {
             await refreshTenants();
             router.replace("/dashboard");
           } else {

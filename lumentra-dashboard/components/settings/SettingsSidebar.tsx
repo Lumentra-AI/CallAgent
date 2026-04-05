@@ -117,10 +117,10 @@ export default function SettingsSidebar() {
   };
 
   const roleLabel =
-    config.userRole === "admin" ? "Admin Access" : "Staff Access";
+    config.userRole === "admin" ? "Tenant Admin Access" : "Staff Access";
   const roleDescription =
     config.userRole === "admin"
-      ? "Business configuration access"
+      ? "Manage this business only"
       : "Monitoring access only";
 
   return (

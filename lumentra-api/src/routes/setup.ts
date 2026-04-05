@@ -57,7 +57,7 @@ export function requireVerifiedEmail(): MiddlewareHandler {
 
 setupRoutes.use("*", requireVerifiedEmail());
 
-const SETUP_STEPS: SetupStep[] = ["business", "assistant", "review"];
+const SETUP_STEPS: SetupStep[] = ["business"];
 
 /** All valid step names (for backward compat with existing tenants on old steps) */
 const ALL_VALID_STEPS: SetupStep[] = [
@@ -240,19 +240,8 @@ setupRoutes.get("/progress", async (c) => {
       tenant.id,
     ]);
 
-    // Normalize old steps to new 3-step wizard
-    let normalizedStep: SetupStep = tenant.setup_step || "business";
-    const oldToNew: Partial<Record<SetupStep, SetupStep>> = {
-      capabilities: "assistant",
-      details: "assistant",
-      integrations: "assistant",
-      phone: "review",
-      hours: "review",
-      escalation: "review",
-    };
-    if (oldToNew[normalizedStep]) {
-      normalizedStep = oldToNew[normalizedStep]!;
-    }
+    // Customer-facing setup is now business-info only.
+    const normalizedStep: SetupStep = "business";
 
     return c.json({
       step: normalizedStep,
@@ -716,18 +705,13 @@ setupRoutes.post("/complete", async (c) => {
       status: string;
     }>(phoneConfigSql, [tenantId]);
 
-    // Validate only the 3 required wizard fields
+    // Validate only the required business fields.
     const errors: string[] = [];
     const incompleteSteps: string[] = [];
 
     if (!tenant.business_name || !tenant.industry) {
       errors.push("Business name and industry are required");
       incompleteSteps.push("business");
-    }
-
-    if (!tenant.agent_name) {
-      errors.push("AI assistant name is required");
-      incompleteSteps.push("assistant");
     }
 
     if (errors.length > 0) {
@@ -771,6 +755,26 @@ setupRoutes.post("/complete", async (c) => {
           );
         }
       }
+
+      // Smart defaults for hidden assistant internals.
+      await client.query(
+        `UPDATE tenants SET
+          agent_name = COALESCE(agent_name, 'AI Assistant'),
+          agent_personality = COALESCE(
+            agent_personality,
+            '{"tone":"professional","verbosity":"balanced","empathy":"medium","humor":false}'::jsonb
+          ),
+          voice_config = COALESCE(
+            voice_config,
+            '{"provider":"cartesia","voice_id":"694f9389-aac1-45b6-b726-9d9369183238","voiceId":"694f9389-aac1-45b6-b726-9d9369183238","voice_name":"Sarah","speaking_rate":1.0,"pitch":1.0}'::jsonb
+          ),
+          greeting_standard = COALESCE(greeting_standard, $1)
+        WHERE id = $2`,
+        [
+          `Thank you for calling ${tenant.business_name}. How can I help you today?`,
+          tenantId,
+        ],
+      );
 
       // Smart default: Integration mode = builtin (assisted_mode false)
       await client.query(
@@ -839,10 +843,6 @@ setupRoutes.post("/complete", async (c) => {
     if (!phoneConfig?.phone_number)
       warnings.push(
         "No phone number yet - an admin will provision one for you",
-      );
-    if (!tenant.greeting_standard)
-      warnings.push(
-        "No greeting configured - agent will use a generic greeting",
       );
     if (!tenant.escalation_enabled)
       warnings.push(

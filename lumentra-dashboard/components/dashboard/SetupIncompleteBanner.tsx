@@ -2,14 +2,7 @@
 
 import { useState } from "react";
 import { useTenant } from "@/context/TenantContext";
-import {
-  AlertCircle,
-  X,
-  ChevronRight,
-  MapPin,
-  Calendar,
-  Phone,
-} from "lucide-react";
+import { AlertCircle, X, ChevronRight, MapPin, Phone } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -51,7 +44,7 @@ function getIncompleteItems(tenant: TenantWithSetupFields): IncompleteItem[] {
       key: "address",
       label: "Add business address",
       description: "Help customers find you with directions",
-      href: "/settings?tab=general",
+      href: "/settings",
       icon: MapPin,
       priority: "medium",
     });
@@ -63,20 +56,8 @@ function getIncompleteItems(tenant: TenantWithSetupFields): IncompleteItem[] {
       key: "escalation",
       label: "Configure escalation",
       description: "Set up who to call when bookings need confirmation",
-      href: "/settings?tab=escalation",
+      href: "/settings/escalation",
       icon: Phone,
-      priority: "high",
-    });
-  }
-
-  // Check if setup was never completed
-  if (!tenant.setup_completed_at && tenant.setup_step) {
-    items.push({
-      key: "setup",
-      label: "Complete setup wizard",
-      description: "Finish configuring your AI assistant",
-      href: "/setup",
-      icon: Calendar,
       priority: "high",
     });
   }
@@ -140,7 +121,9 @@ export function SetupIncompleteBanner() {
             />
           </div>
           <div>
-            <h3 className="font-medium text-foreground">Complete your setup</h3>
+            <h3 className="font-medium text-foreground">
+              Finish business details
+            </h3>
             <p className="text-sm text-muted-foreground mt-0.5">
               {sortedItems.length === 1
                 ? "1 item needs your attention"

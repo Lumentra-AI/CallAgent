@@ -26,7 +26,7 @@ test("unverified users are redirected off protected and auth routes but allowed 
   assert.equal(shouldRedirectUnverifiedUser("/"), false);
 });
 
-test("authenticated redirect stays on setup until membership and setup completion exist", () => {
+test("authenticated redirect prefers dashboard as soon as membership exists", () => {
   assert.equal(
     getAuthenticatedRedirectPath({
       hasMembership: false,
@@ -39,7 +39,7 @@ test("authenticated redirect stays on setup until membership and setup completio
       hasMembership: true,
       isSetupComplete: false,
     }),
-    "/setup",
+    "/dashboard",
   );
   assert.equal(
     getAuthenticatedRedirectPath({
