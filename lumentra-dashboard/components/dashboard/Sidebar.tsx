@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIndustry } from "@/context/IndustryContext";
+import { useTenant } from "@/context/TenantContext";
 
 // Route mapping for navigation
 const VIEW_ROUTES: Record<string, string> = {
@@ -273,17 +274,93 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* Business Info */}
+      {/* Business Info + Tenant Switcher */}
       {!sidebarCollapsed && config && (
-        <div className="border-t border-sidebar-border p-4">
-          <div className="mb-1 truncate text-sm font-medium text-sidebar-foreground">
-            {config.businessName}
-          </div>
-          <div className="truncate text-xs text-muted-foreground">
-            {config.agentName} Agent
-          </div>
-        </div>
+        <TenantSwitcher
+          businessName={config.businessName}
+          agentName={config.agentName}
+        />
       )}
     </aside>
+  );
+}
+
+// -----------------------------------------------------------------------
+// Tenant Switcher (shown at sidebar bottom)
+// -----------------------------------------------------------------------
+function TenantSwitcher({
+  businessName,
+  agentName,
+}: {
+  businessName: string;
+  agentName: string;
+}) {
+  const { tenants, currentTenant, selectTenant } = useTenant();
+  const [open, setOpen] = React.useState(false);
+
+  // Only show switcher if user has multiple tenants
+  const hasMultiple = tenants.length > 1;
+
+  return (
+    <div className="relative border-t border-sidebar-border p-4">
+      <button
+        type="button"
+        onClick={() => hasMultiple && setOpen(!open)}
+        className={cn(
+          "w-full text-left",
+          hasMultiple &&
+            "cursor-pointer rounded-lg p-1 -m-1 hover:bg-sidebar-accent/50 transition-colors",
+        )}
+      >
+        <div className="mb-1 truncate text-sm font-medium text-sidebar-foreground">
+          {businessName}
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="truncate text-xs text-muted-foreground">
+            {agentName} Agent
+          </span>
+          {hasMultiple && (
+            <ChevronRight
+              className={cn(
+                "h-3 w-3 text-muted-foreground transition-transform",
+                open && "rotate-90",
+              )}
+            />
+          )}
+        </div>
+      </button>
+
+      {open && hasMultiple && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute bottom-full left-2 right-2 z-50 mb-1 rounded-xl border border-sidebar-border bg-sidebar p-1 shadow-lg">
+            <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+              Switch workspace
+            </p>
+            {tenants.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  selectTenant(t.id);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors",
+                  currentTenant?.id === t.id
+                    ? "bg-sidebar-accent text-sidebar-foreground"
+                    : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                )}
+              >
+                <div className="h-6 w-6 rounded-md bg-primary/10 flex items-center justify-center">
+                  <Zap className="h-3 w-3 text-primary" />
+                </div>
+                <span className="truncate">{t.business_name}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
