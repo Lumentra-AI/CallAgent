@@ -223,30 +223,15 @@ async def _warm_transfer_sequence(
         session.input.set_audio_enabled(True)
         session.output.set_audio_enabled(True)
 
-        # Handle no-answer behavior
-        if no_answer == "message":
-            session.generate_reply(
-                instructions=(
-                    "The transfer was unsuccessful -- nobody was available to take the call. "
-                    "Apologize to the caller and offer to take a message so someone can call them back. "
-                    "Ask for their name and what they'd like to pass along, then use the queue_callback tool."
-                )
+        # Handle no-answer: let caller know staff is unavailable, offer to help
+        session.generate_reply(
+            instructions=(
+                "The transfer was unsuccessful -- no one is available to take the call right now. "
+                "Tell the caller something like: 'It looks like everyone is busy at the moment, "
+                "but I'm here to help! What can I assist you with?' "
+                "Be warm and helpful. Continue the conversation and assist them yourself."
             )
-        elif no_answer == "retry":
-            session.generate_reply(
-                instructions=(
-                    "The transfer was unsuccessful -- nobody was available. "
-                    "Apologize and suggest the caller try calling back during business hours. "
-                    "Offer to take a message as an alternative."
-                )
-            )
-        else:
-            session.generate_reply(
-                instructions=(
-                    "The transfer was unsuccessful. Apologize to the caller "
-                    "and ask if there's something else you can help with."
-                )
-            )
+        )
 
     except asyncio.CancelledError:
         logger.debug("Warm transfer sequence cancelled")
@@ -517,29 +502,14 @@ async def _consultation_transfer_sequence(
         session.input.set_audio_enabled(True)
         session.output.set_audio_enabled(True)
 
-        if no_answer == "message":
-            session.generate_reply(
-                instructions=(
-                    "The consultation transfer was unsuccessful -- no team member was available to take the call. "
-                    "Apologize to the caller and offer to take a message so someone can call them back. "
-                    "Ask for their name and what they'd like to pass along, then use the queue_callback tool."
-                )
+        session.generate_reply(
+            instructions=(
+                "The transfer was unsuccessful -- no one is available to take the call right now. "
+                "Tell the caller something like: 'It looks like everyone is busy at the moment, "
+                "but I'm here to help! What can I assist you with?' "
+                "Be warm and helpful. Continue the conversation and assist them yourself."
             )
-        elif no_answer == "retry":
-            session.generate_reply(
-                instructions=(
-                    "The consultation transfer was unsuccessful -- nobody was available. "
-                    "Apologize and suggest the caller try calling back during business hours. "
-                    "Offer to take a message as an alternative."
-                )
-            )
-        else:
-            session.generate_reply(
-                instructions=(
-                    "The consultation transfer was unsuccessful. Apologize to the caller "
-                    "and ask if there's something else you can help with."
-                )
-            )
+        )
 
     except asyncio.CancelledError:
         logger.debug("Consultation transfer sequence cancelled")

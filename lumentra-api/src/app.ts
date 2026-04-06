@@ -46,36 +46,108 @@ import {
   validateWebhookSecret,
   securityHeaders,
 } from "./middleware/index.js";
+import { getTenantByPhoneWithFallback } from "./services/database/tenant-cache.js";
+import { queryAll } from "./services/database/client.js";
 
-function isSipForwardRequest(c: Context): boolean {
-  return c.req.path === "/sip/forward";
+function isSipRequest(c: Context): boolean {
+  return c.req.path === "/sip/forward" || c.req.path === "/sip/dial-result";
 }
 
-async function sipForwardHandler(c: Context) {
+function buildLivekitTwiml(dialedNumber: string): string {
   const livekitSipHost = process.env.LIVEKIT_SIP_HOST || "178.156.205.145";
   const livekitSipPort = process.env.LIVEKIT_SIP_PORT || "5060";
-
-  // Extract dialed number from SignalWire webhook body (form-encoded)
-  let dialedNumber = "";
-  try {
-    const body = await c.req.parseBody();
-    dialedNumber = (body["To"] as string) || (body["Called"] as string) || "";
-    // Strip non-digit/+ chars for safety, keep E.164 format
-    dialedNumber = dialedNumber.replace(/[^\d+]/g, "");
-  } catch {
-    console.warn("[SIP] Could not parse webhook body for dialed number");
-  }
-
-  // Include dialed number as SIP URI user part so LiveKit can identify the tenant
   const sipUser = dialedNumber ? `${dialedNumber}@` : "";
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial>
     <Sip>sip:${sipUser}${livekitSipHost}:${livekitSipPort};transport=udp</Sip>
   </Dial>
 </Response>`;
+}
 
-  return c.text(twiml, 200, { "Content-Type": "application/xml" });
+async function sipForwardHandler(c: Context) {
+  // Extract dialed number and caller from SignalWire webhook body (form-encoded)
+  let dialedNumber = "";
+  try {
+    const body = await c.req.parseBody();
+    dialedNumber = (body["To"] as string) || (body["Called"] as string) || "";
+    dialedNumber = dialedNumber.replace(/[^\d+]/g, "");
+  } catch {
+    console.warn("[SIP] Could not parse webhook body for dialed number");
+  }
+
+  // Try to ring staff first before falling back to AI
+  if (dialedNumber) {
+    try {
+      const tenant = await getTenantByPhoneWithFallback(dialedNumber);
+      if (tenant) {
+        const contacts = await queryAll<{ phone: string }>(
+          `SELECT phone FROM escalation_contacts
+           WHERE tenant_id = $1
+           ORDER BY sort_order ASC
+           LIMIT 10`,
+          [tenant.id],
+        );
+
+        if (contacts.length > 0) {
+          const backendUrl = process.env.BACKEND_URL || "http://localhost:3100";
+          const webhookSecret = process.env.SIGNALWIRE_WEBHOOK_SECRET || "";
+          const secretParam = webhookSecret
+            ? `&webhook_secret=${encodeURIComponent(webhookSecret)}`
+            : "";
+          const actionUrl = `${backendUrl}/sip/dial-result?phone=${encodeURIComponent(dialedNumber)}${secretParam}`;
+          const numberNouns = contacts
+            .map((c) => `    <Number>${c.phone}</Number>`)
+            .join("\n");
+
+          const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial timeout="20" action="${actionUrl}" callerId="${dialedNumber}">
+${numberNouns}
+  </Dial>
+</Response>`;
+
+          console.log(
+            `[SIP] Ringing ${contacts.length} staff for ${tenant.business_name}, AI fallback in 20s`,
+          );
+          return c.text(twiml, 200, { "Content-Type": "application/xml" });
+        }
+      }
+    } catch (err) {
+      console.warn("[SIP] Staff lookup failed, falling back to AI:", err);
+    }
+  }
+
+  // No staff contacts or lookup failed -- AI answers directly
+  return c.text(buildLivekitTwiml(dialedNumber), 200, {
+    "Content-Type": "application/xml",
+  });
+}
+
+async function sipDialResultHandler(c: Context) {
+  let dialStatus = "";
+  try {
+    const body = await c.req.parseBody();
+    dialStatus = (body["DialCallStatus"] as string) || "";
+  } catch {
+    console.warn("[SIP] Could not parse dial-result body");
+  }
+
+  const dialedNumber = new URL(c.req.url).searchParams.get("phone") || "";
+  console.log(`[SIP] Dial result: status=${dialStatus} phone=${dialedNumber}`);
+
+  if (dialStatus === "completed") {
+    // Human answered -- nothing more to do
+    return c.text(`<?xml version="1.0" encoding="UTF-8"?>\n<Response/>`, 200, {
+      "Content-Type": "application/xml",
+    });
+  }
+
+  // No answer / busy / failed -- forward to AI agent
+  console.log(`[SIP] No human answered (${dialStatus}), forwarding to AI`);
+  return c.text(buildLivekitTwiml(dialedNumber), 200, {
+    "Content-Type": "application/xml",
+  });
 }
 
 export function createApp() {
@@ -125,7 +197,7 @@ export function createApp() {
       prefix: "global",
       windowMs: 60000,
       max: 300,
-      skip: isSipForwardRequest,
+      skip: isSipRequest,
     }),
   );
 
@@ -141,6 +213,18 @@ export function createApp() {
     }),
   );
   app.post("/sip/forward", validateWebhookSecret(), sipForwardHandler);
+
+  // SIP dial result - SignalWire calls this after staff ring timeout/answer
+  app.use(
+    "/sip/dial-result",
+    rateLimit({
+      prefix: "sip-dial-result",
+      windowMs: 60000,
+      max: 30,
+      message: "Too many SIP dial result requests.",
+    }),
+  );
+  app.post("/sip/dial-result", validateWebhookSecret(), sipDialResultHandler);
 
   // Public routes (no auth required)
   app.route("/health", healthRoutes);
