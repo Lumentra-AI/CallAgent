@@ -125,6 +125,7 @@ export default function AdminSettingsPage() {
   const [newEmail, setNewEmail] = useState("");
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [emailConfigured, setEmailConfigured] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -135,6 +136,16 @@ export default function AdminSettingsPage() {
       setLoading(true);
       const data = await fetchPlatformAdmins();
       setAdmins(data.admins);
+      // Check platform config for email status
+      try {
+        const { get } = await import("@/lib/api/client");
+        const config = await get<{ email?: { configured?: boolean } }>(
+          "/admin/platform-config",
+        );
+        setEmailConfigured(config?.email?.configured || false);
+      } catch {
+        // Non-critical -- leave as not configured
+      }
     } catch {
       setMessage({ type: "error", text: "Failed to load admins" });
     } finally {
@@ -342,49 +353,58 @@ export default function AdminSettingsPage() {
         </div>
 
         <div className="mt-4 flex items-center gap-2">
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />
-          <span className="text-sm font-medium text-amber-700">
-            Not configured
-          </span>
+          {emailConfigured ? (
+            <>
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-400" />
+              <span className="text-sm font-medium text-emerald-700">
+                Configured
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />
+              <span className="text-sm font-medium text-amber-700">
+                Not configured
+              </span>
+            </>
+          )}
         </div>
 
-        <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-5">
-          <p className="text-sm font-medium text-zinc-950">
-            Setup instructions
-          </p>
-          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-zinc-600">
-            <li>
-              Sign up at{" "}
-              <span className="font-medium text-zinc-800">resend.com</span>
-            </li>
-            <li>Get your API key</li>
-            <li>
-              Set{" "}
-              <code className="rounded bg-zinc-200 px-1.5 py-0.5 text-xs font-mono text-zinc-800">
-                RESEND_API_KEY
-              </code>{" "}
-              in your server environment
-            </li>
-            <li>
-              Set{" "}
-              <code className="rounded bg-zinc-200 px-1.5 py-0.5 text-xs font-mono text-zinc-800">
-                EMAIL_FROM
-              </code>{" "}
-              to your verified domain email (e.g., notifications@lumentra.ai)
-            </li>
-            <li>
-              Set{" "}
-              <code className="rounded bg-zinc-200 px-1.5 py-0.5 text-xs font-mono text-zinc-800">
-                ADMIN_EMAIL
-              </code>{" "}
-              to the team email that should receive alerts
-            </li>
-          </ol>
-        </div>
-
-        <p className="mt-4 text-sm text-zinc-500">
-          Once configured, email alerts will activate automatically.
-        </p>
+        {!emailConfigured && (
+          <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-5">
+            <p className="text-sm font-medium text-zinc-950">
+              Setup instructions
+            </p>
+            <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-zinc-600">
+              <li>
+                Sign up at{" "}
+                <span className="font-medium text-zinc-800">resend.com</span>
+              </li>
+              <li>Get your API key</li>
+              <li>
+                Set{" "}
+                <code className="rounded bg-zinc-200 px-1.5 py-0.5 text-xs font-mono text-zinc-800">
+                  RESEND_API_KEY
+                </code>{" "}
+                in your server environment
+              </li>
+              <li>
+                Set{" "}
+                <code className="rounded bg-zinc-200 px-1.5 py-0.5 text-xs font-mono text-zinc-800">
+                  EMAIL_FROM
+                </code>{" "}
+                to your verified domain email
+              </li>
+              <li>
+                Set{" "}
+                <code className="rounded bg-zinc-200 px-1.5 py-0.5 text-xs font-mono text-zinc-800">
+                  ADMIN_EMAIL
+                </code>{" "}
+                to the team email that should receive alerts
+              </li>
+            </ol>
+          </div>
+        )}
       </section>
 
       {/* ----------------------------------------------------------------- */}
@@ -404,13 +424,14 @@ export default function AdminSettingsPage() {
         </div>
 
         <div className="relative mt-4">
-          {/* Disabled overlay message */}
-          <div className="mb-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5">
-            <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
-            <p className="text-sm text-amber-700">
-              Email integration required to activate alerts
-            </p>
-          </div>
+          {!emailConfigured && (
+            <div className="mb-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5">
+              <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
+              <p className="text-sm text-amber-700">
+                Email integration required to activate alerts
+              </p>
+            </div>
+          )}
 
           <div className="overflow-hidden rounded-2xl border border-zinc-200">
             {alertPreferences.map((pref, index) => (
@@ -431,7 +452,7 @@ export default function AdminSettingsPage() {
                 <Toggle
                   checked={alerts[pref.id] ?? pref.defaultOn}
                   onChange={(v) => handleAlertToggle(pref.id, v)}
-                  disabled
+                  disabled={!emailConfigured}
                 />
               </div>
             ))}

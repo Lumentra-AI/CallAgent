@@ -60,34 +60,24 @@ export function VoicePreview({
   const [loading, setLoading] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
 
   const stopPlayback = useCallback(() => {
-    if (!sourceRef.current) {
-      setPlaying(false);
-      return;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.onended = null;
+      audioRef.current = null;
     }
-
-    sourceRef.current.onended = null;
-
-    try {
-      sourceRef.current.stop();
-    } catch {
-      // Ignore stop errors for already-finished nodes.
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
     }
-
-    sourceRef.current.disconnect();
-    sourceRef.current = null;
     setPlaying(false);
   }, []);
 
   useEffect(() => {
-    return () => {
-      stopPlayback();
-      void audioContextRef.current?.close().catch(() => undefined);
-      audioContextRef.current = null;
-    };
+    return () => stopPlayback();
   }, [stopPlayback]);
 
   const play = useCallback(async () => {
@@ -99,51 +89,26 @@ export function VoicePreview({
     setLoading(true);
     setError(null);
     try {
-      const AudioContextCtor =
-        window.AudioContext ||
-        (
-          window as Window & {
-            webkitAudioContext?: typeof AudioContext;
-          }
-        ).webkitAudioContext;
-      if (!AudioContextCtor) {
-        throw new Error("Audio preview is not supported in this browser");
-      }
-
-      if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContextCtor();
-      }
-
-      const audioContext = audioContextRef.current;
-      if (audioContext.state === "suspended") {
-        await audioContext.resume();
-      }
-
       const res = await apiFetchRaw("/api/voice/preview", {
         method: "POST",
         body: JSON.stringify({ voiceId, sampleText, speed: speakingRate }),
       });
       if (!res.ok) {
-        throw new Error("Preview failed");
+        const errBody = await res.text().catch(() => "");
+        throw new Error(errBody || `Preview failed (${res.status})`);
       }
 
-      const audioBuffer = await res.arrayBuffer();
-      const decodedAudio = await audioContext.decodeAudioData(audioBuffer);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      objectUrlRef.current = url;
 
-      stopPlayback();
-
-      const source = audioContext.createBufferSource();
-      source.buffer = decodedAudio;
-      source.connect(audioContext.destination);
-      source.onended = () => {
-        source.disconnect();
-        if (sourceRef.current === source) {
-          sourceRef.current = null;
-          setPlaying(false);
-        }
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => {
+        stopPlayback();
       };
-      sourceRef.current = source;
-      source.start(0);
+
+      await audio.play();
       setPlaying(true);
     } catch (err) {
       stopPlayback();

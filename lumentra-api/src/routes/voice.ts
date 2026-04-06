@@ -74,13 +74,11 @@ voiceRoutes.post("/preview", async (c) => {
 
     const audioBuffer = await response.arrayBuffer();
 
-    return new Response(audioBuffer, {
-      status: 200,
-      headers: {
-        "Content-Type": "audio/wav",
-        "Content-Length": String(audioBuffer.byteLength),
-        "Cache-Control": "public, max-age=3600",
-      },
+    // Use Hono's c.body() so CORS middleware headers are applied
+    return c.body(audioBuffer, 200, {
+      "Content-Type": "audio/wav",
+      "Content-Length": String(audioBuffer.byteLength),
+      "Cache-Control": "public, max-age=3600",
     });
   } catch (error) {
     console.error("[VOICE] Preview error:", error);

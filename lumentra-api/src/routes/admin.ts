@@ -54,6 +54,30 @@ adminRoutes.get("/me", async (c) => {
 });
 
 // ============================================================================
+// PLATFORM CONFIG STATUS
+// ============================================================================
+
+/**
+ * GET /admin/platform-config - Returns platform configuration status
+ */
+adminRoutes.get("/platform-config", async (c) => {
+  return c.json({
+    email: {
+      configured: !!(
+        process.env.RESEND_API_KEY &&
+        process.env.EMAIL_FROM &&
+        process.env.ADMIN_EMAIL
+      ),
+      from: process.env.EMAIL_FROM || null,
+      adminEmail: process.env.ADMIN_EMAIL || null,
+    },
+    version: "0.1.0",
+    voicePipeline: "LiveKit Agents + Cartesia TTS",
+    database: "Supabase PostgreSQL",
+  });
+});
+
+// ============================================================================
 // PLATFORM ADMIN MANAGEMENT
 // ============================================================================
 

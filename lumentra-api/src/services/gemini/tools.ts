@@ -79,6 +79,65 @@ export async function executeCheckAvailability(
   }
 
   try {
+    // Get tenant operating hours to generate real slots
+    const tenantHours = await queryOne<{
+      operating_hours: {
+        schedule?: Array<{
+          day: number;
+          enabled: boolean;
+          openTime?: string;
+          closeTime?: string;
+          open?: string;
+          close?: string;
+        }>;
+      } | null;
+    }>("SELECT operating_hours FROM tenants WHERE id = $1", [context.tenantId]);
+
+    // Determine open/close times for the requested date
+    const requestedDate = new Date(args.date + "T12:00:00");
+    const dayOfWeek = requestedDate.getDay(); // 0=Sun, 6=Sat
+    const schedule = tenantHours?.operating_hours?.schedule;
+    const dayConfig = schedule?.find((s) => s.day === dayOfWeek);
+
+    // If this day is explicitly disabled, business is closed
+    if (dayConfig && dayConfig.enabled === false) {
+      const dayName = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+      ][dayOfWeek];
+      return {
+        available: false,
+        slots: [],
+        message: `I'm sorry, we're closed on ${dayName}s. Would you like to check another day?`,
+      };
+    }
+
+    // Parse open/close times (support both camelCase and snake_case)
+    const openStr = dayConfig?.openTime || dayConfig?.open || "09:00";
+    const closeStr = dayConfig?.closeTime || dayConfig?.close || "17:00";
+    const [openH, openM] = openStr.split(":").map(Number);
+    const [closeH, closeM] = closeStr.split(":").map(Number);
+    const openMinutes = openH * 60 + (openM || 0);
+    // Stop 30 min before closing (last bookable slot)
+    const closeMinutes = closeH * 60 + (closeM || 0) - 30;
+
+    // Generate 30-minute slots within operating hours, skip lunch (12:00-13:00)
+    const allSlots: string[] = [];
+    for (let m = openMinutes; m <= closeMinutes; m += 30) {
+      const h = Math.floor(m / 60);
+      const mm = m % 60;
+      // Skip lunch hour
+      if (h === 12) continue;
+      allSlots.push(
+        `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`,
+      );
+    }
+
     const existingBookings = await queryAll<BookingTimeRow>(
       `SELECT booking_time FROM bookings
        WHERE tenant_id = $1 AND booking_date = $2 AND status != 'cancelled'`,
@@ -88,22 +147,6 @@ export async function executeCheckAvailability(
     const bookedTimes = new Set(
       existingBookings?.map((b) => b.booking_time) || [],
     );
-    const allSlots = [
-      "09:00",
-      "09:30",
-      "10:00",
-      "10:30",
-      "11:00",
-      "11:30",
-      "13:00",
-      "13:30",
-      "14:00",
-      "14:30",
-      "15:00",
-      "15:30",
-      "16:00",
-      "16:30",
-    ];
     const availableSlots = allSlots.filter((slot) => !bookedTimes.has(slot));
 
     if (availableSlots.length === 0) {
