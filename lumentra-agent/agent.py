@@ -148,12 +148,12 @@ async def entrypoint(ctx: JobContext):
             logger.error("Graceful rejection failed: %s", e)
         return
 
-    # Configure LLM: gpt-4.1-mini (best balance of quality, speed, tool calling)
+    # Configure LLM: gpt-4.1 (full model for precise instruction following, no hallucination)
     llm = openai.LLM(
-        model="gpt-4.1-mini",
-        temperature=0.8,
+        model="gpt-4.1",
+        temperature=0.6,
     )
-    logger.info("Using OpenAI gpt-4.1-mini")
+    logger.info("Using OpenAI gpt-4.1")
 
     # Configure TTS -- Cartesia Sonic-3 is the production choice for phone calls:
     # streaming support (40-90ms TTFB), native SIP codecs, 56 emotion controls

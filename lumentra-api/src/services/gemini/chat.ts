@@ -141,10 +141,21 @@ Today's Date: ${new Date().toISOString().split("T")[0]}
     options.operatingHours.schedule.length > 0
   ) {
     prompt += `\n## Operating Hours\n`;
+    const dayNames = [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ];
     for (const slot of options.operatingHours.schedule) {
-      const day = slot.day || `Day ${slot.day}`;
-      const open = slot.open || slot.open_time || "";
-      const close = slot.close || slot.close_time || "";
+      if (!slot.enabled && slot.enabled !== undefined) continue;
+      const day =
+        typeof slot.day === "number" ? dayNames[slot.day] : slot.day || "Day";
+      const open = slot.open || slot.open_time || slot.openTime || "";
+      const close = slot.close || slot.close_time || slot.closeTime || "";
       if (open && close) {
         prompt += `- ${day}: ${open} - ${close}\n`;
       }
@@ -327,10 +338,21 @@ Today's Date: ${new Date().toISOString().split("T")[0]}
     options.operatingHours.schedule.length > 0
   ) {
     prompt += `\n## Operating Hours\n`;
+    const dayNames = [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ];
     for (const slot of options.operatingHours.schedule) {
-      const day = slot.day || `Day ${slot.day}`;
-      const open = slot.open || slot.open_time || "";
-      const close = slot.close || slot.close_time || "";
+      if (!slot.enabled && slot.enabled !== undefined) continue;
+      const day =
+        typeof slot.day === "number" ? dayNames[slot.day] : slot.day || "Day";
+      const open = slot.open || slot.open_time || slot.openTime || "";
+      const close = slot.close || slot.close_time || slot.closeTime || "";
       if (open && close) {
         prompt += `- ${day}: ${open} - ${close}\n`;
       }
