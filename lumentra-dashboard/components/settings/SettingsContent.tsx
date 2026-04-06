@@ -3,22 +3,12 @@
 import React, { useEffect } from "react";
 
 import { useConfig } from "@/context/ConfigContext";
-import GeneralTab from "./GeneralTab";
-import VoiceTab from "./VoiceTab";
 import HoursTab from "./HoursTab";
-import GreetingsTab from "./GreetingsTab";
 import EscalationTab from "./EscalationTab";
 import type { SettingsTab } from "@/types";
 
-// Only these tabs are accessible in the simplified product
-const VALID_TABS: Set<string> = new Set([
-  "general",
-  "hours",
-  "voice",
-  "greetings",
-  "escalation",
-  "team",
-]);
+// Only these tabs are accessible to tenants
+const VALID_TABS: Set<string> = new Set(["hours", "escalation", "team"]);
 
 export default function SettingsContent() {
   const { config, uiState, setSettingsTab } = useConfig();
@@ -27,20 +17,16 @@ export default function SettingsContent() {
   // Clamp stale settingsTab from localStorage to a valid value
   useEffect(() => {
     if (!VALID_TABS.has(settingsTab)) {
-      setSettingsTab("general" as SettingsTab);
+      setSettingsTab("hours" as SettingsTab);
     }
   }, [settingsTab, setSettingsTab]);
 
   if (!config) return null;
 
-  // Don't render stale tab content
-  const activeTab = VALID_TABS.has(settingsTab) ? settingsTab : "general";
+  const activeTab = VALID_TABS.has(settingsTab) ? settingsTab : "hours";
 
   return (
     <div key={activeTab}>
-      {activeTab === "general" && <GeneralTab />}
-      {activeTab === "voice" && <VoiceTab />}
-      {activeTab === "greetings" && <GreetingsTab />}
       {activeTab === "hours" && <HoursTab />}
       {activeTab === "escalation" && <EscalationTab />}
     </div>

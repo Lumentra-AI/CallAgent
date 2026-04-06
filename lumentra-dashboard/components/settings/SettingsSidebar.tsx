@@ -5,15 +5,7 @@ import React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useConfig } from "@/context/ConfigContext";
 import type { SettingsTab, Permission } from "@/types";
-import {
-  Settings,
-  Mic,
-  Clock,
-  MessageSquare,
-  PhoneForwarded,
-  ChevronRight,
-  UsersRound,
-} from "lucide-react";
+import { Clock, PhoneForwarded, ChevronRight, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TabConfig {
@@ -28,14 +20,6 @@ interface TabConfig {
 
 const ALL_TABS: TabConfig[] = [
   {
-    id: "general",
-    label: "Business Info",
-    icon: Settings,
-    description: "Name, address, and contact details",
-    requiredPermission: "manage_agent",
-    category: "business",
-  },
-  {
     id: "hours",
     label: "Business Hours",
     icon: Clock,
@@ -43,22 +27,6 @@ const ALL_TABS: TabConfig[] = [
     requiredPermission: "manage_hours",
     category: "business",
     path: "/settings/hours",
-  },
-  {
-    id: "voice",
-    label: "Voice & Greeting",
-    icon: Mic,
-    description: "How your AI assistant sounds",
-    requiredPermission: "manage_voice",
-    category: "business",
-  },
-  {
-    id: "greetings",
-    label: "Call Greetings",
-    icon: MessageSquare,
-    description: "What callers hear first",
-    requiredPermission: "manage_greetings",
-    category: "business",
   },
   {
     id: "escalation",
