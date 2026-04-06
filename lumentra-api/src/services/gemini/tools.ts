@@ -213,10 +213,11 @@ export async function executeCreateBooking(
     const sourceLabel = isChat ? "chat" : "call";
     // DB constraint: source must be call|web|manual|api
     const sourceDb = isChat ? "web" : "call";
+    const customerPhone = args.customer_phone || context.callerPhone || "";
     const data = await insertOne<BookingRow>("bookings", {
       tenant_id: context.tenantId,
       customer_name: args.customer_name,
-      customer_phone: args.customer_phone,
+      customer_phone: customerPhone,
       booking_type: args.service_type || "general",
       booking_date: args.date,
       booking_time: args.time,
