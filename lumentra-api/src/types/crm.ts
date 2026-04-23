@@ -621,6 +621,8 @@ export interface CalendarEvent {
   resource_name?: string;
   booking_type?: string;
   confirmation_code?: string;
+  source?: string;
+  created_at?: string;
 }
 
 export interface CalendarData {

@@ -214,9 +214,12 @@ export async function getCalendarData(
     status: string;
     booking_type: string;
     confirmation_code: string;
+    source: string | null;
+    created_at: string;
   }>(
     `SELECT id, customer_name, customer_phone, booking_date, booking_time,
-            duration_minutes, status, booking_type, confirmation_code
+            duration_minutes, status, booking_type, confirmation_code,
+            source, created_at
      FROM bookings
      WHERE tenant_id = $1
        AND booking_date >= $2
@@ -236,6 +239,8 @@ export async function getCalendarData(
     contact_phone: b.customer_phone,
     booking_type: b.booking_type,
     confirmation_code: b.confirmation_code,
+    source: b.source ?? undefined,
+    created_at: b.created_at,
   }));
 }
 

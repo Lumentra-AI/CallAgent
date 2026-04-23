@@ -436,6 +436,8 @@ export interface NotificationPreferences {
 
 export type CalendarView = "month" | "week" | "day";
 
+export type BookingSource = "call" | "web" | "manual" | "api" | string;
+
 export interface CalendarEvent {
   id: string;
   title: string;
@@ -447,6 +449,8 @@ export interface CalendarEvent {
   resource_name?: string;
   booking_type?: string;
   confirmation_code?: string;
+  source?: BookingSource;
+  created_at?: string;
 }
 
 export interface CalendarData {

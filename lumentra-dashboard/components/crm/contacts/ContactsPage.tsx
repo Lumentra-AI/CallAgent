@@ -11,6 +11,7 @@ import {
   EmptySearchResults,
 } from "@/components/crm/shared/EmptyState";
 // Badge unused currently but kept for future filter chips
+import { SourceBadge } from "@/components/ui/source-badge";
 import { ContactForm } from "./ContactForm";
 import { ContactDetail } from "./ContactDetail";
 import { useContacts } from "@/hooks/useContacts";
@@ -100,6 +101,16 @@ function createColumns(transactionPluralLabel: string): Column<Contact>[] {
       key: "status",
       header: "Status",
       render: (contact) => <StatusBadge status={contact.status} />,
+    },
+    {
+      key: "source",
+      header: "Source",
+      render: (contact) =>
+        contact.source ? (
+          <SourceBadge source={contact.source} size="sm" />
+        ) : (
+          <span className="text-zinc-500">-</span>
+        ),
     },
     {
       key: "total_bookings",

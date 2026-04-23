@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { SourceBadge } from "@/components/ui/source-badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ContactForm } from "./ContactForm";
 import { getContactHistory, getContactNotes, deleteContact } from "@/lib/api";
@@ -330,11 +331,13 @@ export function ContactDetail({ contact, onClose }: ContactDetailProps) {
                     </span>
                   </div>
                 )}
-                <div>
+                <div className="flex items-center gap-2">
                   <span className="text-zinc-500">Source:</span>
-                  <span className="ml-2 capitalize text-zinc-300">
-                    {contact.source}
-                  </span>
+                  {contact.source ? (
+                    <SourceBadge source={contact.source} size="sm" />
+                  ) : (
+                    <span className="ml-2 text-zinc-400">-</span>
+                  )}
                 </div>
                 <div>
                   <span className="text-zinc-500">First Contact:</span>

@@ -10,7 +10,9 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SourceBadge } from "@/components/ui/source-badge";
 import { useIndustry } from "@/context/IndustryContext";
+import { useToast } from "@/context/ToastContext";
 import {
   getCalendarEvents,
   getDateRangeForView,
@@ -79,16 +81,28 @@ function getStatusColor(status: string): string {
 // EVENT CARD
 // ============================================================================
 
-function EventCard({ event }: { event: CalendarEvent }) {
+function EventCard({
+  event,
+  isNew,
+}: {
+  event: CalendarEvent;
+  isNew?: boolean;
+}) {
   return (
     <div
       className={cn(
         "mb-1 rounded border px-2 py-1 text-xs truncate cursor-pointer hover:opacity-80",
         getStatusColor(event.status),
+        isNew && "animate-booking-pulse ring-2 ring-sky-400/60",
       )}
       title={`${event.title} - ${event.contact_name || "Unknown"}`}
     >
-      <div className="font-medium truncate">{event.title}</div>
+      <div className="flex items-center justify-between gap-1">
+        <div className="font-medium truncate">{event.title}</div>
+        {event.source && (
+          <SourceBadge source={event.source} size="xs" iconOnly />
+        )}
+      </div>
       {event.contact_name && (
         <div className="truncate opacity-75">{event.contact_name}</div>
       )}
@@ -104,10 +118,12 @@ function MonthGrid({
   currentDate,
   events,
   onDayClick,
+  newEventIds,
 }: {
   currentDate: Date;
   events: CalendarEvent[];
   onDayClick: (date: Date) => void;
+  newEventIds: Set<string>;
 }) {
   const firstDayOfMonth = new Date(
     currentDate.getFullYear(),
@@ -209,7 +225,11 @@ function MonthGrid({
                 </div>
                 <div className="space-y-0.5 overflow-hidden">
                   {dayEvents.slice(0, 3).map((event) => (
-                    <EventCard key={event.id} event={event} />
+                    <EventCard
+                      key={event.id}
+                      event={event}
+                      isNew={newEventIds.has(event.id)}
+                    />
                   ))}
                   {dayEvents.length > 3 && (
                     <div className="px-2 text-xs text-zinc-500">
@@ -294,18 +314,21 @@ function DaySummaryPanel({
                 key={event.id}
                 className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="font-medium text-zinc-100">
                     {event.title}
                   </span>
-                  <span
-                    className={cn(
-                      "rounded px-2 py-0.5 text-xs",
-                      getStatusColor(event.status),
-                    )}
-                  >
-                    {event.status}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {event.source && <SourceBadge source={event.source} />}
+                    <span
+                      className={cn(
+                        "rounded px-2 py-0.5 text-xs",
+                        getStatusColor(event.status),
+                      )}
+                    >
+                      {event.status}
+                    </span>
+                  </div>
                 </div>
                 <div className="mt-2 space-y-1 text-sm text-zinc-400">
                   <div className="flex items-center gap-2">
@@ -345,6 +368,7 @@ function DaySummaryPanel({
 
 export default function CalendarPage() {
   const { transactionLabel } = useIndustry();
+  const { toast } = useToast();
   const [currentDate, setCurrentDate] = React.useState(new Date());
   const [view, setView] = React.useState<CalendarView>("month");
   const [events, setEvents] = React.useState<CalendarEvent[]>([]);
@@ -354,6 +378,25 @@ export default function CalendarPage() {
   const [daySummary, setDaySummary] = React.useState<DaySummary | null>(null);
   const [isFormOpen, setIsFormOpen] = React.useState(false);
   const [lastRefresh, setLastRefresh] = React.useState<Date>(new Date());
+  const [newEventIds, setNewEventIds] = React.useState<Set<string>>(new Set());
+  const knownIdsRef = React.useRef<Set<string> | null>(null);
+
+  const sourceLabel = (source?: string) => {
+    switch ((source || "").toLowerCase()) {
+      case "web":
+      case "chat":
+        return "Chat";
+      case "call":
+      case "voice":
+        return "Call";
+      case "manual":
+        return "Manual";
+      case "api":
+        return "API";
+      default:
+        return "New";
+    }
+  };
 
   // Load events function (reusable for initial load and refresh)
   const loadEvents = React.useCallback(
@@ -364,6 +407,48 @@ export default function CalendarPage() {
       try {
         const { startDate, endDate } = getDateRangeForView(currentDate, view);
         const result = await getCalendarEvents(startDate, endDate);
+
+        // Diff against previous known IDs to detect new bookings.
+        // knownIdsRef is null on very first load → don't toast for existing data.
+        if (knownIdsRef.current !== null) {
+          const prevIds = knownIdsRef.current;
+          const freshlyAdded = result.events.filter((e) => !prevIds.has(e.id));
+
+          if (freshlyAdded.length > 0) {
+            const pulseIds = new Set(freshlyAdded.map((e) => e.id));
+            setNewEventIds((prev) => {
+              const merged = new Set(prev);
+              pulseIds.forEach((id) => merged.add(id));
+              return merged;
+            });
+
+            // Toast per new booking (capped so we don't spam)
+            freshlyAdded.slice(0, 3).forEach((e) => {
+              const when = new Date(e.start).toLocaleString([], {
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+              toast.success(
+                `New booking via ${sourceLabel(e.source)}`,
+                `${e.contact_name || e.title} — ${when}`,
+                6000,
+              );
+            });
+
+            // Clear pulse after 4s so the animation can finish
+            setTimeout(() => {
+              setNewEventIds((prev) => {
+                const next = new Set(prev);
+                pulseIds.forEach((id) => next.delete(id));
+                return next;
+              });
+            }, 4000);
+          }
+        }
+
+        knownIdsRef.current = new Set(result.events.map((e) => e.id));
         setEvents(result.events);
         setLastRefresh(new Date());
       } catch (err) {
@@ -374,8 +459,15 @@ export default function CalendarPage() {
         setIsRefreshing(false);
       }
     },
-    [currentDate, view],
+    [currentDate, view, toast],
   );
+
+  // When date range or view changes, suppress toasts for the first fetch
+  // (those events aren't "new", they're just newly in view).
+  React.useEffect(() => {
+    knownIdsRef.current = null;
+    setNewEventIds(new Set());
+  }, [currentDate, view]);
 
   // Initial load and when date/view changes
   React.useEffect(() => {
@@ -522,6 +614,7 @@ export default function CalendarPage() {
             currentDate={currentDate}
             events={events}
             onDayClick={handleDayClick}
+            newEventIds={newEventIds}
           />
         )}
       </div>
