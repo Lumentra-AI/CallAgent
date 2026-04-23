@@ -96,13 +96,20 @@ async function sipForwardHandler(c: Context) {
             ? `&webhook_secret=${encodeURIComponent(webhookSecret)}`
             : "";
           const actionUrl = `${backendUrl}/sip/dial-result?phone=${encodeURIComponent(dialedNumber)}${secretParam}`;
+          // XML-escape & in attribute values (Twilio error 12100 = document parse failure)
+          const xmlAttr = (s: string) =>
+            s
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;");
           const numberNouns = contacts
             .map((c) => `    <Number>${c.phone}</Number>`)
             .join("\n");
 
           const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="20" action="${actionUrl}" callerId="${dialedNumber}">
+  <Dial timeout="20" action="${xmlAttr(actionUrl)}" callerId="${xmlAttr(dialedNumber)}">
 ${numberNouns}
   </Dial>
 </Response>`;
@@ -169,8 +176,12 @@ export function createApp() {
           return allowedOrigins.includes(origin || "") ? origin : null;
         }
 
-        // In development, allow localhost on any port
-        if (origin && origin.startsWith("http://localhost:")) {
+        // In development, allow localhost and 127.0.0.1 on any port
+        if (
+          origin &&
+          (origin.startsWith("http://localhost:") ||
+            origin.startsWith("http://127.0.0.1:"))
+        ) {
           return origin;
         }
         return allowedOrigins.includes(origin || "")
