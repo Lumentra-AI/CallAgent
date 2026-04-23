@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { get } from "@/lib/api/client";
 
 export interface Call {
@@ -68,50 +68,57 @@ export function useCalls(options: UseCallsOptions = {}) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
-  const fetchCalls = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const fetchCalls = useCallback(
+    async (showLoading = true) => {
+      if (showLoading) setLoading(true);
+      setError(null);
 
-    try {
-      const params: Record<string, string> = {};
-      if (options.status) params.status = options.status;
-      if (options.outcome) params.outcome = options.outcome;
-      if (options.startDate) params.start_date = options.startDate;
-      if (options.endDate) params.end_date = options.endDate;
-      if (options.search) params.search = options.search;
-      if (options.limit) params.limit = options.limit.toString();
-      if (options.offset) params.offset = options.offset.toString();
+      try {
+        const params: Record<string, string> = {};
+        if (options.status) params.status = options.status;
+        if (options.outcome) params.outcome = options.outcome;
+        if (options.startDate) params.start_date = options.startDate;
+        if (options.endDate) params.end_date = options.endDate;
+        if (options.search) params.search = options.search;
+        if (options.limit) params.limit = options.limit.toString();
+        if (options.offset) params.offset = options.offset.toString();
 
-      const response = await get<CallsResponse>("/api/calls", params);
-      setCalls(response.calls);
-      setTotal(response.total);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch calls");
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    options.status,
-    options.outcome,
-    options.startDate,
-    options.endDate,
-    options.search,
-    options.limit,
-    options.offset,
-  ]);
+        const response = await get<CallsResponse>("/api/calls", params);
+        setCalls(response.calls);
+        setTotal(response.total);
+        hasLoadedRef.current = true;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to fetch calls");
+      } finally {
+        if (showLoading) setLoading(false);
+      }
+    },
+    [
+      options.status,
+      options.outcome,
+      options.startDate,
+      options.endDate,
+      options.search,
+      options.limit,
+      options.offset,
+    ],
+  );
 
   useEffect(() => {
-    fetchCalls();
+    // Show spinner only on very first load; filter/pagination changes
+    // silently swap results to avoid a visible flash.
+    fetchCalls(!hasLoadedRef.current);
   }, [fetchCalls]);
 
-  // Auto-polling for real-time updates
+  // Auto-polling for real-time updates — silent (no loading flash)
   useEffect(() => {
     const interval = options.pollInterval ?? 10000; // Default 10 seconds
     if (interval <= 0) return;
 
     const timer = setInterval(() => {
-      fetchCalls();
+      fetchCalls(false);
     }, interval);
 
     return () => clearInterval(timer);

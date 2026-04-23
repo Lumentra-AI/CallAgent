@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { get } from "@/lib/api/client";
 
 export interface ChatSession {
@@ -53,53 +53,58 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
-  const fetchSessions = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const fetchSessions = useCallback(
+    async (showLoading = true) => {
+      if (showLoading) setLoading(true);
+      setError(null);
 
-    try {
-      const params: Record<string, string> = {};
-      if (options.status) params.status = options.status;
-      if (options.startDate) params.start_date = options.startDate;
-      if (options.endDate) params.end_date = options.endDate;
-      if (options.search) params.search = options.search;
-      if (options.limit) params.limit = options.limit.toString();
-      if (options.offset) params.offset = options.offset.toString();
+      try {
+        const params: Record<string, string> = {};
+        if (options.status) params.status = options.status;
+        if (options.startDate) params.start_date = options.startDate;
+        if (options.endDate) params.end_date = options.endDate;
+        if (options.search) params.search = options.search;
+        if (options.limit) params.limit = options.limit.toString();
+        if (options.offset) params.offset = options.offset.toString();
 
-      const response = await get<ChatSessionsResponse>(
-        "/api/chat-sessions",
-        params,
-      );
-      setSessions(response.sessions);
-      setTotal(response.total);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to fetch chat sessions",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    options.status,
-    options.startDate,
-    options.endDate,
-    options.search,
-    options.limit,
-    options.offset,
-  ]);
+        const response = await get<ChatSessionsResponse>(
+          "/api/chat-sessions",
+          params,
+        );
+        setSessions(response.sessions);
+        setTotal(response.total);
+        hasLoadedRef.current = true;
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to fetch chat sessions",
+        );
+      } finally {
+        if (showLoading) setLoading(false);
+      }
+    },
+    [
+      options.status,
+      options.startDate,
+      options.endDate,
+      options.search,
+      options.limit,
+      options.offset,
+    ],
+  );
 
   useEffect(() => {
-    fetchSessions();
+    fetchSessions(!hasLoadedRef.current);
   }, [fetchSessions]);
 
-  // Auto-polling
+  // Auto-polling (silent)
   useEffect(() => {
     const interval = options.pollInterval ?? 15000;
     if (interval <= 0) return;
 
     const timer = setInterval(() => {
-      fetchSessions();
+      fetchSessions(false);
     }, interval);
 
     return () => clearInterval(timer);
