@@ -143,6 +143,10 @@ export interface Booking {
   // References
   tenant_id: string;
   call_id?: string;
+  // SIP/voice call SID (LiveKit room name or Vapi call.id) captured at
+  // booking-time so /internal/calls/log can backfill call_id once the
+  // calls row finally exists. Migration 031.
+  call_sid?: string;
   contact_id?: string; // CRM contact reference
   resource_id?: string; // CRM resource reference
   slot_id?: string; // Availability slot reference

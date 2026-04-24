@@ -10,7 +10,7 @@ import {
 import { buildSystemPrompt } from "../services/gemini/chat.js";
 import { executeTool } from "../services/gemini/tools.js";
 import { insertOne } from "../services/database/query-helpers.js";
-import { queryAll } from "../services/database/client.js";
+import { query, queryAll } from "../services/database/client.js";
 import { findOrCreateByPhone } from "../services/contacts/contact-service.js";
 import { runPostCallAutomation } from "../services/automation/post-call.js";
 import type { ToolExecutionContext } from "../types/voice.js";
@@ -437,6 +437,30 @@ internalRoutes.post("/calls/log", async (c) => {
     console.log(
       `[INTERNAL] Call logged: ${body.call_sid}, ${body.duration_seconds}s, ${body.outcome_type || "inquiry"}`,
     );
+
+    // Backfill any bookings created during this call. The voice agent's
+    // create_booking runs before this calls row exists, so it stores the
+    // call_sid and leaves call_id NULL. Now that the calls row is in,
+    // link them. Idempotent: WHERE call_id IS NULL guards against
+    // double-backfill if /internal/calls/log fires twice for the same SID.
+    try {
+      const linked = await query(
+        `UPDATE bookings
+            SET call_id = $1
+          WHERE tenant_id = $2
+            AND call_sid = $3
+            AND call_id IS NULL
+        RETURNING id`,
+        [record.id, body.tenant_id, body.call_sid],
+      );
+      if (linked.rowCount && linked.rowCount > 0) {
+        console.log(
+          `[INTERNAL] Backfilled call_id on ${linked.rowCount} booking(s) for SID ${body.call_sid}`,
+        );
+      }
+    } catch (err) {
+      console.error("[INTERNAL] Booking call_id backfill failed:", err);
+    }
 
     // Run post-call automation (deals, tasks, status updates) - non-blocking
     const tenant = getTenantById(body.tenant_id);

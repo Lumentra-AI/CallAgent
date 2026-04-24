@@ -237,6 +237,11 @@ export async function executeCreateBooking(
       reminder_sent: false,
       source: sourceDb,
       call_id: callId,
+      // Persist call_sid so /internal/calls/log can backfill call_id once
+      // the calls row is written at call-end. Only meaningful for voice;
+      // chat sessions reuse the same field for callSid but we don't link
+      // them to calls rows.
+      call_sid: context.source === "call" ? context.callSid || null : null,
     });
 
     const formattedTime = formatTimeForVoice(args.time);
@@ -437,6 +442,8 @@ export async function executeCreateOrder(
       status: "confirmed",
       confirmation_code: confirmationCode,
       reminder_sent: false,
+      source: context.source === "chat" ? "web" : "call",
+      call_sid: context.source === "call" ? context.callSid || null : null,
     });
 
     const orderTypeText =
