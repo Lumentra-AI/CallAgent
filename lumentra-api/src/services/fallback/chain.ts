@@ -122,6 +122,7 @@ export async function executeChain(
     callSid: context.callSid,
     callerPhone: context.callerPhone,
     escalationPhone: context.escalationPhone,
+    source: "call", // Fallback chain runs inside a live voice session
   };
 
   // Step 1: Check escalation first

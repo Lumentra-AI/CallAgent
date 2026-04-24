@@ -336,6 +336,7 @@ internalRoutes.post("/voice-tools/:action", async (c) => {
     callSid: body.call_sid || "",
     callerPhone: body.caller_phone,
     escalationPhone: body.escalation_phone,
+    source: "call", // /internal/tools is the voice agent's endpoint
   };
 
   try {

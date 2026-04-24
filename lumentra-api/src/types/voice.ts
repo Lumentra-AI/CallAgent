@@ -290,6 +290,12 @@ export interface ToolExecutionContext {
   callerPhone?: string;
   escalationPhone?: string;
   disabledFeatures?: string[];
+  // "call" when the request originates from the voice agent (LiveKit SIP),
+  // "chat" when it originates from the web chat widget. Replaces the old
+  // "did we find a calls row?" inference, which always failed for live voice
+  // because the calls row is written at call-end (by call_logger), not at
+  // tool-call time.
+  source: "call" | "chat";
 }
 
 export interface CheckAvailabilityArgs {

@@ -258,6 +258,7 @@ chatRoutes.post("/", async (c) => {
       callerPhone: visitor_info?.phone || currentVisitorInfo?.phone,
       sessionId: session_id,
       disabledFeatures,
+      source: "chat",
     };
 
     // Chat with multi-provider fallback
@@ -440,6 +441,7 @@ chatRoutes.post("/stream", async (c) => {
     callerPhone: visitor_info?.phone || currentVisitorInfo?.phone,
     sessionId: session_id,
     disabledFeatures,
+    source: "chat",
   };
 
   // Return SSE stream

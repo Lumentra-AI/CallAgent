@@ -185,6 +185,7 @@ async function handleToolCalls(c: any, message: any) {
     callSid: call.id || "vapi-unknown",
     callerPhone,
     escalationPhone: tenant.escalation_phone || undefined,
+    source: "call",
   };
 
   const results = [];

@@ -199,9 +199,19 @@ export async function executeCreateBooking(
   try {
     const confirmationCode = generateConfirmationCode();
 
-    // Try to find the call record for linking (may not exist yet during call)
+    // Source is declared by the entry point (voice agent vs chat widget),
+    // never inferred. The old "look up calls row by vapi_call_id" approach
+    // always failed for live voice because the calls row is written at
+    // call-end (call_logger), not at tool-call time -- causing every voice
+    // booking to be misclassified as chat with null call_id. The call_id
+    // backfill happens in /internal/calls/log via call_sid (migration 031).
+    const sourceDb = context.source === "chat" ? "web" : "call";
+
+    // Look for an existing calls row in case it does exist (Vapi inbound
+    // path writes earlier than LiveKit's call_logger). Best-effort, no
+    // longer used to infer source.
     let callId: string | null = null;
-    if (context.callSid) {
+    if (context.source === "call" && context.callSid) {
       const callRecord = await queryOne<CallIdRow>(
         "SELECT id FROM calls WHERE vapi_call_id = $1",
         [context.callSid],
@@ -209,11 +219,8 @@ export async function executeCreateBooking(
       callId = callRecord?.id || null;
     }
 
-    const isChat = !callId && context.callSid;
-    const sourceLabel = isChat ? "chat" : "call";
-    // DB constraint: source must be call|web|manual|api
-    const sourceDb = isChat ? "web" : "call";
     const customerPhone = args.customer_phone || context.callerPhone || "";
+    const userNotes = args.notes ? args.notes.trim() : "";
     const data = await insertOne<BookingRow>("bookings", {
       tenant_id: context.tenantId,
       customer_name: args.customer_name,
@@ -221,9 +228,10 @@ export async function executeCreateBooking(
       booking_type: args.service_type || "general",
       booking_date: args.date,
       booking_time: args.time,
-      notes: args.notes
-        ? `${args.notes} (${sourceLabel}: ${context.callSid})`
-        : `Booked via ${sourceLabel} ${context.callSid}`,
+      // Only the operator-readable notes go in the notes field. The
+      // session/call ID lives in dedicated columns (call_id once linked,
+      // call_sid for backfill correlation), not interpolated as text.
+      notes: userNotes || null,
       status: "confirmed",
       confirmation_code: confirmationCode,
       reminder_sent: false,
