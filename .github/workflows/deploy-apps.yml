@@ -1,0 +1,76 @@
+name: Deploy Apps
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "lumentra-api/**"
+      - "lumentra-dashboard/**"
+      - ".github/workflows/deploy-apps.yml"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Deploy target"
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - api
+          - dash
+
+env:
+  SERVER_HOST: 178.156.205.145
+  SERVER_USER: root
+
+jobs:
+  deploy:
+    name: Trigger Coolify deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Determine target
+        id: target
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            target="${{ github.event.inputs.target }}"
+          else
+            base="${{ github.event.before }}"
+            if [[ -z "$base" || "$base" == "0000000000000000000000000000000000000000" ]]; then
+              base="HEAD~1"
+            fi
+            changed=$(git diff --name-only "$base" HEAD 2>/dev/null || git diff --name-only HEAD~1 HEAD || true)
+            echo "Changed files since $base:"
+            echo "$changed"
+            api=false; dash=false
+            echo "$changed" | grep -q "^lumentra-api/"       && api=true
+            echo "$changed" | grep -q "^lumentra-dashboard/" && dash=true
+            if   $api && $dash; then target=both
+            elif $api;          then target=api
+            elif $dash;         then target=dash
+            else                     target=none
+            fi
+          fi
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "Deploy target: $target"
+
+      - name: Nothing to deploy
+        if: steps.target.outputs.target == 'none'
+        run: echo "No api/dashboard code changed; skipping deploy."
+
+      - name: Setup SSH
+        if: steps.target.outputs.target != 'none'
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ env.SERVER_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy
+        if: steps.target.outputs.target != 'none'
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ env.SERVER_USER }}@${{ env.SERVER_HOST }}" \
+            "/root/deploy-lumentra.sh ${{ steps.target.outputs.target }}"
