@@ -159,18 +159,17 @@ async def entrypoint(ctx: JobContext):
     )
     logger.info("Using OpenAI gpt-4.1")
 
-    # TTS: Deepgram Aura-2 (telephony-tuned). Native 8 kHz mulaw output means
-    # no quality-destroying downsample step from 24 kHz like Cartesia hits on
-    # the Twilio PSTN leg. Voice `thalia` is Deepgram's own "Clear, Confident,
-    # Energetic, Enthusiastic" customer-service voice. No emotion tags -- the
-    # tone is baked into the voice itself.
-    tts_voice = os.environ.get("TTS_VOICE", "aura-2-thalia-en")
-    tts_instance = deepgram.TTS(
-        model=tts_voice,
-        encoding="mulaw",
-        sample_rate=8000,
+    # TTS: Cartesia Sonic-3. Aura-2 swap attempted 2026-04-24 produced static
+    # on PSTN -- plugin kwargs for native mulaw output need to be verified
+    # against the installed plugin signature before retrying.
+    voice_id = tenant_config.get("voice_config", {}).get("voice_id", "694f9389-aac1-45b6-b726-9d9369183238")
+    tts_instance = cartesia.TTS(
+        model="sonic-3",
+        voice=voice_id,
+        speed=1.10,
+        emotion=["Confident", "Enthusiastic", "Content"],
     )
-    logger.info("TTS: Deepgram %s (mulaw @ 8kHz, PSTN-native)", tts_voice)
+    logger.info("TTS: Cartesia sonic-3 voice=%s", voice_id)
 
     # Configure the voice pipeline with explicit plugin instances (self-hosted, BYOK).
     # Turn-handling settings are consolidated under `turn_handling` in LiveKit 1.5+.
