@@ -17,7 +17,11 @@ from livekit.agents import (
 )
 from livekit.agents.llm import function_tool
 from livekit.agents import room_io
-from livekit.agents.voice.background_audio import BackgroundAudioPlayer
+from livekit.agents.voice.background_audio import (
+    AudioConfig,
+    BackgroundAudioPlayer,
+    BuiltinAudioClip,
+)
 from livekit.plugins import deepgram, cartesia, openai, silero, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
@@ -161,12 +165,14 @@ async def entrypoint(ctx: JobContext):
     tts_instance = cartesia.TTS(
         model="sonic-3",
         voice=voice_id,
-        speed=1.05,
-        emotion=["Confident", "Calm", "Curious"],
+        speed=1.10,
+        emotion=["Confident", "Enthusiastic", "Content"],
     )
     logger.info("TTS: Cartesia sonic-3 voice=%s", voice_id)
 
-    # Configure the voice pipeline with explicit plugin instances (self-hosted, BYOK)
+    # Configure the voice pipeline with explicit plugin instances (self-hosted, BYOK).
+    # Turn-handling settings are consolidated under `turn_handling` in LiveKit 1.5+.
+    # The old top-level kwargs are deprecated and emit warnings; this is the new API.
     session = AgentSession(
         stt=deepgram.STT(
             model="nova-3",
@@ -177,13 +183,32 @@ async def entrypoint(ctx: JobContext):
         llm=llm,
         tts=tts_instance,
         vad=ctx.proc.userdata["vad"],
-        turn_detection=MultilingualModel(),
-        # Production tuning -- patient turn-taking for natural conversation
-        preemptive_generation=True,
-        resume_false_interruption=True,
-        false_interruption_timeout=1.5,
-        min_endpointing_delay=0.8,
-        max_endpointing_delay=2.5,
+        turn_handling={
+            "turn_detection": MultilingualModel(),
+            "endpointing": {
+                # Dynamic endpointing adapts to each caller's pace (EMA of pauses)
+                # instead of a fixed silence threshold.
+                "mode": "dynamic",
+                "min_delay": 0.3,
+                "max_delay": 2.5,
+            },
+            "interruption": {
+                "enabled": True,
+                # Adaptive = ML classifier trained on real conversation audio
+                # (86% precision / 100% recall vs back-channels). On self-hosted
+                # we must opt in explicitly; default is VAD-only.
+                "mode": "adaptive",
+                "min_duration": 0.5,
+                "resume_false_interruption": True,
+                "false_interruption_timeout": 1.5,
+            },
+            "preemptive_generation": {
+                "enabled": True,
+                "preemptive_tts": False,
+                "max_speech_duration": 10.0,
+                "max_retries": 3,
+            },
+        },
         # Idle detection: mark user as "away" after 10s of silence
         user_away_timeout=10.0,
     )
@@ -216,22 +241,26 @@ async def entrypoint(ctx: JobContext):
     @session.on("user_state_changed")
     def _on_user_state_changed(ev):
         nonlocal idle_away_count
-        if ev.new_state == "away":
+        old_state = getattr(ev, "old_state", "?")
+        new_state = getattr(ev, "new_state", "?")
+        logger.info("user_state_changed: %s -> %s (agent_state=%s, away_count=%d)",
+                    old_state, new_state, session.agent_state, idle_away_count)
+        if new_state == "away":
             idle_away_count += 1
-            logger.info("User idle (away count: %d)", idle_away_count)
             if idle_away_count <= len(_IDLE_NUDGES):
+                logger.info("Idle nudge #%d: %r", idle_away_count, _IDLE_NUDGES[idle_away_count - 1])
                 session.generate_reply(
                     instructions=f"The caller has been silent. Say exactly: '{_IDLE_NUDGES[idle_away_count - 1]}'"
                 )
             else:
-                # 3rd silence -- say goodbye and hang up
-                logger.info("User idle too long, ending call")
+                logger.info("User idle too long (count=%d), ending call", idle_away_count)
                 session.generate_reply(
                     instructions="The caller hasn't responded after multiple prompts. "
                     "Say 'Alright, feel free to call back anytime. Goodbye!' and then call the end_call tool with reason 'conversation_complete'."
                 )
-        elif ev.new_state == "speaking":
-            # Reset counter when user speaks
+        elif new_state == "speaking":
+            if idle_away_count > 0:
+                logger.info("User came back (away_count reset from %d)", idle_away_count)
             idle_away_count = 0
 
     async def on_shutdown():
@@ -313,8 +342,16 @@ async def entrypoint(ctx: JobContext):
     # Create the agent with hold music support
     agent = LumentraAgent(tenant_config, caller_phone, ctx)
 
-    # Initialize BackgroundAudioPlayer for hold music during transfers
-    hold_player = BackgroundAudioPlayer()
+    # Initialize BackgroundAudioPlayer for hold music during transfers.
+    # `thinking_sound` auto-plays whenever agent_state == "thinking" —
+    # covers LLM latency, tool calls, and retries with a soft keyboard sound
+    # so callers never hear full dead air even if a verbal filler misses.
+    hold_player = BackgroundAudioPlayer(
+        thinking_sound=[
+            AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.4, probability=0.5),
+            AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.4, probability=0.5),
+        ],
+    )
     agent.hold_player = hold_player
 
     # Start the agent session with echo cancellation for SIP calls

@@ -31,6 +31,29 @@ except ImportError:
     logger.warning("AudioConfig/BuiltinAudioClip not available -- hold music disabled")
 
 
+def _say_filler(context: RunContext, text: str):
+    """Play a short filler phrase while a tool runs. Returns a SpeechHandle
+    we can interrupt once the tool completes, or None if session.say() is
+    unavailable or fails. `add_to_chat_ctx=False` keeps the filler out of
+    LLM memory so the next turn doesn't repeat it."""
+    try:
+        return context.session.say(text, add_to_chat_ctx=False)
+    except Exception as e:
+        logger.debug("pre-tool filler skipped: %s", e)
+        return None
+
+
+def _stop_filler(handle):
+    """Interrupt a filler SpeechHandle if it's still playing."""
+    if handle is None:
+        return
+    try:
+        if not getattr(handle, "interrupted", False) and not handle.done():
+            handle.interrupt()
+    except Exception as e:
+        logger.debug("pre-tool filler interrupt skipped: %s", e)
+
+
 async def _call_tool(context: RunContext, action: str, args: dict) -> str:
     """Call a tool via the lumentra-api internal endpoint. Returns the message string."""
     agent = context.session.current_agent
@@ -607,10 +630,14 @@ async def check_availability(
         date: Date in YYYY-MM-DD format.
         service_type: Optional service type like haircut, consultation.
     """
-    return await _call_tool(context, "check_availability", {
-        "date": date,
-        "service_type": service_type,
-    })
+    hold = _say_filler(context, "One moment, let me check that.")
+    try:
+        return await _call_tool(context, "check_availability", {
+            "date": date,
+            "service_type": service_type,
+        })
+    finally:
+        _stop_filler(hold)
 
 
 @function_tool()
@@ -634,14 +661,18 @@ async def create_booking(
         service_type: Type of service.
         notes: Special requests or notes.
     """
-    return await _call_tool(context, "create_booking", {
-        "customer_name": customer_name,
-        "customer_phone": customer_phone,
-        "date": date,
-        "time": time,
-        "service_type": service_type,
-        "notes": notes,
-    })
+    hold = _say_filler(context, "Okay, booking that now.")
+    try:
+        return await _call_tool(context, "create_booking", {
+            "customer_name": customer_name,
+            "customer_phone": customer_phone,
+            "date": date,
+            "time": time,
+            "service_type": service_type,
+            "notes": notes,
+        })
+    finally:
+        _stop_filler(hold)
 
 
 @function_tool()
@@ -665,14 +696,18 @@ async def create_order(
         delivery_address: Required for delivery orders.
         special_instructions: Optional special requests.
     """
-    return await _call_tool(context, "create_order", {
-        "customer_name": customer_name,
-        "customer_phone": customer_phone,
-        "order_type": order_type,
-        "items": items,
-        "delivery_address": delivery_address,
-        "special_instructions": special_instructions,
-    })
+    hold = _say_filler(context, "Got it, placing the order now.")
+    try:
+        return await _call_tool(context, "create_order", {
+            "customer_name": customer_name,
+            "customer_phone": customer_phone,
+            "order_type": order_type,
+            "items": items,
+            "delivery_address": delivery_address,
+            "special_instructions": special_instructions,
+        })
+    finally:
+        _stop_filler(hold)
 
 
 @function_tool()
@@ -703,12 +738,19 @@ async def transfer_to_human(
     agent = context.session.current_agent
     room = context.session.room_io.room
 
+    # Filler so the caller isn't met with dead air while we resolve contacts
+    # and prep the SIP leg. Interrupted below before we return to the LLM.
+    hold = _say_filler(context, "One moment, let me connect you.")
+
     # Step 1: Call prepare_transfer API -- selects available contacts,
     # creates queue entry, determines effective transfer type
     prepare_args = {"reason": reason}
     if target_role:
         prepare_args["target_contact"] = target_role
-    result = await _call_tool_raw(context, "prepare_transfer", prepare_args)
+    try:
+        result = await _call_tool_raw(context, "prepare_transfer", prepare_args)
+    finally:
+        _stop_filler(hold)
 
     transfer_type = result.get("transfer_type_effective", "callback")
     contacts = result.get("contacts", [])
@@ -767,11 +809,15 @@ async def queue_callback(
         caller_name: The caller's name if provided.
         preferred_time: When they'd like to be called back, if specified.
     """
-    return await _call_tool(context, "queue_callback", {
-        "message": message,
-        "caller_name": caller_name,
-        "preferred_time": preferred_time,
-    })
+    hold = _say_filler(context, "Got it, saving that for you.")
+    try:
+        return await _call_tool(context, "queue_callback", {
+            "message": message,
+            "caller_name": caller_name,
+            "preferred_time": preferred_time,
+        })
+    finally:
+        _stop_filler(hold)
 
 
 @function_tool()
