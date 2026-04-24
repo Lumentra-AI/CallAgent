@@ -1,4 +1,13 @@
-import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
+import { Pool, PoolClient, QueryResult, QueryResultRow, types } from "pg";
+
+// pg's default DATE (OID 1082) parser returns a JS Date in the Node process's
+// local timezone. Template-literal interpolation then produces strings like
+// "Sat Apr 25 2026 00:00:00 GMT+0000 (...)T15:00:00", which broke the calendar
+// grid (event.start.split("T")[0] became "Sat Apr 25 2026 00:00:00 GM" and
+// never matched a YYYY-MM-DD cell key). DATE columns are typed as `string`
+// across the codebase already; keeping them as raw "YYYY-MM-DD" matches that
+// contract and removes the whole class of stringification bugs.
+types.setTypeParser(1082, (val) => val);
 
 let pool: Pool | null = null;
 

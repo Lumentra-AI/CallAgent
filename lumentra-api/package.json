@@ -16,7 +16,9 @@
     "test:security-hardening": "node --import tsx --test tests/security-hardening.test.ts",
     "test:rate-limit-application": "node --import tsx --test tests/rate-limit-application.test.ts",
     "test:setup-email-verification": "node --import tsx --test tests/setup-email-verification.test.ts",
-    "test:platform-admin-utils": "node --import tsx --test tests/platform-admin-utils.test.ts"
+    "test:platform-admin-utils": "node --import tsx --test tests/platform-admin-utils.test.ts",
+    "test:webhook-auth": "node --import tsx --test tests/webhook-auth.test.ts",
+    "test:pg-date-parser": "node --import tsx --test tests/pg-date-parser.test.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",

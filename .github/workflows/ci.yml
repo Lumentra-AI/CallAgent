@@ -11,7 +11,7 @@ env:
 
 jobs:
   api-checks:
-    name: API - Lint & Type Check
+    name: API - Lint, Type Check & Tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -35,6 +35,16 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Run tests
+        run: |
+          npm run test:security-hardening
+          npm run test:webhook-auth
+          npm run test:rate-limit-application
+          npm run test:sip-forward
+          npm run test:setup-email-verification
+          npm run test:platform-admin-utils
+          npm run test:pg-date-parser
 
   dashboard-checks:
     name: Dashboard - Lint & Type Check
@@ -60,8 +70,7 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Lint
-        run: npm run lint || true
-        continue-on-error: true
+        run: npm run lint
 
       - name: Build
         run: npm run build
@@ -69,6 +78,13 @@ jobs:
           NEXT_PUBLIC_API_URL: https://lumentra-api-production.up.railway.app
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Run tests
+        run: |
+          npm run test:redirect
+          npm run test:password-policy
+          npm run test:email-verification
+          npm run test:role-mapping
 
   security-scan:
     name: Security Scan
