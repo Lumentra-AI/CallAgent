@@ -22,6 +22,7 @@ from livekit.agents.voice.background_audio import (
     BackgroundAudioPlayer,
     BuiltinAudioClip,
 )
+from livekit.agents.llm import FallbackAdapter
 from livekit.plugins import deepgram, cartesia, openai, silero, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
@@ -152,12 +153,23 @@ async def entrypoint(ctx: JobContext):
             logger.error("Graceful rejection failed: %s", e)
         return
 
-    # Configure LLM: gpt-4.1 (full model for precise instruction following, no hallucination)
-    llm = openai.LLM(
-        model="gpt-4.1",
-        temperature=0.6,
+    # LLM: gpt-4.1 primary, gpt-4.1-mini fallback.
+    # gpt-4.1 on Tier 1 has a 30K TPM ceiling which our ~7K/turn prompt blows
+    # through in 4 turns during a booking flow, causing 5-10s "please try
+    # again in N seconds" dead air. gpt-4.1-mini has 500K TPM on Tier 1, so
+    # any 429 on the primary flips to mini within 4s instead of silently
+    # retrying. Phase 2 swaps primary to Claude Haiku 4.5 which has 90%
+    # cache discount AND cache-hits that don't count against TPM.
+    llm = FallbackAdapter(
+        llm=[
+            openai.LLM(model="gpt-4.1", temperature=0.6),
+            openai.LLM(model="gpt-4.1-mini", temperature=0.6),
+        ],
+        attempt_timeout=4.0,
+        max_retry_per_llm=0,
+        retry_interval=2.0,
     )
-    logger.info("Using OpenAI gpt-4.1")
+    logger.info("LLM: OpenAI gpt-4.1 (primary) + gpt-4.1-mini (fallback, 4s timeout)")
 
     # TTS: Cartesia Sonic-3.
     # Fallback voice is Katie ("Friendly Fixer: Enunciating young adult female
@@ -173,7 +185,8 @@ async def entrypoint(ctx: JobContext):
     tts_instance = cartesia.TTS(
         model="sonic-3",
         voice=voice_id,
-        speed=1.10,
+        # 1.10 was too fast with Katie's already-energetic delivery; 1.00 is natural.
+        speed=1.00,
         emotion=["Confident", "Enthusiastic", "Content"],
     )
     logger.info("TTS: Cartesia sonic-3 voice=%s", voice_id)
@@ -254,6 +267,12 @@ async def entrypoint(ctx: JobContext):
         logger.info("user_state_changed: %s -> %s (agent_state=%s, away_count=%d)",
                     old_state, new_state, session.agent_state, idle_away_count)
         if new_state == "away":
+            # Don't nudge while the agent itself is working (LLM generating,
+            # tool running, retry in flight). The caller is silent because
+            # they're waiting for us, not because they wandered off.
+            if session.agent_state in ("thinking", "speaking"):
+                logger.info("Skipping idle nudge: agent_state=%s", session.agent_state)
+                return
             idle_away_count += 1
             if idle_away_count <= len(_IDLE_NUDGES):
                 logger.info("Idle nudge #%d: %r", idle_away_count, _IDLE_NUDGES[idle_away_count - 1])
@@ -350,16 +369,13 @@ async def entrypoint(ctx: JobContext):
     # Create the agent with hold music support
     agent = LumentraAgent(tenant_config, caller_phone, ctx)
 
-    # Initialize BackgroundAudioPlayer for hold music during transfers.
-    # `thinking_sound` auto-plays whenever agent_state == "thinking" —
-    # covers LLM latency, tool calls, and retries with a soft keyboard sound
-    # so callers never hear full dead air even if a verbal filler misses.
-    hold_player = BackgroundAudioPlayer(
-        thinking_sound=[
-            AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.4, probability=0.5),
-            AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.4, probability=0.5),
-        ],
-    )
+    # Initialize BackgroundAudioPlayer for hold music during transfers only.
+    # `thinking_sound` removed 2026-04-24: operator feedback was it felt
+    # "dead" rather than "working" -- constant clicks on every LLM turn
+    # were more alarming than silence. Verbal pre-tool fillers cover the
+    # tool-call windows; brief LLM silence is acceptable once we move to
+    # Haiku 4.5 (sub-400ms TTFT) in Phase 2.
+    hold_player = BackgroundAudioPlayer()
     agent.hold_player = hold_player
 
     # Start the agent session with echo cancellation for SIP calls
