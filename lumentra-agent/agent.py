@@ -159,10 +159,17 @@ async def entrypoint(ctx: JobContext):
     )
     logger.info("Using OpenAI gpt-4.1")
 
-    # TTS: Cartesia Sonic-3. Aura-2 swap attempted 2026-04-24 produced static
-    # on PSTN -- plugin kwargs for native mulaw output need to be verified
-    # against the installed plugin signature before retrying.
-    voice_id = tenant_config.get("voice_config", {}).get("voice_id", "694f9389-aac1-45b6-b726-9d9369183238")
+    # TTS: Cartesia Sonic-3.
+    # Fallback voice is Katie ("Friendly Fixer: Enunciating young adult female
+    # for conversational support use cases") -- on Cartesia's recommended
+    # voice-agent list. The old fallback was "Sarah - Mindful Woman" which
+    # Cartesia explicitly describes as "soothing female for meditations and
+    # calming conversations" -- wrong job for a receptionist.
+    voice_id = (
+        tenant_config.get("voice_config", {}).get("voice_id")
+        or tenant_config.get("voice_config", {}).get("voiceId")
+        or "f786b574-daa5-4673-aa0c-cbe3e8534c02"
+    )
     tts_instance = cartesia.TTS(
         model="sonic-3",
         voice=voice_id,
