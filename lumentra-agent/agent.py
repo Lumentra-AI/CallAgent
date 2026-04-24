@@ -194,10 +194,10 @@ async def entrypoint(ctx: JobContext):
             },
             "interruption": {
                 "enabled": True,
-                # Adaptive = ML classifier trained on real conversation audio
-                # (86% precision / 100% recall vs back-channels). On self-hosted
-                # we must opt in explicitly; default is VAD-only.
-                "mode": "adaptive",
+                # "adaptive" calls LiveKit Cloud's hosted inference API and
+                # retry-loops on self-hosted without an LK Cloud key. Sticking
+                # with VAD-only here. Revisit if/when we wire up LK Inference.
+                "mode": "vad",
                 "min_duration": 0.5,
                 "resume_false_interruption": True,
                 "false_interruption_timeout": 1.5,
