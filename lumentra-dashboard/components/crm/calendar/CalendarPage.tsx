@@ -20,6 +20,7 @@ import {
   getDaySummary,
 } from "@/lib/api";
 import { BookingForm } from "./BookingForm";
+import { BookingDetailDrawer } from "./BookingDetailDrawer";
 import type { CalendarEvent, CalendarView, DaySummary } from "@/types/crm";
 import { cn } from "@/lib/utils";
 
@@ -84,18 +85,32 @@ function getStatusColor(status: string): string {
 function EventCard({
   event,
   isNew,
+  onClick,
 }: {
   event: CalendarEvent;
   isNew?: boolean;
+  onClick?: (event: CalendarEvent) => void;
 }) {
   return (
     <div
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.(event);
+      }}
+      onKeyDown={(e) => {
+        if (onClick && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onClick(event);
+        }
+      }}
       className={cn(
-        "mb-1 rounded border px-2 py-1 text-xs truncate cursor-pointer hover:opacity-80",
+        "mb-1 rounded border px-2 py-1 text-xs truncate cursor-pointer hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-indigo-500/50",
         getStatusColor(event.status),
         isNew && "animate-booking-pulse ring-2 ring-sky-400/60",
       )}
-      title={`${event.title} - ${event.contact_name || "Unknown"}`}
+      title={`${event.title} — click for details`}
     >
       <div className="flex items-center justify-between gap-1">
         <div className="font-medium truncate">{event.title}</div>
@@ -118,11 +133,13 @@ function MonthGrid({
   currentDate,
   events,
   onDayClick,
+  onEventClick,
   newEventIds,
 }: {
   currentDate: Date;
   events: CalendarEvent[];
   onDayClick: (date: Date) => void;
+  onEventClick: (event: CalendarEvent) => void;
   newEventIds: Set<string>;
 }) {
   const firstDayOfMonth = new Date(
@@ -175,9 +192,9 @@ function MonthGrid({
   });
 
   return (
-    <div className="flex-1 overflow-hidden">
+    <div className="flex flex-1 flex-col overflow-y-auto">
       {/* Day Headers */}
-      <div className="grid grid-cols-7 border-b border-zinc-800">
+      <div className="sticky top-0 z-10 grid grid-cols-7 border-b border-zinc-800 bg-zinc-950/95 backdrop-blur">
         {DAYS.map((day) => (
           <div
             key={day}
@@ -189,7 +206,10 @@ function MonthGrid({
       </div>
 
       {/* Calendar Grid */}
-      <div className="grid flex-1 grid-cols-7 auto-rows-fr">
+      <div
+        className="grid flex-1 grid-cols-7"
+        style={{ gridAutoRows: "minmax(120px, 1fr)" }}
+      >
         {weeks.map((weekDays, weekIndex) =>
           weekDays.map((date, dayIndex) => {
             if (!date) {
@@ -229,6 +249,7 @@ function MonthGrid({
                       key={event.id}
                       event={event}
                       isNew={newEventIds.has(event.id)}
+                      onClick={onEventClick}
                     />
                   ))}
                   {dayEvents.length > 3 && (
@@ -256,12 +277,14 @@ function DaySummaryPanel({
   events,
   onClose,
   onAddBooking,
+  onEventClick,
 }: {
   date: Date;
   summary: DaySummary | null;
   events: CalendarEvent[];
   onClose: () => void;
   onAddBooking: () => void;
+  onEventClick: (event: CalendarEvent) => void;
 }) {
   const { transactionLabel, transactionPluralLabel } = useIndustry();
   return (
@@ -310,9 +333,11 @@ function DaySummaryPanel({
         ) : (
           <div className="space-y-3">
             {events.map((event) => (
-              <div
+              <button
+                type="button"
                 key={event.id}
-                className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3"
+                onClick={() => onEventClick(event)}
+                className="w-full rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium text-zinc-100">
@@ -345,7 +370,7 @@ function DaySummaryPanel({
                     </div>
                   )}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -377,9 +402,16 @@ export default function CalendarPage() {
   const [selectedDate, setSelectedDate] = React.useState<Date | null>(null);
   const [daySummary, setDaySummary] = React.useState<DaySummary | null>(null);
   const [isFormOpen, setIsFormOpen] = React.useState(false);
+  const [detailBookingId, setDetailBookingId] = React.useState<string | null>(
+    null,
+  );
   const [lastRefresh, setLastRefresh] = React.useState<Date>(new Date());
   const [newEventIds, setNewEventIds] = React.useState<Set<string>>(new Set());
   const knownIdsRef = React.useRef<Set<string> | null>(null);
+
+  const handleEventClick = React.useCallback((event: CalendarEvent) => {
+    setDetailBookingId(event.id);
+  }, []);
 
   const sourceLabel = (source?: string) => {
     switch ((source || "").toLowerCase()) {
@@ -614,6 +646,7 @@ export default function CalendarPage() {
             currentDate={currentDate}
             events={events}
             onDayClick={handleDayClick}
+            onEventClick={handleEventClick}
             newEventIds={newEventIds}
           />
         )}
@@ -627,6 +660,7 @@ export default function CalendarPage() {
           events={selectedDateEvents}
           onClose={() => setSelectedDate(null)}
           onAddBooking={() => setIsFormOpen(true)}
+          onEventClick={handleEventClick}
         />
       )}
 
@@ -636,6 +670,15 @@ export default function CalendarPage() {
         onOpenChange={setIsFormOpen}
         initialDate={selectedDate?.toISOString().split("T")[0]}
         onSuccess={handleBookingSuccess}
+      />
+
+      {/* Booking Detail Drawer */}
+      <BookingDetailDrawer
+        bookingId={detailBookingId}
+        open={detailBookingId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDetailBookingId(null);
+        }}
       />
     </div>
   );

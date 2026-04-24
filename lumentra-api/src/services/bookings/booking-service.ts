@@ -62,6 +62,67 @@ export async function getBooking(
   );
 }
 
+export interface BookingDetail {
+  booking: Booking;
+  call: {
+    id: string;
+    started_at: string;
+    ended_at: string | null;
+    duration_seconds: number | null;
+    direction: string;
+    status: string;
+    transcript: string | null;
+    summary: string | null;
+    recording_url: string | null;
+    sentiment_score: number | null;
+  } | null;
+  contact: {
+    id: string;
+    first_name: string | null;
+    last_name: string | null;
+    phone: string | null;
+    email: string | null;
+    notes: string | null;
+    total_bookings: number;
+    total_calls: number;
+  } | null;
+}
+
+export async function getBookingDetail(
+  tenantId: string,
+  id: string,
+): Promise<BookingDetail | null> {
+  const booking = await getBooking(tenantId, id);
+  if (!booking) return null;
+
+  let call: BookingDetail["call"] = null;
+  if (booking.call_id) {
+    call = await queryOne<NonNullable<BookingDetail["call"]>>(
+      `SELECT id, started_at, ended_at, duration_seconds, direction, status,
+              transcript, summary, recording_url, sentiment_score
+         FROM calls
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, booking.call_id],
+    );
+  }
+
+  let contact: BookingDetail["contact"] = null;
+  if (booking.contact_id) {
+    contact = await queryOne<NonNullable<BookingDetail["contact"]>>(
+      `SELECT c.id, c.first_name, c.last_name, c.phone, c.email, c.notes,
+              (SELECT COUNT(*)::int FROM bookings b
+                WHERE b.tenant_id = c.tenant_id AND b.contact_id = c.id) AS total_bookings,
+              (SELECT COUNT(*)::int FROM calls cl
+                WHERE cl.tenant_id = c.tenant_id AND cl.contact_id = c.id) AS total_calls
+         FROM contacts c
+        WHERE c.tenant_id = $1 AND c.id = $2`,
+      [tenantId, booking.contact_id],
+    );
+  }
+
+  return { booking, call, contact };
+}
+
 export async function updateBooking(
   tenantId: string,
   id: string,

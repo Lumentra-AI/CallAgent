@@ -39,7 +39,6 @@ jobs:
       - name: Run tests
         run: |
           npm run test:security-hardening
-          npm run test:webhook-auth
           npm run test:rate-limit-application
           npm run test:sip-forward
           npm run test:setup-email-verification

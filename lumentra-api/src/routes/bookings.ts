@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   createBooking,
   getBooking,
+  getBookingDetail,
   updateBooking,
   cancelBooking,
   rescheduleBooking,
@@ -198,6 +199,26 @@ bookingsRoutes.get("/day-summary", async (c) => {
 // ============================================================================
 // CRUD
 // ============================================================================
+
+/**
+ * GET /api/bookings/:id/detail
+ * Booking + linked call (transcript, summary, recording) + linked contact
+ * for the calendar drawer.
+ */
+bookingsRoutes.get("/:id/detail", async (c) => {
+  try {
+    const tenantId = getTenantId(c);
+    const id = c.req.param("id");
+    const detail = await getBookingDetail(tenantId, id);
+    if (!detail) {
+      return c.json({ error: "Booking not found" }, 404);
+    }
+    return c.json(detail);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, 500);
+  }
+});
 
 /**
  * GET /api/bookings/:id

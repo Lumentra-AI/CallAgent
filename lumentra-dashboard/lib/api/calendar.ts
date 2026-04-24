@@ -146,6 +146,40 @@ export async function getDaySummary(date: string): Promise<DaySummary> {
   return get<DaySummary>("/api/bookings/day-summary", { date });
 }
 
+export interface BookingDetail {
+  booking: Booking;
+  call: {
+    id: string;
+    started_at: string;
+    ended_at: string | null;
+    duration_seconds: number | null;
+    direction: string;
+    status: string;
+    transcript: string | null;
+    summary: string | null;
+    recording_url: string | null;
+    sentiment_score: number | null;
+  } | null;
+  contact: {
+    id: string;
+    first_name: string | null;
+    last_name: string | null;
+    phone: string | null;
+    email: string | null;
+    notes: string | null;
+    total_bookings: number;
+    total_calls: number;
+  } | null;
+}
+
+/**
+ * Get full booking detail (booking + linked call + linked contact)
+ * for the calendar drawer.
+ */
+export async function getBookingDetail(id: string): Promise<BookingDetail> {
+  return get<BookingDetail>(`/api/bookings/${id}/detail`);
+}
+
 // ============================================================================
 // BOOKINGS - CRUD
 // ============================================================================

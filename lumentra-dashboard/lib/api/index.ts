@@ -76,6 +76,7 @@ export {
   getUpcomingBookings,
   getCalendarEvents,
   getDaySummary,
+  getBookingDetail,
   getBooking,
   createBooking,
   updateBooking,
@@ -97,6 +98,7 @@ export {
   getDateRangeForView,
   navigateCalendar,
 } from "./calendar";
+export type { BookingDetail } from "./calendar";
 
 // Notifications API
 export {
