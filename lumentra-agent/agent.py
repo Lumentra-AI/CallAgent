@@ -23,7 +23,7 @@ from livekit.agents.voice.background_audio import (
     BuiltinAudioClip,
 )
 from livekit.agents.llm import FallbackAdapter
-from livekit.plugins import deepgram, cartesia, openai, silero, noise_cancellation
+from livekit.plugins import deepgram, cartesia, openai, groq, silero, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from tools import (
@@ -153,23 +153,30 @@ async def entrypoint(ctx: JobContext):
             logger.error("Graceful rejection failed: %s", e)
         return
 
-    # LLM: gpt-4.1 primary, gpt-4.1-mini fallback.
-    # gpt-4.1 on Tier 1 has a 30K TPM ceiling which our ~7K/turn prompt blows
-    # through in 4 turns during a booking flow, causing 5-10s "please try
-    # again in N seconds" dead air. gpt-4.1-mini has 500K TPM on Tier 1, so
-    # any 429 on the primary flips to mini within 4s instead of silently
-    # retrying. Phase 2 swaps primary to Claude Haiku 4.5 which has 90%
-    # cache discount AND cache-hits that don't count against TPM.
+    # LLM: gpt-4.1 primary, Groq llama-3.3-70b-versatile fallback.
+    # gpt-4.1 on Tier 1 has a 30K TPM ceiling which our ~4.5K/turn prompt
+    # blows through in 6 turns during a booking flow, triggering 5-10s
+    # "please try again in N seconds" dead air. The previous fallback was
+    # gpt-4.1-mini which has 500K TPM but is meaningfully dumber than 4.1
+    # for nuanced customer interaction (name spelling, intent disambig,
+    # multi-step bookings). Llama 3.3 70B on Groq is genuinely on par with
+    # 4.1 for tool use + customer chat, has ~300ms TTFT, and Groq's free
+    # tier ceiling won't realistically rate-limit on a single ongoing call.
+    # Phase 2 (deferred until ANTHROPIC_API_KEY available) would swap the
+    # primary to Claude Haiku 4.5 -- 90% cache discount AND cache-hits
+    # don't count against TPM, eliminating the rate ceiling entirely.
     llm = FallbackAdapter(
         llm=[
             openai.LLM(model="gpt-4.1", temperature=0.6),
-            openai.LLM(model="gpt-4.1-mini", temperature=0.6),
+            groq.LLM(model="llama-3.3-70b-versatile", temperature=0.6),
         ],
         attempt_timeout=4.0,
         max_retry_per_llm=0,
         retry_interval=2.0,
     )
-    logger.info("LLM: OpenAI gpt-4.1 (primary) + gpt-4.1-mini (fallback, 4s timeout)")
+    logger.info(
+        "LLM: OpenAI gpt-4.1 (primary) + Groq llama-3.3-70b-versatile (fallback, 4s timeout)"
+    )
 
     # TTS: Cartesia Sonic-3.
     # Fallback voice is Katie ("Friendly Fixer: Enunciating young adult female
