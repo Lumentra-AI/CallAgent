@@ -225,6 +225,9 @@ export function BookingDetailDrawer({
         {(loading || error || !detail) && (
           <VisuallyHidden.Root>
             <ModalTitle>Booking detail</ModalTitle>
+            <ModalDescription>
+              {loading ? "Loading booking" : error || "Booking detail"}
+            </ModalDescription>
           </VisuallyHidden.Root>
         )}
 
