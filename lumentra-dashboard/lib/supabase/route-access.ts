@@ -3,17 +3,9 @@ const PROTECTED_ROUTE_PREFIXES = [
   "/setup",
   "/settings",
   "/calls",
-  "/analytics",
-  "/contacts",
-  "/calendar",
-  "/notifications",
-  "/resources",
-  "/workstation",
-  "/deals",
-  "/tasks",
   "/chats",
-  "/escalations",
-  "/pending",
+  "/calendar",
+  "/contacts",
   "/profile",
   "/admin",
 ];
@@ -24,6 +16,7 @@ const AUTH_ROUTE_PATHS = new Set(["/login", "/signup"]);
 const ALLOWED_DASHBOARD_PREFIXES = [
   "/dashboard",
   "/calls",
+  "/chats",
   "/calendar",
   "/contacts",
   "/settings",
@@ -37,6 +30,8 @@ const ALLOWED_SETTINGS_PATHS = new Set([
   "/settings/hours",
   "/settings/escalation",
   "/settings/team",
+  "/settings/chatbot",
+  "/settings/integrations",
 ]);
 
 /**
