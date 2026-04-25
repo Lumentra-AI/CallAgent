@@ -13,6 +13,7 @@ import { insertOne } from "../services/database/query-helpers.js";
 import { query, queryAll } from "../services/database/client.js";
 import { findOrCreateByPhone } from "../services/contacts/contact-service.js";
 import { runPostCallAutomation } from "../services/automation/post-call.js";
+import { summarizeCallAsync } from "../services/calls/summarizer.js";
 import type { ToolExecutionContext } from "../types/voice.js";
 import { internalAuth } from "../middleware/internal-auth.js";
 
@@ -460,6 +461,20 @@ internalRoutes.post("/calls/log", async (c) => {
       }
     } catch (err) {
       console.error("[INTERNAL] Booking call_id backfill failed:", err);
+    }
+
+    // Replace the agent-side template summary with a real LLM-generated
+    // 2-3 sentence summary. Non-blocking; the row keeps the agent's stub
+    // until the LLM call returns and overwrites it.
+    if (body.transcript) {
+      summarizeCallAsync({
+        callId: record.id,
+        transcript: body.transcript,
+        outcomeType: body.outcome_type || null,
+        durationSeconds: body.duration_seconds ?? null,
+      }).catch((err) => {
+        console.error("[INTERNAL] Summary generation crashed:", err);
+      });
     }
 
     // Run post-call automation (deals, tasks, status updates) - non-blocking
