@@ -11,23 +11,17 @@ import { tenantsRoutes } from "./routes/tenants.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { contactsRoutes } from "./routes/contacts.js";
 import { availabilityRoutes } from "./routes/availability.js";
-import { notificationsRoutes } from "./routes/notifications.js";
-import { resourcesRoutes } from "./routes/resources.js";
 import { voicemailRoutes } from "./routes/voicemails.js";
 import trainingDataRoutes from "./routes/training-data.js";
 import { chatRoutes } from "./routes/chat.js";
 import { chatSessionsRoutes } from "./routes/chat-sessions.js";
 import { setupRoutes } from "./routes/setup.js";
-import { capabilitiesRoutes } from "./routes/capabilities.js";
 import { integrationsRoutes } from "./routes/integrations.js";
 import { phoneConfigRoutes } from "./routes/phone-config.js";
 import { escalationRoutes } from "./routes/escalation.js";
 import { escalationEventsRoutes } from "./routes/escalation-events.js";
 import { knowledgeBaseRoutes } from "./routes/knowledge-base.js";
-import { promotionsRoutes } from "./routes/promotions.js";
 import { pendingBookingsRoutes } from "./routes/pending-bookings.js";
-import { dealsRoutes } from "./routes/deals.js";
-import { tasksRoutes } from "./routes/tasks.js";
 import { featuresRoutes } from "./routes/features.js";
 import { teamRoutes } from "./routes/team.js";
 import { activityRoutes } from "./routes/activity.js";
@@ -36,7 +30,6 @@ import { internalRoutes } from "./routes/internal.js";
 import { adminRoutes } from "./routes/admin.js";
 import { adminAnalyticsRoutes } from "./routes/admin-analytics.js";
 import { adminMonitoringRoutes } from "./routes/admin-monitoring.js";
-import vapiWebhook from "./routes/vapi-webhook.js";
 import {
   authMiddleware,
   userAuthMiddleware,
@@ -243,7 +236,6 @@ export function createApp() {
   app.route("/internal", internalRoutes); // LiveKit agent API (own auth via INTERNAL_API_KEY)
   // SSE endpoint with query-param auth (EventSource cannot send headers)
   app.route("/api/escalation/events", escalationEventsRoutes);
-  app.route("/webhooks/vapi", vapiWebhook); // Vapi voice AI webhook (own auth via VAPI_WEBHOOK_SECRET)
   app.use("/admin/*", platformAdminAuth());
   app.route("/admin", adminRoutes);
   app.route("/admin", adminAnalyticsRoutes);
@@ -276,20 +268,14 @@ export function createApp() {
   app.route("/api/dashboard", dashboardRoutes);
   app.route("/api/contacts", contactsRoutes);
   app.route("/api/availability", availabilityRoutes);
-  app.route("/api/notifications", notificationsRoutes);
-  app.route("/api/resources", resourcesRoutes);
   app.route("/api/voicemails", voicemailRoutes);
   app.route("/api/training", trainingDataRoutes);
   // Setup wizard routes
   app.route("/api/setup", setupRoutes);
-  app.route("/api/capabilities", capabilitiesRoutes);
   app.route("/api/integrations", integrationsRoutes);
   app.route("/api/phone", phoneConfigRoutes);
   app.route("/api/escalation", escalationRoutes);
-  app.route("/api/promotions", promotionsRoutes);
   app.route("/api/pending-bookings", pendingBookingsRoutes);
-  app.route("/api/deals", dealsRoutes);
-  app.route("/api/tasks", tasksRoutes);
   app.route("/api/chat-sessions", chatSessionsRoutes);
   app.route("/api/features", featuresRoutes);
   app.route("/api/knowledge-base", knowledgeBaseRoutes);

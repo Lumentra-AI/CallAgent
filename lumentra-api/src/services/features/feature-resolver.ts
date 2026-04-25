@@ -15,43 +15,27 @@ import { queryAll } from "../database/client.js";
 // Feature keys that map to dashboard pages/sections
 export type FeatureKey =
   | "dashboard"
-  | "workstation"
   | "calls"
-  | "analytics"
-  | "calendar"
-  | "contacts"
-  | "deals"
-  | "tasks"
   | "chats"
-  | "escalations"
-  | "pending"
-  | "resources"
-  | "notifications";
+  | "calendar"
+  | "contacts";
 
 // All possible feature keys
 export const ALL_FEATURES: FeatureKey[] = [
   "dashboard",
-  "workstation",
   "calls",
-  "analytics",
+  "chats",
   "calendar",
   "contacts",
-  "deals",
-  "tasks",
-  "chats",
-  "escalations",
-  "pending",
-  "resources",
-  "notifications",
 ];
 
 // Features included per subscription tier
-// All customer-facing tiers: 4 core pages only (settings/profile always shown)
-// Platform admins access everything via /admin routes, not via feature flags
+// Scope: call monitoring + chat monitoring + bookings (call + chat)
+// Settings/profile always shown; platform admins use /admin routes.
 const TIER_DEFAULTS: Record<string, FeatureKey[]> = {
-  starter: ["dashboard", "calls", "contacts", "calendar"],
-  professional: ["dashboard", "calls", "contacts", "calendar"],
-  enterprise: ["dashboard", "calls", "contacts", "calendar"],
+  starter: ["dashboard", "calls", "chats", "calendar", "contacts"],
+  professional: ["dashboard", "calls", "chats", "calendar", "contacts"],
+  enterprise: ["dashboard", "calls", "chats", "calendar", "contacts"],
 };
 
 interface OverrideRow {

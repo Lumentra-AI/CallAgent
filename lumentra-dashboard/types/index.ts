@@ -563,15 +563,10 @@ export type LogCategory =
 export type ViewType =
   | "dashboard"
   | "calls"
-  | "analytics"
+  | "chats"
   | "settings"
-  // CRM views
   | "contacts"
-  | "calendar"
-  | "notifications"
-  | "resources"
-  | "deals"
-  | "tasks";
+  | "calendar";
 
 export type SettingsTab =
   | "general"

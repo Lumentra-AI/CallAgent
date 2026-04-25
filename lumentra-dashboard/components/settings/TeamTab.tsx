@@ -30,18 +30,10 @@ interface TeamMember {
 // Page labels for the checkboxes
 const PAGE_LABELS: Record<FeatureKey, string> = {
   dashboard: "Dashboard",
-  workstation: "Workstation",
   calls: "Calls",
-  contacts: "Contacts",
   chats: "Chats",
-  escalations: "Escalations",
-  pending: "Pending",
   calendar: "Calendar",
-  deals: "Deals",
-  tasks: "Tasks",
-  analytics: "Analytics",
-  resources: "Resources",
-  notifications: "Notifications",
+  contacts: "Contacts",
 };
 
 const ROLE_OPTIONS = [

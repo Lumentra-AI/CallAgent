@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  ConfigProvider,
-  useConfig,
-  useDemoMode,
-} from "@/context/ConfigContext";
+import { ConfigProvider, useConfig } from "@/context/ConfigContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { AdminProvider } from "@/context/AdminContext";
@@ -17,16 +13,9 @@ import TopBar from "@/components/dashboard/TopBar";
 import MobileNav from "@/components/dashboard/MobileNav";
 import { EscalationDock, EscalationPanel } from "@/components/escalation";
 import { SkipLinks } from "@/components/ui/skip-links";
-import {
-  AlertTriangle,
-  Loader2,
-  RefreshCw,
-  ShieldX,
-  Zap,
-  Info,
-} from "lucide-react";
+import { AlertTriangle, Loader2, RefreshCw, ShieldX, Zap } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 function LoadingScreen() {
   return (
@@ -103,34 +92,11 @@ function ErrorScreen({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-function DemoModeBanner() {
-  const isDemoMode = useDemoMode();
-  const [dismissed, setDismissed] = useState(false);
-
-  if (!isDemoMode || dismissed) return null;
-
-  return (
-    <div className="flex items-center justify-between bg-amber-500/15 border-b border-amber-500/20 px-4 py-2">
-      <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
-        <Info className="h-4 w-4 shrink-0" />
-        <span>
-          Demo Mode - Showing sample data. Connect a tenant to see real data.
-        </span>
-      </div>
-      <button
-        onClick={() => setDismissed(true)}
-        className="text-xs text-amber-600/70 hover:text-amber-600 dark:text-amber-400/70 dark:hover:text-amber-400"
-      >
-        Dismiss
-      </button>
-    </div>
-  );
-}
-
 // Pages accessible to normal users (non-admin)
 const ALLOWED_PATHS = [
   "/dashboard",
   "/calls",
+  "/chats",
   "/calendar",
   "/contacts",
   "/settings",
@@ -141,6 +107,8 @@ const ALLOWED_SETTINGS_SUBS = [
   "/settings/hours",
   "/settings/escalation",
   "/settings/team",
+  "/settings/chatbot",
+  "/settings/integrations",
 ];
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
@@ -234,7 +202,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="flex flex-1 flex-col overflow-hidden">
-          <DemoModeBanner />
           <TopBar />
           {/* Main Content with ARIA landmark */}
           <main

@@ -5,28 +5,19 @@ import { useRouter, usePathname } from "next/navigation";
 import { useConfig } from "@/context/ConfigContext";
 import { useAdmin } from "@/context/AdminContext";
 import { useFeatures, type FeatureKey } from "@/context/FeatureContext";
-import { useEscalation } from "@/context/EscalationContext";
 import type { ViewType } from "@/types";
 import {
   LayoutDashboard,
   Phone,
-  BarChart3,
   Settings,
   ChevronLeft,
   ChevronRight,
   Zap,
   Users,
   Calendar,
-  Bell,
-  Package,
-  Headphones,
-  PhoneForwarded,
   User,
-  Target,
-  CheckSquare,
   Shield,
   MessageSquare,
-  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIndustry } from "@/context/IndustryContext";
@@ -35,18 +26,10 @@ import { useTenant } from "@/context/TenantContext";
 // Route mapping for navigation
 const VIEW_ROUTES: Record<string, string> = {
   dashboard: "/dashboard",
-  workstation: "/workstation",
   calls: "/calls",
-  analytics: "/analytics",
-  escalations: "/escalations",
-  contacts: "/contacts",
-  deals: "/deals",
-  tasks: "/tasks",
   chats: "/chats",
+  contacts: "/contacts",
   calendar: "/calendar",
-  notifications: "/notifications",
-  resources: "/resources",
-  pending: "/pending",
   settings: "/settings",
   profile: "/profile",
   admin: "/admin/overview",
@@ -64,53 +47,15 @@ interface NavItem {
 // All possible nav items -- filtered by features at render time
 const ALL_NAV_ITEMS: NavItem[] = [
   {
-    id: "workstation",
-    featureKey: "workstation",
-    label: "Workstation",
-    icon: Headphones,
-  },
-  {
     id: "dashboard",
     featureKey: "dashboard",
     label: "Dashboard",
     icon: LayoutDashboard,
   },
   { id: "calls", featureKey: "calls", label: "Calls", icon: Phone },
-  { id: "contacts", featureKey: "contacts", label: "Contacts", icon: Users },
   { id: "chats", featureKey: "chats", label: "Chats", icon: MessageSquare },
-  {
-    id: "escalations",
-    featureKey: "escalations",
-    label: "Escalations",
-    icon: PhoneForwarded,
-  },
-  {
-    id: "pending",
-    featureKey: "pending",
-    label: "Pending",
-    icon: ClipboardList,
-  },
   { id: "calendar", featureKey: "calendar", label: "Calendar", icon: Calendar },
-  { id: "deals", featureKey: "deals", label: "Deals", icon: Target },
-  { id: "tasks", featureKey: "tasks", label: "Tasks", icon: CheckSquare },
-  {
-    id: "analytics",
-    featureKey: "analytics",
-    label: "Analytics",
-    icon: BarChart3,
-  },
-  {
-    id: "resources",
-    featureKey: "resources",
-    label: "Resources",
-    icon: Package,
-  },
-  {
-    id: "notifications",
-    featureKey: "notifications",
-    label: "Notifications",
-    icon: Bell,
-  },
+  { id: "contacts", featureKey: "contacts", label: "Contacts", icon: Users },
 ];
 
 const BOTTOM_ITEMS: NavItem[] = [
@@ -124,8 +69,7 @@ export default function Sidebar() {
   const { config, uiState, setView, toggleSidebar } = useConfig();
   const { isPlatformAdmin } = useAdmin();
   const { hasFeature } = useFeatures();
-  const { waitingCount } = useEscalation();
-  const { dealPluralLabel, preset } = useIndustry();
+  const { preset } = useIndustry();
   const { sidebarCollapsed } = uiState;
 
   // Filter nav items by enabled features
@@ -141,7 +85,6 @@ export default function Sidebar() {
     if (item.id === "contacts" && preset?.terminology?.customerPlural) {
       return preset.terminology.customerPlural;
     }
-    if (item.id === "deals") return dealPluralLabel;
     if (item.id === "calendar" && preset?.terminology?.transactionPlural) {
       return preset.terminology.transactionPlural;
     }
@@ -150,7 +93,6 @@ export default function Sidebar() {
 
   // Badge counts
   const getBadge = (item: NavItem): number | undefined => {
-    if (item.id === "escalations" && waitingCount > 0) return waitingCount;
     return item.badge;
   };
 
@@ -167,13 +109,9 @@ export default function Sidebar() {
     const viewTypeItems = [
       "dashboard",
       "calls",
-      "analytics",
+      "chats",
       "contacts",
-      "deals",
-      "tasks",
       "calendar",
-      "notifications",
-      "resources",
       "settings",
     ];
     if (viewTypeItems.includes(viewId)) {

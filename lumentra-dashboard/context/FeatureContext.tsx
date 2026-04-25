@@ -15,18 +15,10 @@ import { useTenant } from "@/context/TenantContext";
 // Feature keys matching the API
 export type FeatureKey =
   | "dashboard"
-  | "workstation"
   | "calls"
-  | "analytics"
-  | "calendar"
-  | "contacts"
-  | "deals"
-  | "tasks"
   | "chats"
-  | "escalations"
-  | "pending"
-  | "resources"
-  | "notifications";
+  | "calendar"
+  | "contacts";
 
 interface FeaturesResponse {
   features: FeatureKey[];
@@ -45,12 +37,13 @@ interface FeatureContextType {
 
 const FeatureContext = createContext<FeatureContextType | null>(null);
 
-// Default features shown while loading (4 core pages)
+// Default features shown while loading
 const DEFAULT_FEATURES: FeatureKey[] = [
   "dashboard",
   "calls",
-  "contacts",
+  "chats",
   "calendar",
+  "contacts",
 ];
 
 export function FeatureProvider({ children }: { children: ReactNode }) {
