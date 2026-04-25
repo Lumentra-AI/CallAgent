@@ -24,6 +24,7 @@ import {
   ModalTitle,
   ModalDescription,
 } from "@/components/ui/modal";
+import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import {
   getBookingDetail,
   cancelBookingWithReason,
@@ -221,6 +222,12 @@ export function BookingDetailDrawer({
         size="full"
         className="max-h-[90vh] overflow-hidden flex flex-col"
       >
+        {(loading || error || !detail) && (
+          <VisuallyHidden.Root>
+            <ModalTitle>Booking detail</ModalTitle>
+          </VisuallyHidden.Root>
+        )}
+
         {loading && (
           <div className="flex flex-1 items-center justify-center py-16 text-zinc-500">
             Loading booking...
