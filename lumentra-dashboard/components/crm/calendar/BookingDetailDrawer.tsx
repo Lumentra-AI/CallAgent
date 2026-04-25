@@ -24,7 +24,12 @@ import {
   ModalTitle,
   ModalDescription,
 } from "@/components/ui/modal";
-import { getBookingDetail, type BookingDetail } from "@/lib/api";
+import {
+  getBookingDetail,
+  cancelBookingWithReason,
+  rescheduleBooking,
+  type BookingDetail,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 function formatDuration(seconds: number | null | undefined): string {
@@ -85,33 +90,63 @@ function Field({
   );
 }
 
+type ActionMode = "idle" | "confirm-cancel" | "reschedule";
+
 export function BookingDetailDrawer({
   bookingId,
   open,
   onOpenChange,
+  onChanged,
 }: {
   bookingId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Fires after a successful cancel or reschedule so parent can refetch. */
+  onChanged?: () => void;
 }) {
   const [detail, setDetail] = React.useState<BookingDetail | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [transcriptExpanded, setTranscriptExpanded] = React.useState(false);
 
+  // Inline action state (cancel / reschedule).
+  const [actionMode, setActionMode] = React.useState<ActionMode>("idle");
+  const [submitting, setSubmitting] = React.useState(false);
+  const [actionError, setActionError] = React.useState<string | null>(null);
+  const [cancelReason, setCancelReason] = React.useState("");
+  const [newDate, setNewDate] = React.useState("");
+  const [newTime, setNewTime] = React.useState("");
+
+  const resetActionState = React.useCallback(() => {
+    setActionMode("idle");
+    setActionError(null);
+    setSubmitting(false);
+    setCancelReason("");
+    setNewDate("");
+    setNewTime("");
+  }, []);
+
   React.useEffect(() => {
     if (!open || !bookingId) {
       setDetail(null);
       setError(null);
       setTranscriptExpanded(false);
+      resetActionState();
       return;
     }
     let cancelled = false;
     setLoading(true);
     setError(null);
+    resetActionState();
     getBookingDetail(bookingId)
       .then((data) => {
-        if (!cancelled) setDetail(data);
+        if (!cancelled) {
+          setDetail(data);
+          // Pre-fill reschedule fields with the current values so the user
+          // only has to change what they want to change.
+          setNewDate(data.booking.booking_date || "");
+          setNewTime((data.booking.booking_time || "").slice(0, 5));
+        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -124,7 +159,61 @@ export function BookingDetailDrawer({
     return () => {
       cancelled = true;
     };
-  }, [open, bookingId]);
+  }, [open, bookingId, resetActionState]);
+
+  const isFinalState =
+    detail?.booking.status === "cancelled" ||
+    detail?.booking.status === "completed" ||
+    detail?.booking.status === "no_show";
+
+  const handleConfirmCancel = async () => {
+    if (!detail) return;
+    setSubmitting(true);
+    setActionError(null);
+    try {
+      await cancelBookingWithReason(
+        detail.booking.id,
+        cancelReason.trim() || undefined,
+      );
+      onChanged?.();
+      onOpenChange(false);
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to cancel booking",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleConfirmReschedule = async () => {
+    if (!detail) return;
+    if (!newDate || !newTime) {
+      setActionError("Please pick a new date and time.");
+      return;
+    }
+    // Block reschedule to a date/time that's identical to current
+    if (
+      newDate === detail.booking.booking_date &&
+      newTime === (detail.booking.booking_time || "").slice(0, 5)
+    ) {
+      setActionError("Pick a different date or time than the current one.");
+      return;
+    }
+    setSubmitting(true);
+    setActionError(null);
+    try {
+      await rescheduleBooking(detail.booking.id, newDate, newTime);
+      onChanged?.();
+      onOpenChange(false);
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to reschedule booking",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -343,10 +432,146 @@ export function BookingDetailDrawer({
               )}
             </div>
 
-            <div className="flex flex-shrink-0 items-center justify-end gap-2 border-t border-zinc-800 px-6 py-4">
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                Close
-              </Button>
+            <div className="flex flex-shrink-0 flex-col gap-3 border-t border-zinc-800 px-6 py-4">
+              {actionError && (
+                <div className="flex items-start gap-2 rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>{actionError}</div>
+                </div>
+              )}
+
+              {actionMode === "confirm-cancel" && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 space-y-3">
+                  <div className="text-sm text-zinc-100">
+                    Cancel{" "}
+                    <span className="font-medium">
+                      {detail.booking.customer_name}
+                    </span>
+                    {"'s"} booking for{" "}
+                    {formatDateTime(
+                      detail.booking.booking_date,
+                      detail.booking.booking_time,
+                    )}
+                    ?
+                  </div>
+                  <textarea
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    placeholder="Reason (optional, kept on the booking record)"
+                    rows={2}
+                    className="w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-600 focus:outline-none"
+                    disabled={submitting}
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={resetActionState}
+                      disabled={submitting}
+                    >
+                      Keep it
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleConfirmCancel}
+                      disabled={submitting}
+                      className="bg-red-600 text-white hover:bg-red-500"
+                    >
+                      {submitting ? "Cancelling..." : "Yes, cancel booking"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {actionMode === "reschedule" && (
+                <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-3">
+                  <div className="text-sm text-zinc-100">
+                    Reschedule{" "}
+                    <span className="font-medium">
+                      {detail.booking.customer_name}
+                    </span>
+                    {"'s"} booking
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
+                        New date
+                      </label>
+                      <input
+                        type="date"
+                        value={newDate}
+                        onChange={(e) => setNewDate(e.target.value)}
+                        min={new Date().toISOString().split("T")[0]}
+                        className="w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-zinc-600 focus:outline-none"
+                        disabled={submitting}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
+                        New time
+                      </label>
+                      <input
+                        type="time"
+                        value={newTime}
+                        onChange={(e) => setNewTime(e.target.value)}
+                        className="w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-zinc-600 focus:outline-none"
+                        disabled={submitting}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={resetActionState}
+                      disabled={submitting}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleConfirmReschedule}
+                      disabled={submitting}
+                    >
+                      {submitting ? "Updating..." : "Update booking"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {actionMode === "idle" && (
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    {!isFinalState && (
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setActionError(null);
+                            setActionMode("reschedule");
+                          }}
+                        >
+                          Reschedule
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setActionError(null);
+                            setCancelReason("");
+                            setActionMode("confirm-cancel");
+                          }}
+                          className="border-red-500/40 text-red-300 hover:bg-red-500/10"
+                        >
+                          Cancel booking
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  <Button variant="outline" onClick={() => onOpenChange(false)}>
+                    Close
+                  </Button>
+                </div>
+              )}
             </div>
           </>
         )}

@@ -679,6 +679,7 @@ export default function CalendarPage() {
         onOpenChange={(open) => {
           if (!open) setDetailBookingId(null);
         }}
+        onChanged={handleBookingSuccess}
       />
     </div>
   );
