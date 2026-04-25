@@ -259,43 +259,88 @@ async def entrypoint(ctx: JobContext):
         metrics.log_metrics(ev.metrics)
         usage_collector.collect(ev.metrics)
 
-    # Idle watchdog: nudge caller on silence, hang up after 3 consecutive away events
-    idle_away_count = 0
+    # Idle watchdog: nudge caller on silence, escalate on a timer, hang up.
+    #
+    # Why a timer (not just user_state_changed): user_state_changed fires on
+    # state TRANSITIONS. A caller who goes silent transitions listening->away
+    # exactly once -- if they stay silent, no further events fire. The old
+    # logic relied on incrementing a counter per transition, so it only ever
+    # nudged once and then sat there forever (observed: 98s of silence
+    # before caller hung up themselves on call AJ_gxLYTCrLt5oB).
+    #
+    # New flow: on first away transition, fire nudge #1 + start an asyncio
+    # task that sleeps then fires nudge #2 then sleeps then ends the call.
+    # Cancel the task if the caller starts speaking again.
     _IDLE_NUDGES = [
         "Hello? Are you still there?",
         "I'm still here if you need anything. Otherwise, I'll let you go.",
     ]
+    # Tuned for phone-call patience: ~32s total silence before hangup.
+    _NUDGE_2_DELAY_S = 12.0
+    _HANGUP_DELAY_S = 10.0
+
+    idle_escalation_task: asyncio.Task | None = None
+
+    async def _idle_escalation():
+        try:
+            await asyncio.sleep(_NUDGE_2_DELAY_S)
+            # Don't talk over ourselves if we're still mid-utterance or
+            # mid-tool-call. The wait above is generous enough that this
+            # should be rare; if it happens we just skip the second nudge
+            # and go straight to the hangup window.
+            if session.agent_state not in ("thinking", "speaking"):
+                logger.info("Idle nudge #2 (timer): %r", _IDLE_NUDGES[1])
+                session.generate_reply(
+                    instructions=f"The caller is still silent. Say exactly: '{_IDLE_NUDGES[1]}'"
+                )
+
+            await asyncio.sleep(_HANGUP_DELAY_S)
+            if session.agent_state in ("thinking", "speaking"):
+                # Agent's still doing something; defer hangup briefly.
+                await asyncio.sleep(3.0)
+            logger.info("Idle hangup (timer): caller silent through both nudges")
+            session.generate_reply(
+                instructions=(
+                    "The caller hasn't responded after two prompts. Say "
+                    "'Alright, feel free to call back anytime. Goodbye!' "
+                    "and then call the end_call tool with reason "
+                    "'conversation_complete'."
+                )
+            )
+        except asyncio.CancelledError:
+            logger.info("Idle escalation cancelled (caller spoke again)")
+            raise
 
     @session.on("user_state_changed")
     def _on_user_state_changed(ev):
-        nonlocal idle_away_count
+        nonlocal idle_escalation_task
         old_state = getattr(ev, "old_state", "?")
         new_state = getattr(ev, "new_state", "?")
-        logger.info("user_state_changed: %s -> %s (agent_state=%s, away_count=%d)",
-                    old_state, new_state, session.agent_state, idle_away_count)
+        logger.info(
+            "user_state_changed: %s -> %s (agent_state=%s)",
+            old_state, new_state, session.agent_state,
+        )
         if new_state == "away":
-            # Don't nudge while the agent itself is working (LLM generating,
-            # tool running, retry in flight). The caller is silent because
-            # they're waiting for us, not because they wandered off.
+            # Don't nudge while the agent itself is working. The caller is
+            # silent because they're waiting for us, not absent.
             if session.agent_state in ("thinking", "speaking"):
                 logger.info("Skipping idle nudge: agent_state=%s", session.agent_state)
                 return
-            idle_away_count += 1
-            if idle_away_count <= len(_IDLE_NUDGES):
-                logger.info("Idle nudge #%d: %r", idle_away_count, _IDLE_NUDGES[idle_away_count - 1])
-                session.generate_reply(
-                    instructions=f"The caller has been silent. Say exactly: '{_IDLE_NUDGES[idle_away_count - 1]}'"
-                )
-            else:
-                logger.info("User idle too long (count=%d), ending call", idle_away_count)
-                session.generate_reply(
-                    instructions="The caller hasn't responded after multiple prompts. "
-                    "Say 'Alright, feel free to call back anytime. Goodbye!' and then call the end_call tool with reason 'conversation_complete'."
-                )
+            # Cancel any prior chain so we don't stack timers from rapid
+            # listening<->away flapping.
+            if idle_escalation_task and not idle_escalation_task.done():
+                idle_escalation_task.cancel()
+            logger.info("Idle nudge #1: %r", _IDLE_NUDGES[0])
+            session.generate_reply(
+                instructions=f"The caller has been silent. Say exactly: '{_IDLE_NUDGES[0]}'"
+            )
+            idle_escalation_task = asyncio.create_task(_idle_escalation())
         elif new_state == "speaking":
-            if idle_away_count > 0:
-                logger.info("User came back (away_count reset from %d)", idle_away_count)
-            idle_away_count = 0
+            # Caller came back -- kill the pending escalation.
+            if idle_escalation_task and not idle_escalation_task.done():
+                logger.info("User came back, cancelling idle escalation")
+                idle_escalation_task.cancel()
+            idle_escalation_task = None
 
     async def on_shutdown():
         # Cancel the duration watchdog if still running
