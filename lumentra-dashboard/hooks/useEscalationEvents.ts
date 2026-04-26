@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useInsertionEffect, useRef } from "react";
-import { API_BASE } from "@/lib/api/client";
+import { API_BASE, getTenantId } from "@/lib/api/client";
 import { createClient } from "@/lib/supabase/client";
 
 export type EscalationEventType =
@@ -76,7 +76,11 @@ export function useEscalationEvents({
         eventSourceRef.current = null;
       }
 
-      const url = `${API_BASE}/api/escalation/events?token=${encodeURIComponent(token)}`;
+      const tenantId = getTenantId();
+      const tenantParam = tenantId
+        ? `&tenantId=${encodeURIComponent(tenantId)}`
+        : "";
+      const url = `${API_BASE}/api/escalation/events?token=${encodeURIComponent(token)}${tenantParam}`;
       const es = new EventSource(url);
       eventSourceRef.current = es;
 

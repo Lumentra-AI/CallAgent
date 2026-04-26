@@ -22,6 +22,7 @@ function getSupabaseAuth() {
 
 escalationEventsRoutes.get("/", async (c) => {
   const token = c.req.query("token");
+  const requestedTenantId = c.req.query("tenantId");
 
   if (!token) {
     return c.json({ error: "Missing token" }, 401);
@@ -38,17 +39,30 @@ escalationEventsRoutes.get("/", async (c) => {
     return c.json({ error: "Invalid or expired token" }, 401);
   }
 
-  // Resolve tenant
-  const membership = await queryOne<{ tenant_id: string }>(
-    "SELECT tenant_id FROM tenant_members WHERE user_id = $1 AND is_active = true AND accepted_at IS NOT NULL LIMIT 1",
-    [user.id],
-  );
-
-  if (!membership) {
-    return c.json({ error: "No active tenant membership" }, 403);
+  // Verify user has access to the requested tenant. Caller must pass
+  // ?tenantId=... so we know which workspace they want to subscribe to.
+  // Falls back to the user's first membership only if no tenantId was given,
+  // for backwards compatibility with single-tenant clients.
+  let tenantId: string;
+  if (requestedTenantId) {
+    const membership = await queryOne<{ tenant_id: string }>(
+      "SELECT tenant_id FROM tenant_members WHERE user_id = $1 AND tenant_id = $2 AND is_active = true AND accepted_at IS NOT NULL LIMIT 1",
+      [user.id, requestedTenantId],
+    );
+    if (!membership) {
+      return c.json({ error: "No access to this tenant" }, 403);
+    }
+    tenantId = requestedTenantId;
+  } else {
+    const membership = await queryOne<{ tenant_id: string }>(
+      "SELECT tenant_id FROM tenant_members WHERE user_id = $1 AND is_active = true AND accepted_at IS NOT NULL LIMIT 1",
+      [user.id],
+    );
+    if (!membership) {
+      return c.json({ error: "No active tenant membership" }, 403);
+    }
+    tenantId = membership.tenant_id;
   }
-
-  const tenantId = membership.tenant_id;
 
   return streamSSE(c, async (stream) => {
     await stream.writeSSE({
