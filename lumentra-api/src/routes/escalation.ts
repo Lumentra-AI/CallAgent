@@ -9,7 +9,7 @@ import {
   updateOne,
   deleteRows,
 } from "../services/database/query-helpers.js";
-import { getAuthUserId } from "../middleware/index.js";
+import { getAuthUserId, getAuthContext } from "../middleware/index.js";
 import { logActivity } from "../services/audit/logger.js";
 import { invalidateTenant } from "../services/database/tenant-cache.js";
 import { escalationEvents } from "../services/escalation/events.js";
@@ -18,11 +18,6 @@ import type { PoolClient } from "pg";
 export const escalationRoutes = new Hono();
 
 /** Type definitions for database rows */
-interface MembershipRow {
-  tenant_id: string;
-  role: string;
-}
-
 interface EscalationContactRow {
   id: string;
   tenant_id: string;
@@ -211,27 +206,12 @@ function buildConversation(
  * Returns live escalation queue data from callback_queue and calls
  */
 escalationRoutes.get("/queue", async (c) => {
-  const userId = getAuthUserId(c);
-
   const statusFilter = c.req.query("status");
   const priorityFilter = c.req.query("priority");
   const limit = Math.min(parseInt(c.req.query("limit") || "100", 10), 200);
 
   try {
-    const membershipSql = `
-      SELECT tenant_id
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-      LIMIT 1
-    `;
-    const membership = await queryOne<{ tenant_id: string }>(membershipSql, [
-      userId,
-    ]);
-
-    if (!membership) {
-      return c.json({ queue: [] });
-    }
+    const { tenantId } = getAuthContext(c);
 
     const statusMap: Record<string, string> = {
       waiting: "pending",
@@ -247,7 +227,7 @@ escalationRoutes.get("/queue", async (c) => {
     };
 
     const conditions: string[] = ["cq.tenant_id = $1"];
-    const params: unknown[] = [membership.tenant_id];
+    const params: unknown[] = [tenantId];
     let paramIndex = 2;
 
     if (statusFilter === "callback-scheduled") {
@@ -391,20 +371,8 @@ escalationRoutes.put("/queue/:id/take", async (c) => {
   const userId = getAuthUserId(c);
 
   try {
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
+    const { tenantId, role } = getAuthContext(c);
+    if (!["owner", "admin"].includes(role)) {
       return c.json({ error: "Forbidden" }, 403);
     }
 
@@ -420,7 +388,7 @@ escalationRoutes.put("/queue/:id/take", async (c) => {
     const updated = await queryOne<{ id: string }>(updateSql, [
       new Date().toISOString(),
       id,
-      membership.tenant_id,
+      tenantId,
     ]);
 
     if (!updated) {
@@ -429,14 +397,14 @@ escalationRoutes.put("/queue/:id/take", async (c) => {
 
     escalationEvents.publish({
       type: "queue_item_updated",
-      tenantId: membership.tenant_id,
+      tenantId: tenantId,
       queueId: id,
       data: { status: "in-progress" },
       timestamp: new Date().toISOString(),
     });
 
     logActivity({
-      tenantId: membership.tenant_id,
+      tenantId: tenantId,
       userId,
       action: "update",
       resourceType: "escalation",
@@ -460,20 +428,8 @@ escalationRoutes.put("/queue/:id/resolve", async (c) => {
   const userId = getAuthUserId(c);
 
   try {
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
+    const { tenantId, role } = getAuthContext(c);
+    if (!["owner", "admin"].includes(role)) {
       return c.json({ error: "Forbidden" }, 403);
     }
 
@@ -488,7 +444,7 @@ escalationRoutes.put("/queue/:id/resolve", async (c) => {
     const updated = await queryOne<{ id: string }>(updateSql, [
       new Date().toISOString(),
       id,
-      membership.tenant_id,
+      tenantId,
     ]);
 
     if (!updated) {
@@ -497,14 +453,14 @@ escalationRoutes.put("/queue/:id/resolve", async (c) => {
 
     escalationEvents.publish({
       type: "queue_item_updated",
-      tenantId: membership.tenant_id,
+      tenantId: tenantId,
       queueId: id,
       data: { status: "resolved" },
       timestamp: new Date().toISOString(),
     });
 
     logActivity({
-      tenantId: membership.tenant_id,
+      tenantId: tenantId,
       userId,
       action: "update",
       resourceType: "escalation",
@@ -526,23 +482,10 @@ escalationRoutes.put("/queue/:id/resolve", async (c) => {
 escalationRoutes.put("/queue/:id/schedule-callback", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
-  const userId = getAuthUserId(c);
 
   try {
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
+    const { tenantId, role } = getAuthContext(c);
+    if (!["owner", "admin"].includes(role)) {
       return c.json({ error: "Forbidden" }, 403);
     }
 
@@ -564,7 +507,7 @@ escalationRoutes.put("/queue/:id/schedule-callback", async (c) => {
     const updated = await queryOne<{ id: string }>(updateSql, [
       note,
       id,
-      membership.tenant_id,
+      tenantId,
     ]);
 
     if (!updated) {
@@ -573,7 +516,7 @@ escalationRoutes.put("/queue/:id/schedule-callback", async (c) => {
 
     escalationEvents.publish({
       type: "queue_item_updated",
-      tenantId: membership.tenant_id,
+      tenantId: tenantId,
       queueId: id,
       data: {
         status: "callback-scheduled",
@@ -594,23 +537,8 @@ escalationRoutes.put("/queue/:id/schedule-callback", async (c) => {
  * Get escalation contacts for tenant
  */
 escalationRoutes.get("/contacts", async (c) => {
-  const userId = getAuthUserId(c);
-
   try {
-    const membershipSql = `
-      SELECT tenant_id
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-      LIMIT 1
-    `;
-    const membership = await queryOne<{ tenant_id: string }>(membershipSql, [
-      userId,
-    ]);
-
-    if (!membership) {
-      return c.json({ contacts: [] });
-    }
+    const { tenantId } = getAuthContext(c);
 
     const contactsSql = `
       SELECT *
@@ -619,7 +547,7 @@ escalationRoutes.get("/contacts", async (c) => {
       ORDER BY sort_order ASC
     `;
     const contacts = await queryAll<EscalationContactRow>(contactsSql, [
-      membership.tenant_id,
+      tenantId,
     ]);
 
     return c.json({ contacts: contacts || [] });
@@ -642,25 +570,10 @@ escalationRoutes.post("/contacts", async (c) => {
   }
 
   try {
-    // Get tenant
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
+    const { tenantId, role } = getAuthContext(c);
+    if (!["owner", "admin"].includes(role)) {
       return c.json({ error: "Forbidden" }, 403);
     }
-
-    const tenantId = membership.tenant_id;
 
     // Get current max sort_order
     const maxOrderSql = `
@@ -731,20 +644,8 @@ escalationRoutes.put("/contacts/:id", async (c) => {
 
   try {
     // Get tenant
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
+    const { tenantId, role } = getAuthContext(c);
+    if (!["owner", "admin"].includes(role)) {
       return c.json({ error: "Forbidden" }, 403);
     }
 
@@ -756,7 +657,7 @@ escalationRoutes.put("/contacts/:id", async (c) => {
     `;
     const existing = await queryOne<{ tenant_id: string }>(existingSql, [id]);
 
-    if (!existing || existing.tenant_id !== membership.tenant_id) {
+    if (!existing || existing.tenant_id !== tenantId) {
       return c.json({ error: "Contact not found" }, 404);
     }
 
@@ -767,7 +668,7 @@ escalationRoutes.put("/contacts/:id", async (c) => {
         SET is_primary = false
         WHERE tenant_id = $1 AND id != $2
       `;
-      await queryOne(unsetPrimarySql, [membership.tenant_id, id]);
+      await queryOne(unsetPrimarySql, [tenantId, id]);
     }
 
     const updateData: Record<string, unknown> = {};
@@ -790,7 +691,7 @@ escalationRoutes.put("/contacts/:id", async (c) => {
     );
 
     logActivity({
-      tenantId: membership.tenant_id,
+      tenantId: tenantId,
       userId,
       action: "update",
       resourceType: "escalation_contact",
@@ -815,20 +716,8 @@ escalationRoutes.delete("/contacts/:id", async (c) => {
 
   try {
     // Get tenant
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
+    const { tenantId, role } = getAuthContext(c);
+    if (!["owner", "admin"].includes(role)) {
       return c.json({ error: "Forbidden" }, 403);
     }
 
@@ -843,7 +732,7 @@ escalationRoutes.delete("/contacts/:id", async (c) => {
       [id],
     );
 
-    if (!contact || contact.tenant_id !== membership.tenant_id) {
+    if (!contact || contact.tenant_id !== tenantId) {
       return c.json({ error: "Contact not found" }, 404);
     }
 
@@ -855,7 +744,7 @@ escalationRoutes.delete("/contacts/:id", async (c) => {
         WHERE tenant_id = $1
       `;
       const countResult = await queryOne<{ count: string }>(countSql, [
-        membership.tenant_id,
+        tenantId,
       ]);
       const count = parseInt(countResult?.count || "0", 10);
 
@@ -869,7 +758,7 @@ escalationRoutes.delete("/contacts/:id", async (c) => {
           LIMIT 1
         `;
         const nextContact = await queryOne<{ id: string }>(nextContactSql, [
-          membership.tenant_id,
+          tenantId,
           id,
         ]);
 
@@ -893,9 +782,7 @@ escalationRoutes.delete("/contacts/:id", async (c) => {
       WHERE tenant_id = $1
       ORDER BY sort_order ASC
     `;
-    const remaining = await queryAll<{ id: string }>(remainingSql, [
-      membership.tenant_id,
-    ]);
+    const remaining = await queryAll<{ id: string }>(remainingSql, [tenantId]);
 
     if (remaining && remaining.length > 0) {
       for (let i = 0; i < remaining.length; i++) {
@@ -908,7 +795,7 @@ escalationRoutes.delete("/contacts/:id", async (c) => {
     }
 
     logActivity({
-      tenantId: membership.tenant_id,
+      tenantId: tenantId,
       userId,
       action: "delete",
       resourceType: "escalation_contact",
@@ -927,33 +814,15 @@ escalationRoutes.delete("/contacts/:id", async (c) => {
  * Get escalation triggers for tenant
  */
 escalationRoutes.get("/triggers", async (c) => {
-  const userId = getAuthUserId(c);
-
   try {
-    const membershipSql = `
-      SELECT tenant_id
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-      LIMIT 1
-    `;
-    const membership = await queryOne<{ tenant_id: string }>(membershipSql, [
-      userId,
-    ]);
-
-    if (!membership) {
-      return c.json({
-        triggers: [],
-        transfer_behavior: { type: "warm", no_answer: "message" },
-      });
-    }
+    const { tenantId } = getAuthContext(c);
 
     const tenantSql = `
       SELECT escalation_enabled, escalation_triggers, transfer_behavior
       FROM tenants
       WHERE id = $1
     `;
-    const tenant = await queryOne<TenantRow>(tenantSql, [membership.tenant_id]);
+    const tenant = await queryOne<TenantRow>(tenantSql, [tenantId]);
 
     // Standard triggers that are always available
     const standardTriggers = [
@@ -992,24 +861,11 @@ escalationRoutes.get("/triggers", async (c) => {
  */
 escalationRoutes.put("/triggers", async (c) => {
   const body = await c.req.json();
-  const userId = getAuthUserId(c);
 
   try {
     // Get tenant
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
+    const { tenantId, role } = getAuthContext(c);
+    if (!["owner", "admin"].includes(role)) {
       return c.json({ error: "Forbidden" }, 403);
     }
 
@@ -1024,9 +880,9 @@ escalationRoutes.put("/triggers", async (c) => {
     if (body.transfer_behavior !== undefined)
       updateData.transfer_behavior = JSON.stringify(body.transfer_behavior);
 
-    await updateOne("tenants", updateData, { id: membership.tenant_id });
+    await updateOne("tenants", updateData, { id: tenantId });
 
-    await invalidateTenant(membership.tenant_id);
+    await invalidateTenant(tenantId);
 
     return c.json({ success: true });
   } catch (error) {
@@ -1041,7 +897,6 @@ escalationRoutes.put("/triggers", async (c) => {
  */
 escalationRoutes.post("/contacts/reorder", async (c) => {
   const body = await c.req.json();
-  const userId = getAuthUserId(c);
 
   if (!body.order || !Array.isArray(body.order)) {
     return c.json({ error: "order array is required" }, 400);
@@ -1049,20 +904,8 @@ escalationRoutes.post("/contacts/reorder", async (c) => {
 
   try {
     // Get tenant
-    const membershipSql = `
-      SELECT tenant_id, role
-      FROM tenant_members
-      WHERE user_id = $1
-        AND is_active = true
-        AND role = ANY($2)
-      LIMIT 1
-    `;
-    const membership = await queryOne<MembershipRow>(membershipSql, [
-      userId,
-      ["owner", "admin"],
-    ]);
-
-    if (!membership) {
+    const { tenantId, role } = getAuthContext(c);
+    if (!["owner", "admin"].includes(role)) {
       return c.json({ error: "Forbidden" }, 403);
     }
 
@@ -1071,7 +914,7 @@ escalationRoutes.post("/contacts/reorder", async (c) => {
       for (let i = 0; i < body.order.length; i++) {
         await client.query(
           `UPDATE escalation_contacts SET sort_order = $1 WHERE id = $2 AND tenant_id = $3`,
-          [i, body.order[i], membership.tenant_id],
+          [i, body.order[i], tenantId],
         );
       }
     });
